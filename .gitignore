@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!bindings/typescript/dist/
 downloads/
 eggs/
 .eggs/

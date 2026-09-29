@@ -88,3 +88,17 @@
   4. Si se selecciona `go`: delega la ejecución al núcleo canónico de Go (`core-go/`) mediante la interfaz C-ABI (`DataMeshExecuteSQL`).
   5. Retorna el resultado uniforme estructurado con `columns`, `rows` y `row_count`.
 
+## CU-10: Lectura y Resolución Unificada de Manifiestos Heterogéneos (`UnifiedManifestReaderUseCase`)
+- **Actor:** Núcleo canónico Go (`core-go/`), resolvedores de nodo/catálogo, bindings C-ABI y WebAssembly.
+- **Entrada:** Ruta o URI a nodo o catálogo (`node_path`, `index.md`, `llms.txt`, `datapackage.{json,yaml,yml}`).
+- **Comportamiento:**
+  1. Abstrae el análisis de manifiestos mediante `ManifestParserPort`, desacoplando la especificación Frictionless de futuros estándares (DCAT, RO-Crate, CKAN).
+  2. Implementa parsers modulares y sin dependencias externas:
+     - `DataPackageJSONParser`: Procesa esquemas de metadatos Frictionless en `datapackage.json`.
+     - `DataPackageYAMLParser`: Scanner nativo en Go puro para `datapackage.yaml` y `datapackage.yml`.
+     - `OKFMarkdownParser`: Extrae frontmatter YAML y cuerpo markdown de `index.md` (norma OKF/ODKF v0.2).
+     - `LLMsTxtParser`: Parsea índices federados `llms.txt`, `llm.txt` y `llms-full.txt`.
+  3. `UnifiedMetadataReader` escanea el directorio objetivo detectando automáticamente el formato presente y retornando un `PackageManifest` unificado.
+  4. Resuelve nombres y recursos con `FindResource(nameOrSlug)` soportando nombres exactos, case-insensitive y slugificados (`slugify`).
+  5. Facilita la resolución canónica de tríadas `[catalogo:dataset:resource]` en C-ABI y WASM con rutas normalizadas a recursos físicos.
+

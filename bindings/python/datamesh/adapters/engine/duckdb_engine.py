@@ -73,7 +73,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         self.catalog_resolver = catalog_resolver
         self.resolver_usecase = resolver_usecase
         self.storage = storage
-        self._registered_views: Set[str] = set()
+        self._registered_views: Dict[str, str] = {}
         self._view_errors: Dict[str, str] = {}
 
     @property
@@ -153,11 +153,11 @@ class DuckDBQueryEngine(QueryEnginePort):
         aliases = self._generate_aliases(table_ref)
 
         for alias in aliases:
-            if alias not in self._registered_views:
+            if self._registered_views.get(alias) != file_path_or_url:
                 view_sql = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM {read_expr}'
                 try:
                     self.conn.execute(view_sql)
-                    self._registered_views.add(alias)
+                    self._registered_views[alias] = file_path_or_url
                     # Also register unquoted if valid SQL identifier
                     if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
                         self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {read_expr}')

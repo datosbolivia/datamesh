@@ -1,9 +1,7 @@
 package resolvers
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/manifests"
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
 )
 
-// NodeDataProductResolver fetches and parses OKF v0.2 Markdown files containing YAML frontmatter.
+// NodeDataProductResolver fetches and parses OKF v0.2 Markdown files and package manifests.
 type NodeDataProductResolver struct {
 	httpClient *http.Client
 }
@@ -29,14 +28,21 @@ func NewNodeDataProductResolver(timeout time.Duration) *NodeDataProductResolver 
 	}
 }
 
-// FetchDataProduct retrieves markdown content from URL or local path and constructs a DataProduct aggregate.
+// FetchDataProduct retrieves node data (index.md, datapackage.json/yaml/yml, or node directory)
+// and constructs a DataProduct aggregate.
 func (r *NodeDataProductResolver) FetchDataProduct(ctx context.Context, resolvedURL string) (*domain.DataProduct, error) {
+	reader := manifests.NewUnifiedMetadataReader("", r.httpClient.Timeout)
+	lower := strings.ToLower(resolvedURL)
+	if strings.HasSuffix(lower, ".json") || strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") || !strings.HasSuffix(lower, ".md") {
+		return reader.ReadNode(ctx, resolvedURL)
+	}
+
 	raw, err := r.readContent(ctx, resolvedURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch node at %s: %w", resolvedURL, err)
 	}
 
-	manifest, desc, err := parseFrontmatter(raw)
+	manifest, desc, err := manifests.ParseOKFFrontmatter([]byte(raw))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse OKF frontmatter: %w", err)
 	}
@@ -85,122 +91,3 @@ func (r *NodeDataProductResolver) readContent(ctx context.Context, targetURL str
 	return string(body), nil
 }
 
-func parseFrontmatter(content string) (domain.Manifest, string, error) {
-	var manifest domain.Manifest
-	scanner := bufio.NewScanner(strings.NewReader(content))
-
-	inFrontmatter := false
-	var frontmatterLines []string
-	var bodyLines []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-
-		if trimmed == "---" {
-			if !inFrontmatter {
-				inFrontmatter = true
-				continue
-			} else {
-				inFrontmatter = false
-				// Collect remaining lines as body
-				for scanner.Scan() {
-					bodyLines = append(bodyLines, scanner.Text())
-				}
-				break
-			}
-		}
-
-		if inFrontmatter {
-			frontmatterLines = append(frontmatterLines, line)
-		} else {
-			bodyLines = append(bodyLines, line)
-		}
-	}
-
-	if len(frontmatterLines) == 0 {
-		return manifest, strings.Join(bodyLines, "\n"), errors.New("no YAML frontmatter found delimited by '---'")
-	}
-
-	manifest = parseSimpleManifestYAML(frontmatterLines)
-	bodyDesc := strings.TrimSpace(strings.Join(bodyLines, "\n"))
-	return manifest, bodyDesc, nil
-}
-
-func parseSimpleManifestYAML(lines []string) domain.Manifest {
-	var m domain.Manifest
-	currentSection := ""
-	var currentContract domain.Contract
-
-	for _, rawLine := range lines {
-		trimmed := strings.TrimSpace(rawLine)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		if strings.HasSuffix(trimmed, ":") {
-			sec := strings.TrimSuffix(trimmed, ":")
-			switch sec {
-			case "dimensions", "contracts", "lineage":
-				currentSection = sec
-				continue
-			}
-		}
-
-		// Handle list items
-		if strings.HasPrefix(trimmed, "- ") {
-			itemVal := strings.TrimPrefix(trimmed, "- ")
-			if currentSection == "dimensions" {
-				m.Dimensions = append(m.Dimensions, strings.Trim(itemVal, "\"'"))
-				continue
-			}
-			if currentSection == "contracts" {
-				if currentContract.Type != "" {
-					m.Contracts = append(m.Contracts, currentContract)
-					currentContract = domain.Contract{}
-				}
-				// Can be "- type: datapackage"
-				if strings.HasPrefix(itemVal, "type:") {
-					currentContract.Type = strings.Trim(strings.TrimSpace(strings.TrimPrefix(itemVal, "type:")), "\"'")
-				}
-				continue
-			}
-		}
-
-		// Key-Value parsing
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) == 2 {
-			k := strings.TrimSpace(parts[0])
-			v := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
-
-			switch currentSection {
-			case "contracts":
-				if k == "path" {
-					currentContract.Path = v
-				} else if k == "type" {
-					currentContract.Type = v
-				}
-			case "lineage":
-				if k == "version" {
-					m.Lineage.Version = v
-				} else if k == "updated_at" {
-					if t, err := time.Parse(time.RFC3339, v); err == nil {
-						m.Lineage.UpdatedAt = t
-					}
-				}
-			default:
-				if k == "type" {
-					m.Type = v
-				} else if k == "title" {
-					m.Title = v
-				}
-			}
-		}
-	}
-
-	if currentContract.Type != "" {
-		m.Contracts = append(m.Contracts, currentContract)
-	}
-
-	return m
-}

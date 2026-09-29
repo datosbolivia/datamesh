@@ -42,13 +42,16 @@
        |  - DataProductResolverPort                                               |
        |  - StoragePort                                                           |
        |  - QueryEnginePort                                                       |
+       |  - ManifestParserPort                                                    |
+       |  - UnifiedMetadataReaderPort                                             |
        |  - ConfigLoaderPort                                                      |
        +--------------------------------------------------------------------------+
                                             |
                                             v
        +--------------------------------------------------------------------------+
        |                            DRIVEN / OUTBOUND                             |
-       |  [LLMSTxtResolver]  [NodeResolver]  [FileStorage]  [QueryEngine]  [Loader]
+       |  [UnifiedMetadataReader] (DataPackage JSON/YAML/YML, OKF Markdown, LLMs) |
+       |  [FileStorage]  [InMemQueryEngine]  [ConfigLoader]                       |
        +--------------------------------------------------------------------------+
 ```
 
@@ -107,4 +110,18 @@ datamesh/
 ├── cli.py                   # Inbound Adapter: CLI
 └── mcp_server.py            # Inbound Adapter: Protocolo MCP JSON-RPC
 ```
+
+## 5. Unificación de Manifiestos y Formatos de Lectura en Go Core (`core-go/`)
+
+Para desacoplar el núcleo de formatos específicos y garantizar cero dependencias de terceros en CGO y WASM:
+
+- **Dominio (`core-go/domain/package.go`):** Entidad `PackageManifest` y tipos `PackageResource`, que normalizan cualquier especificación de metadatos abierta a una representación estándar en memoria, soportando resolución tolerante a fallos mediante `FindResource` y normalización fonética / slugificada (`Slugify`).
+- **Puerto de Parser Abstracto (`core-go/ports/outbound/package_reader.go`):** Interfaz `ManifestParserPort` que desacopla la lectura física de archivos del análisis sintáctico. Permite incorporar nuevos estándares (DCAT-AP, RO-Crate, CKAN) simplemente registrando nuevos parsers sin modificar los casos de uso.
+- **Lector Unificado (`core-go/adapters/outbound/manifests/unified_reader.go`):** Implementa `UnifiedMetadataReaderPort` e inspecciona directorios de nodos y catálogos en orden de precedencia:
+  1. `datapackage.json` (Frictionless JSON vía `DataPackageJSONParser`)
+  2. `datapackage.yaml` y `datapackage.yml` (Frictionless YAML vía `DataPackageYAMLParser` nativo sin librerías externas)
+  3. `index.md` (Open Knowledge Format v0.2 vía `OKFMarkdownParser`)
+  4. `llms.txt` y `llms-full.txt` (Índices federados vía `LLMsTxtParser`)
+- **Resolución Determinista de Tríadas (`TriadResolverPort`):** Vincula las tríadas canónicas `[catalogo:dataset:resource]` directamente al recurso físico subyacente tanto en C-ABI (`libdatamesh.so`) como en WebAssembly para navegadores web.
+
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/config"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/engine"
+	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/manifests"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/resolvers"
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
 	"github.com/datosbolivia/datamesh-sdk/core-go/usecases"
@@ -26,10 +27,11 @@ func main() {
 	catalogResolver := resolvers.NewLLMSTxtCatalogResolver(15 * time.Second)
 	nodeResolver := resolvers.NewNodeDataProductResolver(15 * time.Second)
 	inmemEngine := engine.NewInMemTabularQueryEngine()
+	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, 15*time.Second)
 
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, nil, cfg)
-	queryUC := usecases.NewQueryDataProductUseCase(inmemEngine, nil, nil)
+	queryUC := usecases.NewQueryDataProductUseCase(inmemEngine, nil, unifiedReader)
 
 	dataMeshObj := js.Global().Get("Object").New()
 

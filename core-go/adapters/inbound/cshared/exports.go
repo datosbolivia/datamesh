@@ -14,6 +14,7 @@ import (
 
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/config"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/engine"
+	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/manifests"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/resolvers"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/storage"
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
@@ -64,6 +65,7 @@ func initRuntime(configJSON string) error {
 	}
 
 	activeConfig = cfg
+	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, cfg.Base.Timeout)
 	catalogResolver := resolvers.NewLLMSTxtCatalogResolver(cfg.Base.Timeout)
 	nodeResolver := resolvers.NewNodeDataProductResolver(cfg.Base.Timeout)
 	fileStorage, err := storage.NewFileStorage(cfg.Base.StoragePath)
@@ -74,7 +76,7 @@ func initRuntime(configJSON string) error {
 	catalogUC = usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC = usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
 	inmemEngine = engine.NewInMemTabularQueryEngine()
-	queryUC = usecases.NewQueryDataProductUseCase(inmemEngine, fileStorage, nil)
+	queryUC = usecases.NewQueryDataProductUseCase(inmemEngine, fileStorage, unifiedReader)
 	return nil
 }
 

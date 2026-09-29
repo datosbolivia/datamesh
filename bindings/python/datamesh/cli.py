@@ -33,6 +33,10 @@ def main():
     query_parser.add_argument("--filter", action="append", dest="filters", help="Filter formatted as key=value")
     query_parser.add_argument("--limit", type=int, default=None, help="Max rows to return")
 
+    # sql
+    sql_parser = subparsers.add_parser("sql", help="Execute full ANSI/DuckDB SQL with triad URIs ('catalogo:dataset:resource')")
+    sql_parser.add_argument("query", help="SQL query string")
+
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
 
@@ -58,6 +62,10 @@ def main():
                     k, v = f.split("=", 1)
                     filter_dict[k.strip()] = v.strip()
         res = dm.query(args.uri, filters=filter_dict, limit=args.limit)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    elif args.command == "sql":
+        res = dm.sql(args.query)
         print(json.dumps(res, indent=2, ensure_ascii=False))
 
     elif args.command == "mcp-serve":

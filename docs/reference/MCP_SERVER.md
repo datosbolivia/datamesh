@@ -33,6 +33,7 @@ Permite que cualquier agente o asistente de IA descubra, inspeccione y consulte 
 | `datamesh_search_catalog` | `keyword` *(requerido)*, `catalog_url` *(opcional)* | Busca Data Products por palabra clave en título, descripción o dominio. |
 | `datamesh_get_dataproduct` | `uri` *(requerido)* | Resuelve y devuelve el manifiesto OKF v0.2, dimensiones, contratos y linaje de un nodo. |
 | `datamesh_query_resource` | `resource_uri` *(requerido)*, `filters` *(opcional)*, `limit` *(opcional)* | Ejecuta consultas y filtrado tabular en memoria sobre recursos CSV/TSV. |
+| `datamesh_sql_query` | `sql_query` *(requerido)* | Ejecuta consultas ANSI SQL completas con DuckDB usando tríadas `"catalogo:dataset:resource"`. Normaliza formatos dispares (CSV, Parquet, JSON) en memoria. |
 
 ---
 

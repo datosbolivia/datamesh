@@ -12,6 +12,13 @@ type QueryRequest struct {
 	Limit       int               `json:"limit,omitempty"`
 }
 
+// SQLQueryRequest encapsulates a full ANSI/DuckDB SQL query with unresolved or resolved triads.
+type SQLQueryRequest struct {
+	SQLQuery       string                      `json:"sql_query"`
+	Triads         []ResourceTriad             `json:"triads,omitempty"`
+	ResolvedTables map[string]ResolvedResource `json:"resolved_tables,omitempty"`
+}
+
 // QueryResult encapsulates the tabular dataset resulting from a query execution.
 type QueryResult struct {
 	Columns       []string        `json:"columns"`

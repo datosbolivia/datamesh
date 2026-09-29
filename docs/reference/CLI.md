@@ -99,7 +99,7 @@ python3 -m datamesh.cli get https://datosbolivia.github.io/raw/nodes/elecciones-
 ---
 
 ### 1.4 `query <resource_uri> [--filter key=value] [--limit N]`
-Ejecuta consultas tabulares en memoria sobre recursos CSV/TSV locales o remotos, aplicando filtros de columna y límites.
+Ejecuta consultas tabulares simples en memoria sobre recursos CSV/TSV locales o remotos, aplicando filtros de columna y límites.
 
 ```bash
 # Go CLI
@@ -110,21 +110,55 @@ python3 -m datamesh.cli query ./data.csv --filter departamento="La Paz" --limit 
 python3 -m datamesh.cli query https://example.org/sample.csv --filter partido="MAS"
 ```
 
+---
+
+### 1.5 `sql "<ANSI_SQL_QUERY>"`
+Ejecuta consultas **ANSI SQL completas** con DuckDB, permitiendo referenciar tablas mediante la **tríada canónica** `"catalogo:dataset:resource"`.
+
+El motor normaliza la heterogeneidad de formatos sobre la marcha: convierte automáticamente archivos CSV, TSV, Parquet y JSON en representaciones columnares en memoria, haciendo posible ejecutar agregaciones, funciones de ventana y **JOINs cruzados entre formatos distintos**.
+
+```bash
+# Agregación sobre un solo dataset (CSV)
+python3 -m datamesh.cli sql "
+SELECT departamento, SUM(votos_validos) as total_votos
+FROM 'bolivia:elecciones:votos'
+GROUP BY departamento
+ORDER BY total_votos DESC"
+
+# JOIN cruzado entre dos datasets en formatos distintos (CSV + Parquet)
+python3 -m datamesh.cli sql "
+SELECT 
+    e.departamento,
+    SUM(e.votos_validos) as votos_totales,
+    p.presupuesto,
+    p.sector
+FROM 'bolivia:elecciones:votos' e
+JOIN 'municipal:presupuesto:ejecucion' p ON e.departamento = p.municipio
+GROUP BY e.departamento, p.presupuesto, p.sector
+ORDER BY votos_totales DESC"
+```
+
 **Salida (JSON):**
 ```json
 {
-  "columns": ["año", "departamento", "circunscripcion", "partido", "votos_validos"],
-  "rows": [
-    ["2020", "La Paz", "C-1", "MAS", "45200"],
-    ["2020", "La Paz", "C-1", "CC", "32100"]
+  "columns": [
+    "departamento",
+    "votos_totales",
+    "presupuesto",
+    "sector"
   ],
-  "row_count": 2
+  "rows": [
+    ["La Paz", 77300, 1500000.0, "Salud"],
+    ["Santa Cruz", 72000, 2200000.0, "Educacion"],
+    ["Cochabamba", 67000, 1800000.0, "Infraestructura"]
+  ],
+  "row_count": 3
 }
 ```
 
 ---
 
-### 1.5 `config`
+### 1.6 `config`
 Imprime la configuración activa resultante de la fusión de valores por defecto, archivos `datamesh.json` / `datamesh.yaml` y variables de entorno `DATAMESH_*`.
 
 ```bash
@@ -133,8 +167,8 @@ datamesh config
 
 ---
 
-### 1.6 `mcp-serve` (Python CLI)
-Inicia el servidor Model Context Protocol (MCP) estándar sobre entrada/salida estándar (`stdio`). Permite a agentes de IA (Claude Desktop, Cursor, Antigravity, cline, etc.) ejecutar herramientas de descubrimiento y consulta directamente.
+### 1.7 `mcp-serve` (Python CLI)
+Inicia el servidor Model Context Protocol (MCP) estándar sobre entrada/salida estándar (`stdio`). Permite a agentes de IA (Claude Desktop, Cursor, Antigravity, cline, etc.) ejecutar herramientas de descubrimiento, consulta tabular y SQL analítico directamente.
 
 ```bash
 python3 -m datamesh.cli mcp-serve

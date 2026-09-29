@@ -22,6 +22,7 @@ type DataProductServicePort interface {
 // QueryServicePort defines inbound operations for executing queries against data resources.
 type QueryServicePort interface {
 	Query(ctx context.Context, req domain.QueryRequest) (*domain.QueryResult, error)
+	ExecuteSQL(ctx context.Context, sqlQuery string) (*domain.QueryResult, error)
 }
 
 // ConfigServicePort defines inbound operations for obtaining active configuration settings.

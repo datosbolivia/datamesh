@@ -29,7 +29,17 @@ def query(
     filters: Optional[Dict[str, str]] = None,
     limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Execute tabular query with optional filters and limits."""
+    """Execute simple tabular query with optional filters and limits."""
     return _runtime.query(resource_uri, filters=filters, limit=limit)
 
-__all__ = ["discover", "search", "get", "query", "DataMeshRuntime"]
+def sql(
+    query_str: str,
+    table_mapping: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """
+    Execute full ANSI/DuckDB SQL with canonical triad table names 'catalogo:dataset:resource'.
+    Normalizes heterogeneous formats (CSV, TSV, Parquet, JSON) into high-performance columnar execution.
+    """
+    return _runtime.sql(query_str, table_mapping=table_mapping)
+
+__all__ = ["discover", "search", "get", "query", "sql", "DataMeshRuntime"]

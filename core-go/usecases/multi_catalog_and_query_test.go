@@ -54,7 +54,20 @@ func TestQueryEngineExecution(t *testing.T) {
 	csvPath, _ := filepath.Abs("../testdata/mock_data_elecciones.csv")
 
 	queryEngine := engine.NewInMemTabularQueryEngine()
-	queryUC := NewQueryDataProductUseCase(queryEngine, nil)
+	queryUC := NewQueryDataProductUseCase(queryEngine, nil, nil)
+
+	// Test SQL Triad Extraction
+	sqlSample := `SELECT departamento, SUM(votos_validos) FROM "bolivia:elecciones:votos_2020" JOIN 'municipal:presupuesto:gastos' GROUP BY departamento`
+	triads := domain.ExtractTriadsFromSQL(sqlSample)
+	if len(triads) != 2 {
+		t.Fatalf("expected 2 extracted triads, got %d", len(triads))
+	}
+	if triads[0].String() != "bolivia:elecciones:votos_2020" {
+		t.Errorf("triad 0 mismatch: %s", triads[0].String())
+	}
+	if triads[1].String() != "municipal:presupuesto:gastos" {
+		t.Errorf("triad 1 mismatch: %s", triads[1].String())
+	}
 
 	// Query with filter
 	req := domain.QueryRequest{

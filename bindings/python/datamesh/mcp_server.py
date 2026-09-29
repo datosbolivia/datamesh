@@ -77,6 +77,20 @@ TOOLS = [
             },
             "required": ["resource_uri"]
         }
+    },
+    {
+        "name": "datamesh_sql_query",
+        "description": "Executes full ANSI/DuckDB SQL queries with canonical triad table names 'catalogo:dataset:resource' (e.g. SELECT departamento, SUM(votos_validos) as total FROM \"bolivia:elecciones:votos\" GROUP BY departamento). Seamlessly unifies heterogeneous formats (Parquet, CSV, TSV, JSON) in memory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "sql_query": {
+                    "type": "string",
+                    "description": "Full ANSI SQL query referencing tables as 'catalogo:dataset:resource'."
+                }
+            },
+            "required": ["sql_query"]
+        }
     }
 ]
 
@@ -142,6 +156,11 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                 filters = args.get("filters")
                 limit = args.get("limit")
                 data = dm.query(resource_uri, filters=filters, limit=limit)
+                return make_tool_result(msg_id, data)
+
+            elif tool_name == "datamesh_sql_query":
+                sql_query = args.get("sql_query", "")
+                data = dm.sql(sql_query)
                 return make_tool_result(msg_id, data)
 
             else:

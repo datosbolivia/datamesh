@@ -42,7 +42,7 @@ func main() {
 
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
-	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage)
+	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage, nil)
 
 	ctx := context.Background()
 	command := os.Args[1]
@@ -97,6 +97,20 @@ func main() {
 		out, _ := json.MarshalIndent(dp, "", "  ")
 		fmt.Println(string(out))
 
+	case "sql":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "Usage: datamesh sql \"<SELECT ... FROM 'catalogo:dataset:resource'>\"")
+			os.Exit(1)
+		}
+		sqlQuery := os.Args[2]
+		res, err := queryUC.ExecuteSQL(ctx, sqlQuery)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "SQL query failed: %v\n", err)
+			os.Exit(1)
+		}
+		out, _ := json.MarshalIndent(res, "", "  ")
+		fmt.Println(string(out))
+
 	case "query":
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "Usage: datamesh query <resource_uri> [--filter key=val] [--limit N]")
@@ -149,6 +163,7 @@ func printUsage() {
 	fmt.Println("  datamesh catalog [url]                       Discover federated sovereign catalogs")
 	fmt.Println("  datamesh search <keyword> [url]              Search catalog entries across catalogs")
 	fmt.Println("  datamesh get <url_or_path>                   Resolve and validate OKF v0.2 Data Product")
+	fmt.Println("  datamesh sql \"<SQL_QUERY>\"                   Execute full ANSI/DuckDB SQL with triad URIs")
 	fmt.Println("  datamesh query <uri> [--filter k=v] [--limit N] Query tabular resource")
 	fmt.Println("  datamesh config                              Print active merged configuration")
 }

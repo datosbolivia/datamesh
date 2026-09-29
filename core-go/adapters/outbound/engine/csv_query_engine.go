@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -92,4 +93,28 @@ func (e *InMemTabularQueryEngine) Execute(
 
 	elapsed := time.Since(start)
 	return domain.NewQueryResult(headers, matchedRows, elapsed), nil
+}
+
+// ExecuteSQL provides basic SQL execution fallback over resolved CSV/TSV resources in Go Core.
+func (e *InMemTabularQueryEngine) ExecuteSQL(ctx context.Context, req domain.SQLQueryRequest) (*domain.QueryResult, error) {
+	if len(req.ResolvedTables) == 0 {
+		return nil, fmt.Errorf("no tables resolved for SQL query: %s", req.SQLQuery)
+	}
+
+	// For single table queries in Go Core fallback
+	for _, res := range req.ResolvedTables {
+		// Read physical file if local
+		data, err := os.ReadFile(res.PhysicalURI)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read table '%s' at %s: %w", res.Triad.String(), res.PhysicalURI, err)
+		}
+
+		queryReq := domain.QueryRequest{
+			ResourceURI: res.PhysicalURI,
+			Query:       req.SQLQuery,
+		}
+		return e.Execute(ctx, queryReq, data, res.Format)
+	}
+
+	return nil, fmt.Errorf("unsupported multi-table query in pure Go fallback (use DuckDB engine)")
 }

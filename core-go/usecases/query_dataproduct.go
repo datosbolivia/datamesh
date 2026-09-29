@@ -13,23 +13,58 @@ import (
 	"github.com/datosbolivia/datamesh-sdk/core-go/ports/outbound"
 )
 
-// QueryDataProductUseCase orchestrates fetching resource data and executing tabular queries.
+// QueryDataProductUseCase orchestrates fetching resource data and executing tabular and SQL queries.
 type QueryDataProductUseCase struct {
-	engine     outbound.QueryEnginePort
-	storage    outbound.StoragePort
-	httpClient *http.Client
+	engine        outbound.QueryEnginePort
+	storage       outbound.StoragePort
+	triadResolver outbound.TriadResolverPort
+	httpClient    *http.Client
 }
 
 // NewQueryDataProductUseCase initializes the query use case.
 func NewQueryDataProductUseCase(
 	engine outbound.QueryEnginePort,
 	storage outbound.StoragePort,
+	triadResolver outbound.TriadResolverPort,
 ) *QueryDataProductUseCase {
 	return &QueryDataProductUseCase{
-		engine:     engine,
-		storage:    storage,
-		httpClient: &http.Client{},
+		engine:        engine,
+		storage:       storage,
+		triadResolver: triadResolver,
+		httpClient:    &http.Client{},
 	}
+}
+
+// ExecuteSQL parses canonical triads from a SQL statement, resolves physical paths, and delegates to the query engine.
+func (uc *QueryDataProductUseCase) ExecuteSQL(ctx context.Context, sqlQuery string) (*domain.QueryResult, error) {
+	triads := domain.ExtractTriadsFromSQL(sqlQuery)
+	resolvedMap := make(map[string]domain.ResolvedResource)
+
+	for _, t := range triads {
+		key := t.String()
+		if uc.triadResolver != nil {
+			res, err := uc.triadResolver.ResolveTriad(ctx, t)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve triad '%s': %w", key, err)
+			}
+			resolvedMap[key] = *res
+		} else {
+			// Fallback: assume local or direct
+			resolvedMap[key] = domain.ResolvedResource{
+				Triad:       t,
+				PhysicalURI: t.Resource,
+				Format:      "csv",
+			}
+		}
+	}
+
+	req := domain.SQLQueryRequest{
+		SQLQuery:       sqlQuery,
+		Triads:         triads,
+		ResolvedTables: resolvedMap,
+	}
+
+	return uc.engine.ExecuteSQL(ctx, req)
 }
 
 // Query executes a tabular query against a target resource URI.

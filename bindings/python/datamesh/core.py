@@ -8,12 +8,14 @@ import re
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
+from datamesh.duckdb_engine import DuckDBQueryEngine
 
 class DataMeshRuntime:
-    """Python runtime providing local fallback and ctypes bridge to Go core."""
+    """Python runtime providing local fallback, ctypes bridge to Go core, and DuckDB SQL engine."""
 
     def __init__(self, lib_path: Optional[str] = None):
         self._lib = None
+        self._duckdb_engine = DuckDBQueryEngine(catalog_resolver=self._resolve_triad_to_path)
         target_path = lib_path or os.environ.get("DATAMESH_LIB_PATH", "libdatamesh.so")
         if os.path.exists(target_path):
             try:
@@ -219,3 +221,39 @@ class DataMeshRuntime:
             "rows": matched_rows,
             "row_count": len(matched_rows),
         }
+
+    def sql(self, sql_query: str, table_mapping: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Executes full ANSI/DuckDB SQL with canonical triad table names 'catalogo:dataset:resource'."""
+        return self._duckdb_engine.execute_sql(sql_query, table_mapping=table_mapping)
+
+    def _resolve_triad_to_path(self, catalog: str, dataset: str, resource: str) -> Optional[str]:
+        """Resolves canonical triad 'catalogo:dataset:resource' to concrete physical file or URL."""
+        # 1. Check local testdata or relative directory directly
+        possible_paths = [
+            f"core-go/testdata/{resource}.csv",
+            f"core-go/testdata/{resource}.parquet",
+            f"core-go/testdata/{resource}.json",
+            f"core-go/testdata/mock_data_{dataset}.csv",
+            f"{resource}",
+            f"{resource}.csv",
+            f"{resource}.parquet",
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                return os.path.abspath(p)
+
+        # 2. Search catalog entries for dataset
+        try:
+            cat = self.discover()
+            for entry in cat.get("entries", []):
+                uri = entry.get("uri", "")
+                title = entry.get("title", "").lower()
+                if dataset.lower() in uri.lower() or dataset.lower() in title:
+                    # In real catalog, resource would be inside dataset manifest contracts
+                    # Fallback to resolved url base + resource name
+                    base = entry.get("resolved_url", "").rsplit("/", 1)[0]
+                    return f"{base}/{resource}.csv"
+        except Exception:
+            pass
+
+        return None

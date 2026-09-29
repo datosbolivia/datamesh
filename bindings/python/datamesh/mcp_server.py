@@ -94,6 +94,41 @@ TOOLS = [
     }
 ]
 
+GUARDRAILS_INSTRUCTIONS = (
+    "DataMesh Sovereign Agent Guardrails:\n"
+    "1. STRICT GROUNDEDNESS: You must answer questions using exclusively the data returned by datamesh tools. "
+    "Never invent, guess, or extrapolate figures, dates, column names, or table rows.\n"
+    "2. MANDATORY CITATION: Always cite the canonical triad 'catalogo:dataset:resource' (e.g. 'air_quality:Compilación de datos de calidad del aire de Bolivia').\n"
+    "3. NULL TRANSPARENCY: If a query returns 0 rows or null values, explicitly tell the user that no matching records exist. Do NOT generate mock or speculative answers.\n"
+    "4. SCHEMA VERIFICATION: Before complex SQL, verify column names using datamesh_get_dataproduct or LIMIT 1 queries.\n"
+    "5. FACT VS HYPOTHESIS: Clearly separate verified database rows from external hypotheses or interpretations."
+)
+
+PROMPTS = [
+    {
+        "name": "grounded_sql_analysis",
+        "description": "Formulates and executes a verified, non-hallucinated SQL analysis against sovereign datasets with strict provenance citations.",
+        "arguments": [
+            {
+                "name": "user_question",
+                "description": "Natural language analytical question about sovereign datasets.",
+                "required": True
+            }
+        ]
+    },
+    {
+        "name": "dataset_provenance_audit",
+        "description": "Inspects dataset schemas, contracts, dimensions, and null ratios ensuring complete factual grounding.",
+        "arguments": [
+            {
+                "name": "dataset_uri",
+                "description": "Dataset node URI or table triad to audit.",
+                "required": True
+            }
+        ]
+    }
+]
+
 def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
     msg_id = request.get("id")
     method = request.get("method")
@@ -106,11 +141,13 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {}
+                    "tools": {},
+                    "prompts": {}
                 },
                 "serverInfo": {
                     "name": SERVER_NAME,
-                    "version": SERVER_VERSION
+                    "version": SERVER_VERSION,
+                    "instructions": GUARDRAILS_INSTRUCTIONS
                 }
             }
         }
@@ -120,6 +157,67 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
 
     if method == "ping":
         return {"jsonrpc": "2.0", "id": msg_id, "result": {}}
+
+    if method == "prompts/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "prompts": PROMPTS
+            }
+        }
+
+    if method == "prompts/get":
+        prompt_name = params.get("name")
+        args = params.get("arguments", {})
+        if prompt_name == "grounded_sql_analysis":
+            q = args.get("user_question", "")
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "description": "Strictly grounded SQL query workflow",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": {
+                                "type": "text",
+                                "text": (
+                                    f"Analyze the following question: '{q}'.\n"
+                                    "STRICT GUARDRAILS:\n"
+                                    "1. First call datamesh_search_catalog or datamesh_get_dataproduct to confirm table and column names.\n"
+                                    "2. Run datamesh_sql_query with precise SQL.\n"
+                                    "3. Base your final response ONLY on the rows returned. Cite the dataset triad. Never hallucinate numbers."
+                                )
+                            }
+                        }
+                    ]
+                }
+            }
+        elif prompt_name == "dataset_provenance_audit":
+            ds = args.get("dataset_uri", "")
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "description": "Audit dataset conformance and structure",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": {
+                                "type": "text",
+                                "text": f"Audit dataset '{ds}' using datamesh_get_dataproduct and datamesh_sql_query. Verify dimensions, column types, row counts, and null presence without assumptions."
+                            }
+                        }
+                    ]
+                }
+            }
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"Prompt not found: {prompt_name}"}
+            }
 
     if method == "tools/list":
         return {

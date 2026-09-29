@@ -52,3 +52,34 @@ def test_mcp_tool_call_query():
     content = json.loads(resp["result"]["content"][0]["text"])
     assert content["row_count"] == 2
     assert content["rows"][0][1] == "Santa Cruz"
+
+def test_mcp_guardrails_instructions_and_prompts():
+    # 1. Verify instructions in initialize
+    init_req = {"jsonrpc": "2.0", "id": 4, "method": "initialize", "params": {}}
+    init_resp = handle_jsonrpc(init_req)
+    instructions = init_resp["result"]["serverInfo"]["instructions"]
+    assert "STRICT GROUNDEDNESS" in instructions
+    assert "MANDATORY CITATION" in instructions
+    assert "NULL TRANSPARENCY" in instructions
+
+    # 2. Verify prompts/list
+    p_req = {"jsonrpc": "2.0", "id": 5, "method": "prompts/list", "params": {}}
+    p_resp = handle_jsonrpc(p_req)
+    prompt_names = [p["name"] for p in p_resp["result"]["prompts"]]
+    assert "grounded_sql_analysis" in prompt_names
+    assert "dataset_provenance_audit" in prompt_names
+
+    # 3. Verify prompts/get
+    get_req = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "prompts/get",
+        "params": {
+            "name": "grounded_sql_analysis",
+            "arguments": {"user_question": "What was the highest ICA in 2024?"}
+        }
+    }
+    get_resp = handle_jsonrpc(get_req)
+    msg_text = get_resp["result"]["messages"][0]["content"]["text"]
+    assert "STRICT GUARDRAILS" in msg_text
+    assert "Never hallucinate numbers" in msg_text

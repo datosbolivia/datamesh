@@ -37,7 +37,28 @@ Permite que cualquier agente o asistente de IA descubra, inspeccione y consulte 
 
 ---
 
-## 3. Ejemplo de Ciclo de Interacción JSON-RPC
+## 3. Guardrails Antialucinación Embebidos
+
+El servidor MCP inyecta instrucciones normativas en el mensaje de inicialización (`initialize`) para forzar al agente a seguir 5 guardrails inquebrantables:
+
+1. **Fundamentación Estricta:** Responder únicamente con los datos contenidos en el campo `rows` o `data` del resultado de la herramienta. Jamás inventar números, fechas o columnas.
+2. **Cita Obligatoria de Procedencia:** Citar la tríada canónica (`catalogo:dataset:resource`).
+3. **Transparencia ante Nulos:** Si una consulta devuelve 0 filas o `NULL`, declarar explícitamente que no se encontraron registros coincidentes. No generar datos ficticios.
+4. **Verificación de Esquema:** Comprobar nombres de columnas con `datamesh_get_dataproduct` o `LIMIT 1` antes de construir consultas complejas.
+5. **Separación de Hechos vs. Hipótesis:** Distinguir claramente los datos cuantitativos obtenidos de las interpretaciones subjetivas.
+
+---
+
+## 4. Plantillas de Prompts para Agentes (`prompts`)
+
+El servidor expone prompts preconfigurados para guiar al modelo:
+
+- **`grounded_sql_analysis`**: Exige al agente verificar el esquema antes de ejecutar el SQL y basar su conclusión estrictamente en los registros obtenidos.
+- **`dataset_provenance_audit`**: Realiza una auditoría de integridad, contratos sintácticos, dimensiones y presencia de valores nulos.
+
+---
+
+## 5. Ejemplo de Ciclo de Interacción JSON-RPC
 
 ### 3.1 Inicialización:
 ```json

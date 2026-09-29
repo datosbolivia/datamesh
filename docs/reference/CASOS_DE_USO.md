@@ -43,3 +43,48 @@
   2. Determina el formato tabular (CSV o TSV).
   3. Ejecuta proyecciones y filtros de igualdad sobre las columnas especificadas.
   4. Retorna el resultado estructurado `domain.QueryResult` con columnas, filas y métricas de tiempo de ejecución.
+
+## CU-06: Ejecución SQL ANSI/DuckDB con Resolución de Tríadas y Heterogeneidad (`DuckDBSQLQueryUseCase`)
+- **Actor:** Consumidor de datos, analista, agente LLM (vía MCP `datamesh_sql_query`) o CLI (`datamesh sql`).
+- **Entrada:** `sql_query` ANSI/DuckDB SQL (ej. `SELECT * FROM 'p2p-bob-exchange:advertiser' LIMIT 25` o `FROM "air_quality:Compilación de datos de calidad del aire de Bolivia"`), `table_mapping` opcional.
+- **Comportamiento:**
+  1. Extrae referencias de tablas y tríadas canónicas (`catalogo:dataset:resource` o `dataset:resource`).
+  2. Resuelve cada tríada contra manifiestos locales `datapackage.{yaml,yml,json}` en `knowledge/nodes/`, proyectos locales en el workspace (`DATAMESH_PROJECTS_DIR`) o catálogos federados HTTP (`llms.txt`).
+  3. Soporta normalización transparente de heterogeneidad de formatos (Parquet, CSV, TSV, JSON, JSONL) y extensiones remotas (`httpfs` con normalización a `raw.githubusercontent.com`).
+  4. Registra vistas virtuales con alias canónicos y slugificados (`slugify`).
+  5. Ejecuta la consulta SQL, normaliza tipos complejos (`Decimal`, fechas, UUIDs) a primitivas serializables en JSON, y retorna columnas, filas y conteo.
+  6. Si una tabla no existe o es inalcanzable, genera un error descriptivo y explícito sin fallar con errores crípticos de DuckDB.
+
+## CU-07: Gestión de Almacenamiento Temporal y Caché (`ManageStorageUseCase`)
+- **Actor:** Motor analítico DuckDB, script de mantenimiento, o usuario final vía SDK (`datamesh.storage`).
+- **Entrada:** Llave o URI de recurso, stream o bytes de datos, extensión de formato opcional, TTL o expiración.
+- **Comportamiento:**
+  1. Administra el directorio genérico `~/datamesh/` y la caché local `~/datamesh/cache/`.
+  2. Registra y verifica la presencia en caché (`is_cached`) mediante hash SHA-256 de la URI.
+  3. Realiza escrituras seguras y atómicas a disco previniendo descargas corruptas o truncadas.
+  4. Mantiene el índice `metadata.json` con tamaño, checksum SHA-256, timestamps UTC, ETag y servicio origen.
+  5. Permite desalojo selectivo (`evict`) o purga total/por antigüedad (`clear`).
+
+## CU-08: Descarga y Resolución Adaptativa Multiproveedor (`ResolveAndCacheResourceUseCase`)
+- **Actor:** Adaptador `DuckDBQueryEngine` o consumidor del SDK.
+- **Entrada:** URI del recurso, URL remota o referencia de tríada `dataset:resource`.
+- **Comportamiento:**
+  1. Verifica si el recurso ya reside en la caché temporal `~/datamesh/cache`. Si existe, lo retorna de inmediato sin consultar la red.
+  2. Si no está en caché, consulta los adaptadores de servicio en orden de precedencia:
+     - `LocalFileAdapter`: Archivos directos del filesystem o repositorios locales en el workspace del usuario.
+     - `GitHubAdapter`: Descarga y normaliza URLs a `raw.githubusercontent.com`.
+     - `KaggleAdapter`: Descarga mediante API oficial de Kaggle (`~/.kaggle/kaggle.json`) o recupera copias locales consolidadas.
+     - `HttpAdapter`: Streaming directo de endpoints web y exportaciones tabulares (Google Sheets).
+  3. Almacena el recurso en `~/datamesh/cache/` con su formato inferido.
+  4. Retorna el objeto `ResolvedResource` con la ruta física local para su escaneo directo por DuckDB.
+
+## CU-09: Selección y Ejecución Polimórfica de Motor de Consultas (`ExecuteQueryEngineUseCase`)
+- **Actor:** Usuario final vía SDK (`datamesh.sql(..., engine=...)`), CLI (`datamesh sql --engine ...`), o Agente IA.
+- **Entrada:** Sentencia SQL estándar, mapeo opcional de tablas y nombre del motor objetivo (`duckdb`, `inmem`, `go`).
+- **Comportamiento:**
+  1. Valida el motor especificado contra el registro polimórfico (`QueryEnginePort`).
+  2. Si se selecciona `duckdb`: aprovecha el motor OLAP columnar en memoria con joins multi-tabla y soporte para Parquet/CSV/JSON/TSV.
+  3. Si se selecciona `inmem`: ejecuta proyección de columnas, filtros de igualdad y límites en Python/Go puro sin dependencias nativas externas.
+  4. Si se selecciona `go`: delega la ejecución al núcleo canónico de Go (`core-go/`) mediante la interfaz C-ABI (`DataMeshExecuteSQL`).
+  5. Retorna el resultado uniforme estructurado con `columns`, `rows` y `row_count`.
+

@@ -127,3 +127,25 @@ def test_user_join_query_with_decimal_json_serializable():
     assert parsed["rows"][0][0] == "La Paz"
     assert parsed["rows"][0][1] == 77300
     assert parsed["rows"][0][2] == 1500000
+
+def test_p2p_bob_exchange_query():
+    # Single-quoted table reference
+    q1 = "SELECT advertiser_usertype, timestamp FROM 'p2p-bob-exchange:advertiser' LIMIT 5"
+    r1 = dm.sql(q1)
+    assert r1["row_count"] == 5
+    assert "advertiser_usertype" in r1["columns"]
+
+    # Double-quoted table reference
+    q2 = 'SELECT advertiser_usertype, timestamp FROM "p2p-bob-exchange:advertiser" LIMIT 5'
+    r2 = dm.sql(q2)
+    assert r2["row_count"] == 5
+
+def test_air_quality_single_quoted_query():
+    q = "SELECT lugar_nombre, valor_ica FROM 'air_quality:Compilación de datos de calidad del aire de Bolivia' LIMIT 5"
+    r = dm.sql(q)
+    assert r["row_count"] == 5
+    assert "lugar_nombre" in r["columns"]
+
+def test_unresolvable_table_raises_descriptive_error():
+    with pytest.raises(RuntimeError, match="Could not resolve table reference"):
+        dm.sql("SELECT * FROM 'non_existent_dataset:missing_resource' LIMIT 1")

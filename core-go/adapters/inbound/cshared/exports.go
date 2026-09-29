@@ -7,11 +7,13 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"unsafe"
 
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/config"
+	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/engine"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/resolvers"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/storage"
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
@@ -23,6 +25,8 @@ var (
 	activeConfig  domain.Config
 	catalogUC     *usecases.DiscoverCatalogUseCase
 	dataProductUC *usecases.ResolveDataProductUseCase
+	queryUC       *usecases.QueryDataProductUseCase
+	inmemEngine   *engine.InMemTabularQueryEngine
 )
 
 func initRuntime(configJSON string) error {
@@ -69,6 +73,8 @@ func initRuntime(configJSON string) error {
 
 	catalogUC = usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC = usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
+	inmemEngine = engine.NewInMemTabularQueryEngine()
+	queryUC = usecases.NewQueryDataProductUseCase(inmemEngine, fileStorage, nil)
 	return nil
 }
 
@@ -111,6 +117,26 @@ func DataMeshResolveDataProduct(uri *C.char) *C.char {
 
 	dp, err := dataProductUC.Resolve(context.Background(), C.GoString(uri))
 	return makeJSONResponse(dp, err)
+}
+
+//export DataMeshExecuteSQL
+func DataMeshExecuteSQL(sqlQuery *C.char, optionsJSON *C.char) *C.char {
+	ensureInit()
+	if sqlQuery == nil {
+		return makeJSONResponse(nil, errors.New("empty SQL query"))
+	}
+	queryStr := C.GoString(sqlQuery)
+
+	var opts domain.QueryOptions
+	if optionsJSON != nil {
+		optsStr := C.GoString(optionsJSON)
+		if strings.TrimSpace(optsStr) != "" {
+			_ = json.Unmarshal([]byte(optsStr), &opts)
+		}
+	}
+
+	res, err := queryUC.ExecuteSQLWithOptions(context.Background(), queryStr, opts)
+	return makeJSONResponse(res, err)
 }
 
 //export DataMeshFreeString

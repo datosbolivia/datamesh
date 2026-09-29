@@ -21,6 +21,23 @@ func NewInMemTabularQueryEngine() *InMemTabularQueryEngine {
 	return &InMemTabularQueryEngine{}
 }
 
+func (e *InMemTabularQueryEngine) Name() string {
+	return "inmem"
+}
+
+func (e *InMemTabularQueryEngine) SupportsFormat(format string) bool {
+	f := strings.ToLower(strings.TrimSpace(format))
+	return f == "csv" || f == "tsv" || f == "txt"
+}
+
+func (e *InMemTabularQueryEngine) SupportsCrossFormatJoin() bool {
+	return false
+}
+
+func (e *InMemTabularQueryEngine) RegisterTable(ctx context.Context, table domain.TableBinding) error {
+	return nil
+}
+
 // Execute parses raw delimited data, applies column selection, filters, and limits.
 func (e *InMemTabularQueryEngine) Execute(
 	ctx context.Context,
@@ -97,11 +114,11 @@ func (e *InMemTabularQueryEngine) Execute(
 
 // ExecuteSQL provides basic SQL execution fallback over resolved CSV/TSV resources in Go Core.
 func (e *InMemTabularQueryEngine) ExecuteSQL(ctx context.Context, req domain.SQLQueryRequest) (*domain.QueryResult, error) {
-	if len(req.ResolvedTables) == 0 {
+	if len(req.ResolvedTables) == 0 && len(req.Bindings) == 0 {
 		return nil, fmt.Errorf("no tables resolved for SQL query: %s", req.SQLQuery)
 	}
 
-	// For single table queries in Go Core fallback
+	// 1. For single table queries from resolved triads in Go Core fallback
 	for _, res := range req.ResolvedTables {
 		// Read physical file if local
 		data, err := os.ReadFile(res.PhysicalURI)
@@ -114,6 +131,20 @@ func (e *InMemTabularQueryEngine) ExecuteSQL(ctx context.Context, req domain.SQL
 			Query:       req.SQLQuery,
 		}
 		return e.Execute(ctx, queryReq, data, res.Format)
+	}
+
+	// 2. For single table queries from explicit bindings
+	for _, b := range req.Bindings {
+		data, err := os.ReadFile(b.PhysicalPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read table '%s' at %s: %w", b.Name, b.PhysicalPath, err)
+		}
+
+		queryReq := domain.QueryRequest{
+			ResourceURI: b.PhysicalPath,
+			Query:       req.SQLQuery,
+		}
+		return e.Execute(ctx, queryReq, data, b.Format)
 	}
 
 	return nil, fmt.Errorf("unsupported multi-table query in pure Go fallback (use DuckDB engine)")

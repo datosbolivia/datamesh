@@ -37,23 +37,64 @@ func NewQueryDataProductUseCase(
 
 // ExecuteSQL parses canonical triads from a SQL statement, resolves physical paths, and delegates to the query engine.
 func (uc *QueryDataProductUseCase) ExecuteSQL(ctx context.Context, sqlQuery string) (*domain.QueryResult, error) {
+	return uc.ExecuteSQLWithOptions(ctx, sqlQuery, domain.QueryOptions{})
+}
+
+// ExecuteSQLWithOptions executes a SQL query with explicit options (engine choice, table overrides, timeouts).
+func (uc *QueryDataProductUseCase) ExecuteSQLWithOptions(
+	ctx context.Context,
+	sqlQuery string,
+	opts domain.QueryOptions,
+) (*domain.QueryResult, error) {
 	triads := domain.ExtractTriadsFromSQL(sqlQuery)
 	resolvedMap := make(map[string]domain.ResolvedResource)
+	bindings := make(map[string]domain.TableBinding)
 
+	// 1. Apply custom table mappings from options
+	for name, path := range opts.TableMapping {
+		format := "csv"
+		lower := strings.ToLower(path)
+		if strings.HasSuffix(lower, ".parquet") || strings.HasSuffix(lower, ".pq") {
+			format = "parquet"
+		} else if strings.HasSuffix(lower, ".json") || strings.HasSuffix(lower, ".jsonl") {
+			format = "json"
+		} else if strings.HasSuffix(lower, ".tsv") {
+			format = "tsv"
+		}
+		bindings[name] = domain.TableBinding{
+			Name:         name,
+			PhysicalPath: path,
+			Format:       format,
+		}
+	}
+
+	// 2. Resolve triads referenced in query
 	for _, t := range triads {
 		key := t.String()
+		if _, exists := bindings[key]; exists {
+			continue
+		}
 		if uc.triadResolver != nil {
 			res, err := uc.triadResolver.ResolveTriad(ctx, t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve triad '%s': %w", key, err)
 			}
 			resolvedMap[key] = *res
+			bindings[key] = domain.TableBinding{
+				Name:         key,
+				PhysicalPath: res.PhysicalURI,
+				Format:       res.Format,
+			}
 		} else {
-			// Fallback: assume local or direct
 			resolvedMap[key] = domain.ResolvedResource{
 				Triad:       t,
 				PhysicalURI: t.Resource,
 				Format:      "csv",
+			}
+			bindings[key] = domain.TableBinding{
+				Name:         key,
+				PhysicalPath: t.Resource,
+				Format:       "csv",
 			}
 		}
 	}
@@ -62,6 +103,8 @@ func (uc *QueryDataProductUseCase) ExecuteSQL(ctx context.Context, sqlQuery stri
 		SQLQuery:       sqlQuery,
 		Triads:         triads,
 		ResolvedTables: resolvedMap,
+		Bindings:       bindings,
+		Options:        opts,
 	}
 
 	return uc.engine.ExecuteSQL(ctx, req)

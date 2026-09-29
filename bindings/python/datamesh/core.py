@@ -7,15 +7,46 @@ import os
 import re
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, List, Optional
-from datamesh.duckdb_engine import DuckDBQueryEngine
+from typing import Any, Dict, List, Optional, Tuple
+try:
+    import yaml
+except ImportError:
+    yaml = None
+from datamesh.constants import DEFAULT_CACHE_DIR, DEFAULT_DATAMESH_HOME, get_workspace_search_dirs
+from datamesh.domain.models import StorageConfig
+from datamesh.ports.storage import StoragePort
+from datamesh.ports.resolver import ConfigPort, ResourceAdapterPort
+from datamesh.ports.engine import QueryEnginePort
+from datamesh.adapters.storage.local_storage import LocalStorageManager
+from datamesh.adapters.config.file_config import FileConfigAdapter
+from datamesh.adapters.resolvers.local_file import LocalFileAdapter
+from datamesh.adapters.resolvers.github import GitHubAdapter
+from datamesh.adapters.resolvers.kaggle import KaggleAdapter
+from datamesh.adapters.resolvers.http import HttpAdapter
+from datamesh.adapters.engine.duckdb_engine import DuckDBQueryEngine, slugify
+from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
+from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
+from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
 
 class DataMeshRuntime:
-    """Python runtime providing local fallback, ctypes bridge to Go core, and DuckDB SQL engine."""
+    """Python runtime providing local fallback, ctypes bridge to Go core, and abstract SQL engines."""
 
     def __init__(self, lib_path: Optional[str] = None):
         self._lib = None
-        self._duckdb_engine = DuckDBQueryEngine(catalog_resolver=self._resolve_triad_to_path)
+        self._storage = LocalStorageManager(StorageConfig.default())
+        self._config_adapter = FileConfigAdapter(self._storage.config.config_file)
+        self._resolvers: List[ResourceAdapterPort] = [
+            LocalFileAdapter(),
+            GitHubAdapter(),
+            KaggleAdapter(),
+            HttpAdapter(),
+        ]
+        self._resolver_usecase = ResolveAndCacheResourceUseCase(
+            storage=self._storage,
+            resolvers=self._resolvers,
+            catalog_discovery_fn=self.discover,
+        )
+
         target_path = lib_path or os.environ.get("DATAMESH_LIB_PATH", "libdatamesh.so")
         if os.path.exists(target_path):
             try:
@@ -27,11 +58,71 @@ class DataMeshRuntime:
                 self._lib.DataMeshDiscoverCatalog.restype = ctypes.c_char_p
                 self._lib.DataMeshResolveDataProduct.argtypes = [ctypes.c_char_p]
                 self._lib.DataMeshResolveDataProduct.restype = ctypes.c_char_p
+                if hasattr(self._lib, "DataMeshExecuteSQL"):
+                    self._lib.DataMeshExecuteSQL.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+                    self._lib.DataMeshExecuteSQL.restype = ctypes.c_char_p
                 self._lib.DataMeshFreeString.argtypes = [ctypes.c_char_p]
                 self._lib.DataMeshFreeString.restype = None
                 self._lib.DataMeshInit(None)
             except Exception:
                 self._lib = None
+
+        self._duckdb_engine = DuckDBQueryEngine(
+            catalog_resolver=self._resolve_triad_to_path,
+            resolver_usecase=self._resolver_usecase,
+            storage=self._storage,
+        )
+        self._inmem_engine = InMemTabularQueryEngine(
+            catalog_resolver=self._resolve_triad_to_path,
+            resolver_usecase=self._resolver_usecase,
+        )
+        self._go_engine = GoCoreQueryEngine(lib_handle=self._lib)
+
+        self._engines: Dict[str, QueryEnginePort] = {
+            "duckdb": self._duckdb_engine,
+            "inmem": self._inmem_engine,
+            "go": self._go_engine,
+        }
+
+    @property
+    def storage(self) -> StoragePort:
+        """Temporal and persistent storage manager for ~/datamesh/cache."""
+        return self._storage
+
+    @property
+    def config_adapter(self) -> ConfigPort:
+        """Configuration manager for ~/datamesh/config.yaml."""
+        return self._config_adapter
+
+    @property
+    def resolver_usecase(self) -> ResolveAndCacheResourceUseCase:
+        """Resource resolution and caching orchestration use case."""
+        return self._resolver_usecase
+
+    @property
+    def duckdb_engine(self) -> DuckDBQueryEngine:
+        return self._duckdb_engine
+
+    @property
+    def inmem_engine(self) -> InMemTabularQueryEngine:
+        return self._inmem_engine
+
+    @property
+    def go_engine(self) -> GoCoreQueryEngine:
+        return self._go_engine
+
+    def get_engine(self, engine_name: Optional[str] = None) -> QueryEnginePort:
+        """Retrieves a configured query engine by name ('duckdb', 'inmem', 'go')."""
+        if not engine_name or engine_name.lower() in ("auto", "default"):
+            return self._duckdb_engine
+        key = engine_name.lower().strip()
+        if key not in self._engines:
+            raise ValueError(f"Unknown query engine '{engine_name}'. Available: {list(self._engines.keys())}")
+        return self._engines[key]
+
+    def register_engine(self, engine: QueryEnginePort) -> None:
+        """Registers a custom or specialized query engine."""
+        self._engines[engine.name.lower()] = engine
 
     def get_catalog_urls(self) -> List[str]:
         env_catalogs = os.environ.get("DATAMESH_CATALOGS") or os.environ.get("DATAMESH_CATALOG_URLS")
@@ -222,9 +313,90 @@ class DataMeshRuntime:
             "row_count": len(matched_rows),
         }
 
-    def sql(self, sql_query: str, table_mapping: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """Executes full ANSI/DuckDB SQL with canonical triad table names 'catalogo:dataset:resource'."""
-        return self._duckdb_engine.execute_sql(sql_query, table_mapping=table_mapping)
+    def sql(
+        self,
+        sql_query: str,
+        table_mapping: Optional[Dict[str, str]] = None,
+        engine: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Executes full ANSI SQL with canonical triad table names 'catalogo:dataset:resource'
+        using the selected query engine (default: DuckDB, or 'inmem', 'go').
+        """
+        query_engine = self.get_engine(engine)
+        return query_engine.execute_sql(sql_query, table_mapping=table_mapping)
+
+    def _find_matching_local_file(self, dataset: str, filename: str) -> Optional[str]:
+        """Finds existing local copy of a dataset file in cache or sibling projects."""
+        names_to_try = [filename]
+        stem, ext = os.path.splitext(filename)
+        if ext.lower() == ".csv":
+            names_to_try.insert(0, f"{stem}.parquet")
+        elif ext.lower() == ".parquet":
+            names_to_try.append(f"{stem}.csv")
+
+        # 1. Cache
+        if os.path.exists(DEFAULT_CACHE_DIR):
+            for n in names_to_try:
+                cp = os.path.join(DEFAULT_CACHE_DIR, n)
+                if os.path.exists(cp):
+                    return os.path.abspath(cp)
+
+    def _find_node_datapackage(self, dataset: str) -> Optional[Tuple[Dict[str, Any], Optional[str]]]:
+        """Finds and parses datapackage manifest locally or from remote catalog."""
+        clean_ds = dataset.strip()
+        candidates = []
+        for env_k in ["DATAMESH_KNOWLEDGE_DIR", "DATAMESH_NODES_DIR", "DATAMESH_CATALOG_DIR"]:
+            env_val = os.environ.get(env_k)
+            if env_val:
+                candidates.append(os.path.join(env_val, clean_ds))
+                candidates.append(os.path.join(env_val, "nodes", clean_ds))
+
+        candidates.extend([
+            f"knowledge/nodes/{clean_ds}",
+            str(DEFAULT_DATAMESH_HOME / "knowledge" / "nodes" / clean_ds),
+            str(DEFAULT_CACHE_DIR / "nodes" / clean_ds),
+        ])
+
+        # 1. Local check
+        for c in candidates:
+            if os.path.isdir(c):
+                for fname in ["datapackage.yaml", "datapackage.yml", "datapackage.json"]:
+                    full_p = os.path.join(c, fname)
+                    if os.path.exists(full_p):
+                        try:
+                            with open(full_p, "r", encoding="utf-8") as f:
+                                if full_p.endswith((".yaml", ".yml")) and yaml:
+                                    return yaml.safe_load(f), os.path.dirname(full_p)
+                                elif full_p.endswith(".json"):
+                                    return json.load(f), os.path.dirname(full_p)
+                        except Exception:
+                            continue
+
+        # 2. Remote check via catalog discovery
+        try:
+            cat = self.discover()
+            for entry in cat.get("entries", []):
+                uri = entry.get("uri", "")
+                resolved_url = entry.get("resolved_url", "")
+                if clean_ds.lower() in uri.lower() or (resolved_url and clean_ds.lower() in resolved_url.lower()):
+                    base_url = resolved_url.rsplit("/", 1)[0]
+                    for fname in ["datapackage.yaml", "datapackage.yml", "datapackage.json"]:
+                        m_url = f"{base_url}/{fname}"
+                        try:
+                            req = urllib.request.Request(m_url, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
+                            with urllib.request.urlopen(req, timeout=3) as resp:
+                                content = resp.read().decode("utf-8")
+                                if fname.endswith((".yaml", ".yml")) and yaml:
+                                    return yaml.safe_load(content), base_url
+                                elif fname.endswith(".json"):
+                                    return json.loads(content), base_url
+                        except Exception:
+                            continue
+        except Exception:
+            pass
+
+        return None
 
     def _resolve_triad_to_path(self, table_ref: str, *args) -> Optional[str]:
         """Resolves table reference ('cat:ds:res', 'ds:res', or slug) to concrete physical file or URL."""
@@ -238,6 +410,49 @@ class DataMeshRuntime:
         else:
             dataset = table_ref.split("_")[0]
             resource = table_ref
+
+        # 1. Direct file path
+        if os.path.exists(table_ref):
+            return os.path.abspath(table_ref)
+
+        # 2. Datapackage manifest lookup
+        pkg_data = self._find_node_datapackage(dataset)
+        if pkg_data:
+            manifest, base_loc = pkg_data
+            res_slug = slugify(resource)
+            for r in manifest.get("resources", []):
+                r_name = str(r.get("name", ""))
+                if (
+                    r_name == resource
+                    or r_name.lower() == resource.lower()
+                    or slugify(r_name) == res_slug
+                    or (res_slug and res_slug in slugify(r_name))
+                ):
+                    target_path = r.get("path")
+                    if not target_path:
+                        continue
+                    if target_path.startswith(("http://", "https://", "ftp://")):
+                        # Check local copy first for performance & offline resilience
+                        base_fname = os.path.basename(urllib.parse.urlparse(target_path).path)
+                        local_match = self._find_matching_local_file(dataset, base_fname)
+                        if local_match:
+                            return local_match
+
+                        # Normalize GitHub URLs to avoid redirects
+                        if "github.com/" in target_path and "/raw/" in target_path:
+                            target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/raw/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
+                        elif "github.com/" in target_path and "/blob/" in target_path:
+                            target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/blob/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
+                        return target_path
+                    else:
+                        if base_loc and not base_loc.startswith(("http://", "https://")):
+                            candidate = os.path.normpath(os.path.join(base_loc, target_path))
+                            if os.path.exists(candidate):
+                                return os.path.abspath(candidate)
+                        if os.path.exists(target_path):
+                            return os.path.abspath(target_path)
+
+        # 3. Testdata and mock fallback
         possible_paths = [
             f"core-go/testdata/{resource}.csv",
             f"core-go/testdata/{resource}.parquet",
@@ -250,19 +465,5 @@ class DataMeshRuntime:
         for p in possible_paths:
             if os.path.exists(p):
                 return os.path.abspath(p)
-
-        # 2. Search catalog entries for dataset
-        try:
-            cat = self.discover()
-            for entry in cat.get("entries", []):
-                uri = entry.get("uri", "")
-                title = entry.get("title", "").lower()
-                if dataset.lower() in uri.lower() or dataset.lower() in title:
-                    # In real catalog, resource would be inside dataset manifest contracts
-                    # Fallback to resolved url base + resource name
-                    base = entry.get("resolved_url", "").rsplit("/", 1)[0]
-                    return f"{base}/{resource}.csv"
-        except Exception:
-            pass
 
         return None

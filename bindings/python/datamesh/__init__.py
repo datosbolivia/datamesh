@@ -35,11 +35,58 @@ def query(
 def sql(
     query_str: str,
     table_mapping: Optional[Dict[str, str]] = None,
+    engine: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Execute full ANSI/DuckDB SQL with canonical triad table names 'catalogo:dataset:resource'.
-    Normalizes heterogeneous formats (CSV, TSV, Parquet, JSON) into high-performance columnar execution.
+    Execute full ANSI SQL with canonical triad table names 'catalogo:dataset:resource'.
+    Normalizes heterogeneous formats (CSV, TSV, Parquet, JSON) into high-performance execution.
+    Optionally select query engine ('duckdb', 'inmem', 'go').
     """
-    return _runtime.sql(query_str, table_mapping=table_mapping)
+    return _runtime.sql(query_str, table_mapping=table_mapping, engine=engine)
 
-__all__ = ["discover", "search", "get", "query", "sql", "DataMeshRuntime"]
+storage = _runtime.storage
+config = _runtime.config_adapter
+
+from datamesh.domain.models import StorageConfig, ResourceDescriptor, ResolvedResource, CacheEntryMetadata
+from datamesh.ports.storage import StoragePort
+from datamesh.ports.resolver import ResourceAdapterPort, ConfigPort
+from datamesh.ports.engine import QueryEnginePort
+from datamesh.adapters.storage.local_storage import LocalStorageManager
+from datamesh.adapters.config.file_config import FileConfigAdapter
+from datamesh.adapters.resolvers.local_file import LocalFileAdapter
+from datamesh.adapters.resolvers.github import GitHubAdapter
+from datamesh.adapters.resolvers.kaggle import KaggleAdapter
+from datamesh.adapters.resolvers.http import HttpAdapter
+from datamesh.adapters.engine.duckdb_engine import DuckDBQueryEngine
+from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
+from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
+from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
+
+__all__ = [
+    "discover",
+    "search",
+    "get",
+    "query",
+    "sql",
+    "storage",
+    "config",
+    "DataMeshRuntime",
+    "StorageConfig",
+    "ResourceDescriptor",
+    "ResolvedResource",
+    "CacheEntryMetadata",
+    "StoragePort",
+    "ResourceAdapterPort",
+    "ConfigPort",
+    "QueryEnginePort",
+    "LocalStorageManager",
+    "FileConfigAdapter",
+    "LocalFileAdapter",
+    "GitHubAdapter",
+    "KaggleAdapter",
+    "HttpAdapter",
+    "DuckDBQueryEngine",
+    "InMemTabularQueryEngine",
+    "GoCoreQueryEngine",
+    "ResolveAndCacheResourceUseCase",
+]

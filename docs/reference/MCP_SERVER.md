@@ -1,6 +1,6 @@
 # Especificación del Servidor Model Context Protocol (MCP) para Agentes de IA
 
-El módulo [`datamesh.mcp_server`](file:///home/andreschirinos/Proyectos/datamesh-sdk/bindings/python/datamesh/mcp_server.py) implementa la especificación **Model Context Protocol (MCP) versión 2024-11-05** mediante transporte JSON-RPC 2.0 sobre `stdio`.
+El módulo [`datamesh.mcp_server`](../../bindings/python/datamesh/mcp_server.py) implementa la especificación **Model Context Protocol (MCP) versión 2024-11-05** mediante transporte JSON-RPC 2.0 sobre `stdio`.
 
 Permite que cualquier agente o asistente de IA descubra, inspeccione y consulte productos de datos abiertos y soberanos sin alucinaciones.
 

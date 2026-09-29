@@ -36,6 +36,7 @@ def main():
     # sql
     sql_parser = subparsers.add_parser("sql", help="Execute full ANSI/DuckDB SQL with triad URIs ('catalogo:dataset:resource')")
     sql_parser.add_argument("query", help="SQL query string")
+    sql_parser.add_argument("--engine", choices=["duckdb", "inmem", "go"], default=None, help="Query engine to use (default: duckdb)")
 
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
@@ -65,7 +66,7 @@ def main():
         print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "sql":
-        res = dm.sql(args.query)
+        res = dm.sql(args.query, engine=args.engine)
         print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "mcp-serve":

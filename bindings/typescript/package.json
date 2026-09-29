@@ -1,0 +1,13 @@
+{
+  "name": "@datosbolivia/datamesh-client",
+  "version": "0.2.0",
+  "description": "DataMesh Sovereign Client SDK in TypeScript / WASM",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": ["datamesh", "okf", "odkf", "wasm", "opendata"],
+  "author": "Datos Bolivia",
+  "license": "Apache-2.0"
+}

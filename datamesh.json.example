@@ -1,0 +1,15 @@
+{
+  "catalog_url": "https://datosbolivia.github.io/llms.txt",
+  "storage_path": ".datamesh/cache",
+  "timeout": 30,
+  "log_level": "info",
+  "adapters": {
+    "kaggle": {
+      "key": "your_kaggle_api_key",
+      "username": "your_kaggle_username"
+    },
+    "github": {
+      "token": "your_github_token"
+    }
+  }
+}

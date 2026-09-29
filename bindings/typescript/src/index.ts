@@ -1,3 +1,9 @@
+export interface ResourceTriad {
+  catalog?: string;
+  dataset: string;
+  resource: string;
+}
+
 export interface CatalogEntry {
   title: string;
   uri: string;
@@ -63,6 +69,99 @@ export type ExecutionEngine = "duckdb" | "in-memory" | "hyparquet";
 export interface DataMeshClientOptions {
   catalogUrls?: string[];
   engine?: ExecutionEngine;
+}
+
+/**
+ * Standard sovereign endpoints for OKF / ODKF v0.2 catalogs and portals.
+ */
+export const CANONICAL_ENDPOINTS = {
+  LLMS_TXT: "/llms.txt",
+  LLM_TXT: "/llm.txt",
+  LLMS_FULL_TXT: "/llms-full.txt",
+  RAW: "/raw",
+} as const;
+
+/**
+ * Matches table names in FROM and JOIN clauses (quoted or unquoted).
+ */
+export const TABLE_REF_PATTERN = /\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_\-\.:/]+))/gi;
+
+/**
+ * Matches quoted identifiers with colons (canonical triads).
+ */
+export const QUOTED_COLON_PATTERN = /["']([^"':\s]+:[^"']+)["']/g;
+
+/**
+ * Sanitizes text replacing non-alphanumeric chars with underscores.
+ */
+export function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Parses any canonical triad, datamesh:// URI, or table identifier into a structured ResourceTriad.
+ * Supports:
+ * - 'catalogo:dataset:resource' (3 parts)
+ * - 'dataset:resource' (2 parts)
+ * - 'datamesh://catalogo/dataset/resource'
+ * - 'datamesh://dataset/resource'
+ */
+export function parseCanonicalUri(raw: string): ResourceTriad | null {
+  const trimmed = raw.trim().replace(/^['"`]|['"`]$/g, '');
+  if (!trimmed) return null;
+
+  // 1. datamesh:// or odkf:// scheme
+  if (trimmed.startsWith("datamesh://") || trimmed.startsWith("odkf://")) {
+    const clean = trimmed.split("://")[1];
+    const parts = clean.split("/").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      return { catalog: parts[0], dataset: parts[1], resource: parts[2] };
+    } else if (parts.length === 2) {
+      return { dataset: parts[0], resource: parts[1] };
+    }
+    return null;
+  }
+
+  // 2. Colon-separated format ('cat:ds:res' or 'ds:res')
+  if (trimmed.includes(":") && !trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("file://")) {
+    const parts = trimmed.split(":");
+    if (parts.length === 3) {
+      const cat = parts[0].trim();
+      const ds = parts[1].trim();
+      const res = parts[2].trim();
+      if (ds && res) {
+        return { catalog: cat || undefined, dataset: ds, resource: res };
+      }
+    } else if (parts.length === 2) {
+      const ds = parts[0].trim();
+      const res = parts[1].trim();
+      if (ds && res) {
+        return { dataset: ds, resource: res };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Formats a ResourceTriad into canonical 'dataset:resource' or 'catalog:dataset:resource' string.
+ */
+export function toCanonicalTriad(triad: ResourceTriad): string {
+  if (triad.catalog) {
+    return `${triad.catalog}:${triad.dataset}:${triad.resource}`;
+  }
+  return `${triad.dataset}:${triad.resource}`;
+}
+
+/**
+ * Formats a ResourceTriad into sovereign 'datamesh://...' URI.
+ */
+export function toCanonicalUri(triad: ResourceTriad): string {
+  if (triad.catalog) {
+    return `datamesh://${triad.catalog}/${triad.dataset}/${triad.resource}`;
+  }
+  return `datamesh://${triad.dataset}/${triad.resource}`;
 }
 
 /**
@@ -144,6 +243,7 @@ export class DuckDBBrowserEngine {
   private db: any = null;
   private conn: any = null;
   private initPromise: Promise<boolean> | null = null;
+  private registeredViews: Set<string> = new Set();
 
   async init(): Promise<boolean> {
     if (this.conn) return true;
@@ -195,6 +295,20 @@ export class DuckDBBrowserEngine {
             } else {
               await this.db.registerFileText(name, contentOrUrl);
             }
+            // Register views under name and slugified identifier
+            if (!this.registeredViews.has(name)) {
+              try {
+                await this.conn.query(`CREATE OR REPLACE VIEW "${name}" AS SELECT * FROM '${name}'`);
+                this.registeredViews.add(name);
+                const slugName = slugify(name);
+                if (slugName && !this.registeredViews.has(slugName)) {
+                  await this.conn.query(`CREATE OR REPLACE VIEW "${slugName}" AS SELECT * FROM '${name}'`);
+                  this.registeredViews.add(slugName);
+                }
+              } catch {
+                // view creation fallback
+              }
+            }
           } catch {
             // view registration retry
           }
@@ -236,6 +350,7 @@ export class DataMeshClient {
   private catalogUrls: string[];
   public engine: ExecutionEngine;
   private duckdbEngine: DuckDBBrowserEngine;
+  private catalogCache: Catalog | null = null;
 
   constructor(options: DataMeshClientOptions | string[] = {}) {
     if (Array.isArray(options)) {
@@ -251,13 +366,86 @@ export class DataMeshClient {
   }
 
   /**
+   * Resolves any canonical triad ('ds:res', 'cat:ds:res'), sovereign URI ('datamesh://...'),
+   * or direct URL into a physical fetchable URL.
+   */
+  async resolveResource(uriOrTriad: string): Promise<string> {
+    const trimmed = uriOrTriad.trim().replace(/^['"`]|['"`]$/g, '');
+    if (
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.startsWith("file://") ||
+      trimmed.startsWith("/")
+    ) {
+      return trimmed;
+    }
+
+    const parsed = parseCanonicalUri(trimmed);
+    if (!parsed) {
+      return trimmed;
+    }
+
+    const { dataset, resource } = parsed;
+    const cleanDs = dataset.toLowerCase();
+    const cleanRes = resource.toLowerCase();
+    const resSlug = slugify(resource);
+
+    // 1. Discover catalog entries
+    const cat = await this.discover();
+    const matchedEntry = cat.entries.find((e) => {
+      const u = e.uri.toLowerCase();
+      const r = (e.resolved_url || "").toLowerCase();
+      const t = e.title.toLowerCase();
+      return u.includes(cleanDs) || r.includes(cleanDs) || t === cleanDs || slugify(t) === slugify(cleanDs);
+    });
+
+    if (matchedEntry && matchedEntry.resolved_url) {
+      const baseDir = matchedEntry.resolved_url.substring(0, matchedEntry.resolved_url.lastIndexOf('/'));
+
+      // 2. Try fetching datapackage.json at baseDir
+      try {
+        const dpUrl = `${baseDir}/datapackage.json`;
+        const resp = await fetch(dpUrl);
+        if (resp.ok) {
+          const pkg = await resp.json();
+          if (pkg.resources && Array.isArray(pkg.resources)) {
+            const foundRes = pkg.resources.find((r: any) => {
+              const rName = String(r.name || "").toLowerCase();
+              return rName === cleanRes || slugify(rName) === resSlug || rName.includes(resSlug);
+            });
+            if (foundRes && foundRes.path) {
+              if (foundRes.path.startsWith("http://") || foundRes.path.startsWith("https://")) {
+                return foundRes.path;
+              }
+              return new URL(foundRes.path, `${baseDir}/`).toString();
+            }
+          }
+        }
+      } catch {
+        // datapackage fetch failed, continue fallback
+      }
+
+      // 3. Fallback to direct file inside node directory
+      return `${baseDir}/${resource}.csv`;
+    }
+
+    return trimmed;
+  }
+
+  /**
    * Discovers sovereign data products across configured federated catalogs or a specified endpoint.
    */
   async discover(url?: string): Promise<Catalog> {
     const targets = url ? [url] : this.catalogUrls;
 
+    if (!url && this.catalogCache && targets.length === this.catalogUrls.length) {
+      return this.catalogCache;
+    }
+
     if (targets.length === 1) {
-      return this.fetchSingleCatalog(targets[0]);
+      const single = await this.fetchSingleCatalog(targets[0]);
+      if (!url) this.catalogCache = single;
+      return single;
     }
 
     const combinedEntries: CatalogEntry[] = [];
@@ -283,12 +471,15 @@ export class DataMeshClient {
       })
     );
 
-    return {
+    const result: Catalog = {
       title: "DataMesh Federated Catalog",
       description: "Aggregated decentralized sovereign data products",
       source_catalogs: sourceCatalogs,
       entries: combinedEntries,
     };
+
+    if (!url) this.catalogCache = result;
+    return result;
   }
 
   /**
@@ -307,15 +498,19 @@ export class DataMeshClient {
 
   /**
    * Fetches and queries a tabular resource directly from the browser/client.
+   * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
    */
   async query(req: QueryRequest): Promise<QueryResult> {
     if (!req.resource_uri) {
       throw new Error("QueryRequest requires a 'resource_uri'");
     }
 
-    const res = await fetch(req.resource_uri);
+    // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
+    const resolvedUrl = await this.resolveResource(req.resource_uri);
+
+    const res = await fetch(resolvedUrl);
     if (!res.ok) {
-      throw new Error(`Failed to fetch tabular resource: HTTP ${res.status}`);
+      throw new Error(`Failed to fetch tabular resource from '${resolvedUrl}' (resolved from '${req.resource_uri}'): HTTP ${res.status}`);
     }
 
     const text = await res.text();
@@ -391,15 +586,97 @@ export class DataMeshClient {
   }
 
   /**
-   * Executes SQL against a remote resource or in-memory table.
+   * Executes SQL against a remote resource, in-memory table, or canonical triad references.
    * If engine is 'duckdb', attempts execution via DuckDB-WASM with fallback to in-memory engine.
    */
   async sql(
     sqlQuery: string,
-    source: string | { columns: string[]; rows: string[][] },
+    sourceOrOptions?: string | { columns: string[]; rows: string[][] } | Record<string, string>,
     tableAlias: string = "resource"
   ): Promise<QueryResult> {
-    // 1. Attempt DuckDB execution if configured
+    // 1. Direct table object passed
+    if (sourceOrOptions && typeof sourceOrOptions === "object" && "columns" in sourceOrOptions) {
+      return this.executeWithDirectSource(sqlQuery, sourceOrOptions as { columns: string[]; rows: string[][] }, tableAlias);
+    }
+
+    // 2. Direct single URL string passed with table alias
+    if (
+      typeof sourceOrOptions === "string" &&
+      (sourceOrOptions.startsWith("http://") || sourceOrOptions.startsWith("https://") || sourceOrOptions.startsWith("/"))
+    ) {
+      return this.executeWithDirectSource(sqlQuery, sourceOrOptions, tableAlias);
+    }
+
+    const tableMapping: Record<string, string> =
+      sourceOrOptions && typeof sourceOrOptions === "object" && !("columns" in sourceOrOptions)
+        ? (sourceOrOptions as Record<string, string>)
+        : {};
+
+    // 3. Extract table references from SQL query
+    const tableRefs: string[] = [];
+    const fromMatches = Array.from(sqlQuery.matchAll(TABLE_REF_PATTERN));
+    for (const m of fromMatches) {
+      const ref = (m[1] || m[2] || "").trim();
+      if (ref && !tableRefs.includes(ref)) {
+        tableRefs.push(ref);
+      }
+    }
+    const quotedMatches = Array.from(sqlQuery.matchAll(QUOTED_COLON_PATTERN));
+    for (const m of quotedMatches) {
+      const ref = (m[1] || "").trim();
+      if (ref && !tableRefs.includes(ref)) {
+        tableRefs.push(ref);
+      }
+    }
+
+    // 4. Resolve physical URLs for each table reference
+    const resolvedTableUrls: Record<string, string> = {};
+    for (const ref of tableRefs) {
+      if (tableMapping[ref]) {
+        resolvedTableUrls[ref] = tableMapping[ref];
+      } else {
+        const resolved = await this.resolveResource(ref);
+        resolvedTableUrls[ref] = resolved;
+      }
+    }
+
+    // 5. DuckDB Execution
+    if (this.engine === "duckdb") {
+      const fileRegistrations: Record<string, string> = {};
+      for (const [ref, url] of Object.entries(resolvedTableUrls)) {
+        fileRegistrations[ref] = url;
+        const clean = slugify(ref);
+        if (clean) fileRegistrations[clean] = url;
+      }
+
+      const duckResult = await this.duckdbEngine.executeSql(sqlQuery, fileRegistrations);
+      if (duckResult) {
+        return duckResult;
+      }
+    }
+
+    // 6. In-Memory Execution fallback (single table query)
+    const primaryRef = tableRefs[0];
+    const primaryUrl = primaryRef ? resolvedTableUrls[primaryRef] : Object.values(tableMapping)[0];
+    if (!primaryUrl) {
+      throw new Error(`Could not resolve any table reference from SQL query: ${sqlQuery}`);
+    }
+
+    const res = await fetch(primaryUrl);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch tabular resource from '${primaryUrl}': HTTP ${res.status}`);
+    }
+    const text = await res.text();
+    const table = parseCsv(text);
+
+    return this.queryTableWithSql(table, sqlQuery);
+  }
+
+  private async executeWithDirectSource(
+    sqlQuery: string,
+    source: string | { columns: string[]; rows: string[][] },
+    tableAlias: string
+  ): Promise<QueryResult> {
     if (this.engine === "duckdb") {
       let fileRegistrations: Record<string, string> | undefined;
       if (typeof source === "string") {
@@ -418,9 +695,7 @@ export class DataMeshClient {
       }
     }
 
-    // 2. In-memory SQL execution fallback
     let table: { columns: string[]; rows: string[][] };
-
     if (typeof source === "string") {
       const res = await fetch(source);
       if (!res.ok) {
@@ -432,6 +707,13 @@ export class DataMeshClient {
       table = source;
     }
 
+    return this.queryTableWithSql(table, sqlQuery);
+  }
+
+  private queryTableWithSql(
+    table: { columns: string[]; rows: string[][] },
+    sqlQuery: string
+  ): QueryResult {
     const normalizedSql = sqlQuery.trim();
 
     // Extract LIMIT and OFFSET
@@ -588,6 +870,13 @@ export class DataMeshClient {
       entries,
     };
   }
+}
+
+/**
+ * Universal hook / factory function for initializing DataMesh client in web applications.
+ */
+export function useDataMesh(options?: DataMeshClientOptions): DataMeshClient {
+  return new DataMeshClient(options);
 }
 
 export const datamesh = new DataMeshClient();

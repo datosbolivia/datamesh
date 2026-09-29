@@ -28,6 +28,46 @@ class StorageConfig:
         )
 
 @dataclass(frozen=True)
+class CanonicalURI:
+    """Represents a standardized sovereign URI '[catalog:]dataset:resource' or 'datamesh://...'."""
+    dataset: str
+    resource: str
+    catalog: Optional[str] = None
+
+    @classmethod
+    def parse(cls, raw: str) -> Optional[CanonicalURI]:
+        trimmed = raw.strip().strip("'\"`")
+        if not trimmed:
+            return None
+        if trimmed.startswith(("datamesh://", "odkf://")):
+            clean = trimmed.split("://", 1)[1]
+            parts = clean.split("/")
+            if len(parts) >= 3:
+                return cls(catalog=parts[0].strip(), dataset=parts[1].strip(), resource=parts[2].strip())
+            elif len(parts) == 2:
+                return cls(catalog=None, dataset=parts[0].strip(), resource=parts[1].strip())
+            return None
+        if ":" in trimmed:
+            parts = trimmed.split(":")
+            if len(parts) == 3:
+                return cls(catalog=parts[0].strip(), dataset=parts[1].strip(), resource=parts[2].strip())
+            elif len(parts) == 2:
+                return cls(catalog=None, dataset=parts[0].strip(), resource=parts[1].strip())
+        return None
+
+    @property
+    def triad(self) -> str:
+        if self.catalog:
+            return f"{self.catalog}:{self.dataset}:{self.resource}"
+        return f"{self.dataset}:{self.resource}"
+
+    @property
+    def full_uri(self) -> str:
+        if self.catalog:
+            return f"datamesh://{self.catalog}/{self.dataset}/{self.resource}"
+        return f"datamesh://{self.dataset}/{self.resource}"
+
+@dataclass(frozen=True)
 class ResourceDescriptor:
     """Value object describing a target resource to resolve."""
     raw_reference: str

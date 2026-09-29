@@ -12,7 +12,7 @@ try:
 except ImportError:
     yaml = None
 
-from datamesh.domain.models import ResolvedResource, ResourceDescriptor
+from datamesh.domain.models import ResolvedResource, ResourceDescriptor, CanonicalURI
 from datamesh.ports.resolver import ResourceAdapterPort
 from datamesh.ports.storage import StoragePort
 
@@ -38,19 +38,21 @@ class ResolveAndCacheResourceUseCase:
     def resolve(self, table_ref: str, context: Optional[Dict[str, Any]] = None) -> Optional[ResolvedResource]:
         """
         Main entry point for resolving any table reference, triad ('ds:res', 'cat:ds:res'),
-        URL, or local file path into a local physical file ready for DuckDB.
+        datamesh:// URI, URL, or local file path into a local physical file ready for DuckDB.
         """
         ctx = dict(context or {})
 
-        # 1. Parse triad parts if colon present
+        # 1. Parse canonical URI or triad if present
         dataset = ctx.get("dataset", "")
         resource = ctx.get("resource", "")
-        if ":" in table_ref:
-            parts = table_ref.split(":")
-            dataset = parts[-2]
-            resource = parts[-1]
+        parsed_uri = CanonicalURI.parse(table_ref)
+        if parsed_uri:
+            dataset = parsed_uri.dataset
+            resource = parsed_uri.resource
             ctx["dataset"] = dataset
             ctx["resource"] = resource
+            if parsed_uri.catalog:
+                ctx["catalog"] = parsed_uri.catalog
         elif not dataset and not resource:
             # Maybe slug or direct file
             if not os.path.exists(table_ref):

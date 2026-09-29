@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "datamesh-sdk"
+version = "0.2.0"
+description = "DataMesh Sovereign SDK (OKF v0.2, DuckDB SQL, Multi-Catalog & MCP)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Datos Bolivia", email = "andreschirinos590@gmail.com"}
+]
+keywords = ["datamesh", "opendata", "duckdb", "sql", "mcp", "okf"]
+dependencies = [
+    "duckdb>=1.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+datamesh = "datamesh.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["datamesh*"]

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import datetime
+from decimal import Decimal
 import os
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
+import uuid
 import duckdb
 
 # Matches table names in FROM and JOIN clauses (quoted or unquoted)
@@ -17,6 +20,38 @@ QUOTED_COLON_PATTERN = re.compile(r'["\']([^"\':\s]+:[^"\']+)["\']')
 def slugify(text: str) -> str:
     """Sanitizes text replacing non-alphanumeric chars with underscores."""
     return re.sub(r'[^a-zA-Z0-9]+', '_', text).lower().strip('_')
+
+def _normalize_cell_value(val: Any) -> Any:
+    """Recursively converts DuckDB/Python types (Decimal, datetime, date, UUID, bytes) to JSON-serializable primitives."""
+    if val is None:
+        return None
+    if isinstance(val, (int, str, bool)):
+        return val
+    if isinstance(val, float):
+        return val
+    if isinstance(val, Decimal):
+        return int(val) if val % 1 == 0 else float(val)
+    if isinstance(val, (datetime.date, datetime.datetime, datetime.time)):
+        return val.isoformat()
+    if isinstance(val, uuid.UUID):
+        return str(val)
+    if isinstance(val, bytes):
+        return val.decode("utf-8", errors="replace")
+    if isinstance(val, (list, tuple)):
+        return [_normalize_cell_value(x) for x in val]
+    if isinstance(val, dict):
+        return {str(k): _normalize_cell_value(v) for k, v in val.items()}
+    try:
+        import numpy as np
+        if isinstance(val, (np.integer,)):
+            return int(val)
+        if isinstance(val, (np.floating,)):
+            return float(val)
+        if isinstance(val, (np.bool_,)):
+            return bool(val)
+    except ImportError:
+        pass
+    return str(val)
 
 class DuckDBQueryEngine:
     """Full ANSI/DuckDB SQL execution engine with canonical triad resolution and format normalization."""
@@ -61,7 +96,7 @@ class DuckDBQueryEngine:
             rows = rel.fetchall()
 
             # Convert row tuples to list of lists (JSON-serializable)
-            formatted_rows = [list(r) for r in rows]
+            formatted_rows = [[_normalize_cell_value(cell) for cell in r] for r in rows]
 
             return {
                 "columns": columns,

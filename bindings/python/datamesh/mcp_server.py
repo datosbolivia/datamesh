@@ -283,7 +283,7 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 def make_tool_result(msg_id: Any, data: Any) -> Dict[str, Any]:
-    text_content = json.dumps(data, indent=2, ensure_ascii=False)
+    text_content = json.dumps(data, indent=2, ensure_ascii=False, default=str)
     return {
         "jsonrpc": "2.0",
         "id": msg_id,
@@ -326,7 +326,7 @@ def run_mcp_server():
             req = json.loads(line_str)
             resp = handle_jsonrpc(req)
             if resp is not None:
-                sys.stdout.write(json.dumps(resp) + "\n")
+                sys.stdout.write(json.dumps(resp, default=str) + "\n")
                 sys.stdout.flush()
         except Exception as e:
             err_resp = {

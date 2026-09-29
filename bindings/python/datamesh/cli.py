@@ -44,15 +44,15 @@ def main():
 
     if args.command == "catalog":
         res = dm.discover(args.url)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "search":
         res = dm.search(args.keyword, args.url)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "get":
         res = dm.get(args.uri)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "query":
         filter_dict: Dict[str, str] = {}
@@ -62,11 +62,11 @@ def main():
                     k, v = f.split("=", 1)
                     filter_dict[k.strip()] = v.strip()
         res = dm.query(args.uri, filters=filter_dict, limit=args.limit)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "sql":
         res = dm.sql(args.query)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "mcp-serve":
         from datamesh.mcp_server import run_mcp_server

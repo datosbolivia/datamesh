@@ -1,0 +1,29 @@
+{
+  "name": "@datosbolivia/datamesh-client",
+  "version": "0.2.0",
+  "description": "DataMesh Sovereign Client SDK in TypeScript / WASM",
+  "main": "bindings/typescript/dist/index.js",
+  "module": "bindings/typescript/dist/index.js",
+  "types": "bindings/typescript/dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./bindings/typescript/dist/index.d.ts",
+      "import": "./bindings/typescript/dist/index.js",
+      "require": "./bindings/typescript/dist/index.js"
+    }
+  },
+  "files": [
+    "bindings/typescript/dist",
+    "bindings/typescript/src"
+  ],
+  "scripts": {
+    "build": "cd bindings/typescript && tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/datosbolivia/datamesh.git"
+  },
+  "keywords": ["datamesh", "okf", "odkf", "wasm", "opendata"],
+  "author": "Datos Bolivia",
+  "license": "MIT"
+}

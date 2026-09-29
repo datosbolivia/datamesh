@@ -78,3 +78,16 @@ def test_mcp_sql_tool():
     content = json.loads(resp["result"]["content"][0]["text"])
     assert content["row_count"] == 1
     assert content["rows"][0][0] == 3
+
+def test_user_reported_queries():
+    # Test Query 1: 2-part triad with spaces and accents
+    q1 = 'SELECT lugar_nombre, ROUND(AVG(valor_ica), 1) AS promedio_ica, MAX(valor_ica) AS max_ica, COUNT(*) AS mediciones FROM "air_quality:Compilación de datos de calidad del aire de Bolivia" GROUP BY lugar_nombre ORDER BY promedio_ica DESC LIMIT 15'
+    r1 = dm.sql(q1)
+    assert r1["row_count"] == 14
+    assert r1["rows"][0][0] == "SACABA"
+
+    # Test Query 2: slugified table name from charts
+    q2 = 'SELECT lugar_nombre, ROUND(AVG(valor_ica), 1) AS promedio_ica, MAX(valor_ica) AS max_ica, COUNT(*) AS mediciones FROM air_quality_compilaci_n_de_datos_de_calidad_del_aire_de_bolivia GROUP BY lugar_nombre ORDER BY promedio_ica DESC LIMIT 15'
+    r2 = dm.sql(q2)
+    assert r2["row_count"] == 14
+    assert r2["rows"][0][0] == "SACABA"

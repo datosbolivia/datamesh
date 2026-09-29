@@ -226,9 +226,18 @@ class DataMeshRuntime:
         """Executes full ANSI/DuckDB SQL with canonical triad table names 'catalogo:dataset:resource'."""
         return self._duckdb_engine.execute_sql(sql_query, table_mapping=table_mapping)
 
-    def _resolve_triad_to_path(self, catalog: str, dataset: str, resource: str) -> Optional[str]:
-        """Resolves canonical triad 'catalogo:dataset:resource' to concrete physical file or URL."""
-        # 1. Check local testdata or relative directory directly
+    def _resolve_triad_to_path(self, table_ref: str, *args) -> Optional[str]:
+        """Resolves table reference ('cat:ds:res', 'ds:res', or slug) to concrete physical file or URL."""
+        if args:
+            dataset = args[0] if len(args) > 0 else ""
+            resource = args[1] if len(args) > 1 else ""
+        elif ":" in table_ref:
+            parts = table_ref.split(":")
+            dataset = parts[-2]
+            resource = parts[-1]
+        else:
+            dataset = table_ref.split("_")[0]
+            resource = table_ref
         possible_paths = [
             f"core-go/testdata/{resource}.csv",
             f"core-go/testdata/{resource}.parquet",

@@ -2,6 +2,7 @@
 
 [![Status](https://img.shields.io/badge/status-active-brightgreen.svg)]()
 [![Specification](https://img.shields.io/badge/spec-OKF%20v0.2-blue.svg)](specificacion_knowledge.md)
+[![License](https://img.shields.io/badge/license-MIT%20with%20Attribution-green.svg)](LICENSE)
 [![Engine](https://img.shields.io/badge/engine-DuckDB%20%7C%20Go-yellow.svg)]()
 [![Protocol](https://img.shields.io/badge/agent-MCP%202024--11--05-purple.svg)](docs/reference/MCP_SERVER.md)
 
@@ -82,4 +83,7 @@ datamesh/
 ---
 
 ## Licencia
-Licenciado bajo Apache-2.0. Desarrollado por Datos Bolivia.
+
+Distribuido bajo la Licencia **MIT con Requisito de Atribución**.
+
+Las empresas y particulares tienen total libertad de uso comercial, privado, modificación y distribución, sujeto a incluir el aviso de copyright original y la debida **referencia/atribución a Datos Bolivia** y a este repositorio ([https://github.com/datosbolivia/datamesh.git](https://github.com/datosbolivia/datamesh.git)). Consulta el archivo [`LICENSE`](LICENSE) para más detalles.

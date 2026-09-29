@@ -9,5 +9,5 @@
   },
   "keywords": ["datamesh", "okf", "odkf", "wasm", "opendata"],
   "author": "Datos Bolivia",
-  "license": "Apache-2.0"
+  "license": "MIT"
 }

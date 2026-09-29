@@ -99,6 +99,79 @@ export function slugify(text: string): string {
 }
 
 /**
+ * Normalizes remote URLs (e.g. GitHub blob/raw links to raw.githubusercontent.com for CORS compatibility).
+ */
+export function normalizeResourceUrl(url: string): string {
+  if (!url) return url;
+  const trimmed = url.trim().replace(/^['"`]|['"`]$/g, '');
+  const githubBlobMatch = trimmed.match(/^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/(?:blob|raw)\/([^/]+)\/(.+)$/);
+  if (githubBlobMatch) {
+    const [, user, repo, branch, path] = githubBlobMatch;
+    return `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${path}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Lightweight scanner extracting resource definitions from datapackage.yaml/yml text.
+ */
+export function parseSimpleYamlResources(text: string): Array<{ name?: string; path?: string }> {
+  const resources: Array<{ name?: string; path?: string }> = [];
+  const lines = text.split('\n');
+  let inResources = false;
+  let currentRes: { name?: string; path?: string } | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    if (/^resources:\s*$/.test(line) || /^resources:/.test(line)) {
+      inResources = true;
+      continue;
+    }
+
+    if (inResources) {
+      if (/^[a-zA-Z0-9_-]+:/.test(line) && !line.startsWith('-') && !rawLine.startsWith(' ') && !rawLine.startsWith('\t')) {
+        if (currentRes) {
+          resources.push(currentRes);
+          currentRes = null;
+        }
+        break;
+      }
+
+      if (line.startsWith('-')) {
+        if (currentRes) {
+          resources.push(currentRes);
+        }
+        currentRes = {};
+        const content = line.replace(/^-\s*/, '').trim();
+        const colonIdx = content.indexOf(':');
+        if (colonIdx > 0) {
+          const key = content.substring(0, colonIdx).trim();
+          const val = content.substring(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+          if (key === 'name') currentRes.name = val;
+          else if (key === 'path') currentRes.path = val;
+        }
+      } else if (currentRes) {
+        const colonIdx = line.indexOf(':');
+        if (colonIdx > 0) {
+          const key = line.substring(0, colonIdx).trim();
+          const val = line.substring(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+          if (key === 'name') currentRes.name = val;
+          else if (key === 'path') currentRes.path = val;
+        }
+      }
+    }
+  }
+
+  if (currentRes) {
+    resources.push(currentRes);
+  }
+
+  return resources;
+}
+
+/**
  * Parses any canonical triad, datamesh:// URI, or table identifier into a structured ResourceTriad.
  * Supports:
  * - 'catalogo:dataset:resource' (3 parts)
@@ -377,12 +450,12 @@ export class DataMeshClient {
       trimmed.startsWith("file://") ||
       trimmed.startsWith("/")
     ) {
-      return trimmed;
+      return normalizeResourceUrl(trimmed);
     }
 
     const parsed = parseCanonicalUri(trimmed);
     if (!parsed) {
-      return trimmed;
+      return normalizeResourceUrl(trimmed);
     }
 
     const { dataset, resource } = parsed;
@@ -402,34 +475,52 @@ export class DataMeshClient {
     if (matchedEntry && matchedEntry.resolved_url) {
       const baseDir = matchedEntry.resolved_url.substring(0, matchedEntry.resolved_url.lastIndexOf('/'));
 
-      // 2. Try fetching datapackage.json at baseDir
-      try {
-        const dpUrl = `${baseDir}/datapackage.json`;
-        const resp = await fetch(dpUrl);
-        if (resp.ok) {
-          const pkg = await resp.json();
-          if (pkg.resources && Array.isArray(pkg.resources)) {
-            const foundRes = pkg.resources.find((r: any) => {
-              const rName = String(r.name || "").toLowerCase();
-              return rName === cleanRes || slugify(rName) === resSlug || rName.includes(resSlug);
-            });
-            if (foundRes && foundRes.path) {
-              if (foundRes.path.startsWith("http://") || foundRes.path.startsWith("https://")) {
-                return foundRes.path;
+      // 2. Try fetching datapackage (json or yaml/yml) at baseDir
+      const dpCandidates = [
+        `${baseDir}/datapackage.json`,
+        `${baseDir}/datapackage.yaml`,
+        `${baseDir}/datapackage.yml`
+      ];
+
+      for (const dpUrl of dpCandidates) {
+        try {
+          const resp = await fetch(dpUrl);
+          if (resp.ok) {
+            let resList: Array<{ name?: string; path?: string }> = [];
+            if (dpUrl.endsWith('.json')) {
+              const pkg = await resp.json();
+              if (pkg.resources && Array.isArray(pkg.resources)) {
+                resList = pkg.resources;
               }
-              return new URL(foundRes.path, `${baseDir}/`).toString();
+            } else {
+              const text = await resp.text();
+              resList = parseSimpleYamlResources(text);
+            }
+
+            if (resList.length > 0) {
+              const foundRes = resList.find((r: any) => {
+                const rName = String(r.name || "").toLowerCase();
+                return rName === cleanRes || slugify(rName) === resSlug || rName.includes(resSlug);
+              });
+              if (foundRes && foundRes.path) {
+                const normPath = normalizeResourceUrl(foundRes.path);
+                if (normPath.startsWith("http://") || normPath.startsWith("https://")) {
+                  return normPath;
+                }
+                return new URL(normPath, `${baseDir}/`).toString();
+              }
             }
           }
+        } catch {
+          // continue fallback
         }
-      } catch {
-        // datapackage fetch failed, continue fallback
       }
 
       // 3. Fallback to direct file inside node directory
       return `${baseDir}/${resource}.csv`;
     }
 
-    return trimmed;
+    return normalizeResourceUrl(trimmed);
   }
 
   /**
@@ -678,15 +769,41 @@ export class DataMeshClient {
     tableAlias: string
   ): Promise<QueryResult> {
     if (this.engine === "duckdb") {
-      let fileRegistrations: Record<string, string> | undefined;
+      let dataContent: string;
       if (typeof source === "string") {
-        fileRegistrations = { [tableAlias]: source };
+        dataContent = normalizeResourceUrl(source);
       } else {
         let csvStr = source.columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(",") + "\n";
         source.rows.forEach((r) => {
           csvStr += r.map((c) => `"${(c || "").replace(/"/g, '""')}"`).join(",") + "\n";
         });
-        fileRegistrations = { [tableAlias]: csvStr };
+        dataContent = csvStr;
+      }
+
+      const fileRegistrations: Record<string, string> = {
+        [tableAlias]: dataContent,
+        resource: dataContent,
+      };
+      const sAlias = slugify(tableAlias);
+      if (sAlias) fileRegistrations[sAlias] = dataContent;
+
+      const fromMatches = Array.from(sqlQuery.matchAll(TABLE_REF_PATTERN));
+      for (const m of fromMatches) {
+        const ref = (m[1] || m[2] || "").trim();
+        if (ref) {
+          fileRegistrations[ref] = dataContent;
+          const s = slugify(ref);
+          if (s) fileRegistrations[s] = dataContent;
+        }
+      }
+      const quotedMatches = Array.from(sqlQuery.matchAll(QUOTED_COLON_PATTERN));
+      for (const m of quotedMatches) {
+        const ref = (m[1] || "").trim();
+        if (ref) {
+          fileRegistrations[ref] = dataContent;
+          const s = slugify(ref);
+          if (s) fileRegistrations[s] = dataContent;
+        }
       }
 
       const duckResult = await this.duckdbEngine.executeSql(sqlQuery, fileRegistrations);

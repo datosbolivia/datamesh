@@ -14,6 +14,7 @@ var (
 // BaseConfig represents core configuration parameters.
 type BaseConfig struct {
 	CatalogURL  string        `json:"catalog_url" yaml:"catalog_url"`
+	CatalogURLs []string      `json:"catalog_urls" yaml:"catalog_urls"`
 	StoragePath string        `json:"storage_path" yaml:"storage_path"`
 	Timeout     time.Duration `json:"timeout" yaml:"timeout"`
 	LogLevel    string        `json:"log_level" yaml:"log_level"`
@@ -27,9 +28,11 @@ type Config struct {
 
 // NewDefaultConfig returns a Config initialized with standard defaults.
 func NewDefaultConfig() Config {
+	defaultURL := "https://datosbolivia.github.io/llms.txt"
 	return Config{
 		Base: BaseConfig{
-			CatalogURL:  "https://datosbolivia.github.io/llms.txt",
+			CatalogURL:  defaultURL,
+			CatalogURLs: []string{defaultURL},
 			StoragePath: ".datamesh/cache",
 			Timeout:     30 * time.Second,
 			LogLevel:    "info",

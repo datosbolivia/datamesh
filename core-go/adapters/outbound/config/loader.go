@@ -62,6 +62,8 @@ func (l *FileAndEnvConfigLoader) loadFile(path string, cfg *domain.Config) error
 	if ext == ".json" {
 		var raw struct {
 			CatalogURL  string                       `json:"catalog_url"`
+			CatalogURLs []string                     `json:"catalog_urls"`
+			Catalogs    []string                     `json:"catalogs"`
 			StoragePath string                       `json:"storage_path"`
 			Timeout     int                          `json:"timeout"`
 			LogLevel    string                       `json:"log_level"`
@@ -72,6 +74,18 @@ func (l *FileAndEnvConfigLoader) loadFile(path string, cfg *domain.Config) error
 		}
 		if raw.CatalogURL != "" {
 			cfg.Base.CatalogURL = raw.CatalogURL
+		}
+		urls := raw.CatalogURLs
+		if len(urls) == 0 {
+			urls = raw.Catalogs
+		}
+		if len(urls) > 0 {
+			cfg.Base.CatalogURLs = urls
+			if cfg.Base.CatalogURL == "" || cfg.Base.CatalogURL == "https://datosbolivia.github.io/llms.txt" {
+				cfg.Base.CatalogURL = urls[0]
+			}
+		} else if raw.CatalogURL != "" {
+			cfg.Base.CatalogURLs = []string{raw.CatalogURL}
 		}
 		if raw.StoragePath != "" {
 			cfg.Base.StoragePath = raw.StoragePath
@@ -119,6 +133,11 @@ func parseSimpleYAML(content string, cfg *domain.Config) error {
 				currentAdapter = ""
 				continue
 			}
+			if sec == "catalogs" || sec == "catalog_urls" {
+				currentSection = "catalogs"
+				cfg.Base.CatalogURLs = nil // reset defaults
+				continue
+			}
 			if currentSection == "adapters" {
 				currentAdapter = strings.ToLower(sec)
 				if cfg.Adapters[currentAdapter] == nil {
@@ -126,6 +145,17 @@ func parseSimpleYAML(content string, cfg *domain.Config) error {
 				}
 				continue
 			}
+		}
+
+		if currentSection == "catalogs" && strings.HasPrefix(line, "- ") {
+			urlVal := strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "- ")), "\"'")
+			if urlVal != "" {
+				cfg.Base.CatalogURLs = append(cfg.Base.CatalogURLs, urlVal)
+				if cfg.Base.CatalogURL == "" || cfg.Base.CatalogURL == "https://datosbolivia.github.io/llms.txt" {
+					cfg.Base.CatalogURL = urlVal
+				}
+			}
+			continue
 		}
 
 		parts := strings.SplitN(line, ":", 2)
@@ -143,6 +173,9 @@ func parseSimpleYAML(content string, cfg *domain.Config) error {
 		switch strings.ToLower(key) {
 		case "catalog_url":
 			cfg.Base.CatalogURL = val
+			if len(cfg.Base.CatalogURLs) == 0 {
+				cfg.Base.CatalogURLs = []string{val}
+			}
 		case "storage_path":
 			cfg.Base.StoragePath = val
 		case "timeout":
@@ -171,7 +204,6 @@ func (l *FileAndEnvConfigLoader) overlayEnvVars(cfg *domain.Config) {
 		// Check for adapter-specific variable: DATAMESH__{ADAPTER}_{VAR} or DATAMESH__{ADAPTER}__{VAR}
 		if strings.HasPrefix(k, "DATAMESH__") {
 			afterPrefix := strings.TrimPrefix(k, "DATAMESH__")
-			// Split by double underscore or first single underscore
 			var adapter, key string
 			if strings.Contains(afterPrefix, "__") {
 				adpParts := strings.SplitN(afterPrefix, "__", 2)
@@ -199,6 +231,22 @@ func (l *FileAndEnvConfigLoader) overlayEnvVars(cfg *domain.Config) {
 		switch baseKey {
 		case "catalog_url":
 			cfg.Base.CatalogURL = v
+			if len(cfg.Base.CatalogURLs) == 0 {
+				cfg.Base.CatalogURLs = []string{v}
+			}
+		case "catalogs", "catalog_urls":
+			rawList := strings.Split(v, ",")
+			var parsed []string
+			for _, item := range rawList {
+				tr := strings.TrimSpace(item)
+				if tr != "" {
+					parsed = append(parsed, tr)
+				}
+			}
+			if len(parsed) > 0 {
+				cfg.Base.CatalogURLs = parsed
+				cfg.Base.CatalogURL = parsed[0]
+			}
 		case "storage_path":
 			cfg.Base.StoragePath = v
 		case "timeout":

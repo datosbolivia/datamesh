@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from typing import Dict
+
+import datamesh as dm
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="datamesh",
+        description="DataMesh Sovereign SDK CLI (Python)",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # catalog
+    cat_parser = subparsers.add_parser("catalog", help="Discover sovereign catalogs")
+    cat_parser.add_argument("url", nargs="?", default=None, help="Catalog URL (optional)")
+
+    # search
+    search_parser = subparsers.add_parser("search", help="Search catalog entries")
+    search_parser.add_argument("keyword", help="Search keyword")
+    search_parser.add_argument("url", nargs="?", default=None, help="Catalog URL (optional)")
+
+    # get
+    get_parser = subparsers.add_parser("get", help="Get Data Product manifest")
+    get_parser.add_argument("uri", help="Data Product node URI or URL")
+
+    # query
+    query_parser = subparsers.add_parser("query", help="Query tabular resource")
+    query_parser.add_argument("uri", help="Resource CSV/TSV URI")
+    query_parser.add_argument("--filter", action="append", dest="filters", help="Filter formatted as key=value")
+    query_parser.add_argument("--limit", type=int, default=None, help="Max rows to return")
+
+    # mcp-serve
+    subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
+
+    args = parser.parse_args()
+
+    if args.command == "catalog":
+        res = dm.discover(args.url)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    elif args.command == "search":
+        res = dm.search(args.keyword, args.url)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    elif args.command == "get":
+        res = dm.get(args.uri)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    elif args.command == "query":
+        filter_dict: Dict[str, str] = {}
+        if args.filters:
+            for f in args.filters:
+                if "=" in f:
+                    k, v = f.split("=", 1)
+                    filter_dict[k.strip()] = v.strip()
+        res = dm.query(args.uri, filters=filter_dict, limit=args.limit)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    elif args.command == "mcp-serve":
+        from datamesh.mcp_server import run_mcp_server
+        run_mcp_server()
+
+if __name__ == "__main__":
+    main()

@@ -6,20 +6,22 @@ import (
 
 // CatalogEntry represents a reference to a federated OKF Data Product in llms.txt.
 type CatalogEntry struct {
-	Title       string   `json:"title"`
-	URI         string   `json:"uri"`
-	ResolvedURL string   `json:"resolved_url"`
-	Description string   `json:"description"`
-	Domain      string   `json:"domain"`
-	Resources   []string `json:"resources"`
+	Title         string   `json:"title"`
+	URI           string   `json:"uri"`
+	ResolvedURL   string   `json:"resolved_url"`
+	Description   string   `json:"description"`
+	Domain        string   `json:"domain"`
+	Resources     []string `json:"resources"`
+	CatalogSource string   `json:"catalog_source,omitempty"`
 }
 
-// Catalog represents a collection of Data Products discovered from a sovereign catalog.
+// Catalog represents a collection of Data Products discovered from one or more sovereign catalogs.
 type Catalog struct {
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	SourceURL   string         `json:"source_url"`
-	Entries     []CatalogEntry `json:"entries"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	SourceURL      string         `json:"source_url"`
+	SourceCatalogs []string       `json:"source_catalogs,omitempty"`
+	Entries        []CatalogEntry `json:"entries"`
 }
 
 // FindByKeyword searches catalog entries matching a substring in title, description, or domain.

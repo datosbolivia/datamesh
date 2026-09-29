@@ -3,50 +3,53 @@
 ## 1. Diagrama Hexagonal
 
 ```text
-       +-----------------------------------------------------------+
-       |                     DRIVING / INBOUND                     |
-       |  [CLI Adapter]      [C-Shared / ctypes]    [WASM Adapter] |
-       +-----------------------------------------------------------+
-                                   |
-                                   v
-       +-----------------------------------------------------------+
-       |                       INBOUND PORTS                       |
-       |  - CatalogServicePort                                     |
-       |  - DataProductServicePort                                 |
-       |  - ConfigServicePort                                      |
-       +-----------------------------------------------------------+
-                                   |
-                                   v
-       +-----------------------------------------------------------+
-       |                        USE CASES                          |
-       |  - DiscoverCatalogUseCase                                 |
-       |  - ResolveDataProductUseCase                              |
-       |  - ConfigUseCase                                          |
-       +-----------------------------------------------------------+
-                                   |
-                                   v
-       +-----------------------------------------------------------+
-       |                          DOMAIN                           |
-       |  - DataProduct (Aggregate Root)                           |
-       |  - Catalog, CatalogEntry                                  |
-       |  - Manifest, Resource, Contract, Lineage                  |
-       |  - Config, BaseConfig                                     |
-       +-----------------------------------------------------------+
-                                   |
-                                   v
-       +-----------------------------------------------------------+
-       |                      OUTBOUND PORTS                       |
-       |  - CatalogResolverPort                                    |
-       |  - DataProductResolverPort                                |
-       |  - StoragePort                                            |
-       |  - ConfigLoaderPort                                       |
-       +-----------------------------------------------------------+
-                                   |
-                                   v
-       +-----------------------------------------------------------+
-       |                    DRIVEN / OUTBOUND                      |
-       |  [LLMSTxtResolver]  [NodeResolver]  [FileStorage] [Loader]|
-       +-----------------------------------------------------------+
+       +--------------------------------------------------------------------------+
+       |                            DRIVING / INBOUND                             |
+       |  [CLI Adapter]      [C-Shared / ctypes]    [WASM Adapter]    [MCP Server] |
+       +--------------------------------------------------------------------------+
+                                            |
+                                            v
+       +--------------------------------------------------------------------------+
+       |                              INBOUND PORTS                               |
+       |  - CatalogServicePort (DiscoverAll, Discover, Search)                    |
+       |  - DataProductServicePort (Resolve, Validate)                            |
+       |  - QueryServicePort (Query)                                              |
+       |  - ConfigServicePort (GetConfig)                                         |
+       +--------------------------------------------------------------------------+
+                                            |
+                                            v
+       +--------------------------------------------------------------------------+
+       |                               USE CASES                                  |
+       |  - DiscoverCatalogUseCase (Multi-catalog concurrent federation)          |
+       |  - ResolveDataProductUseCase (OKF v0.2 frontmatter parser)               |
+       |  - QueryDataProductUseCase (In-memory projection & filtering)            |
+       |  - ConfigUseCase (Hierarchical loader)                                   |
+       +--------------------------------------------------------------------------+
+                                            |
+                                            v
+       +--------------------------------------------------------------------------+
+       |                                 DOMAIN                                   |
+       |  - DataProduct (Aggregate Root), Manifest, Resource, Contract, Lineage   |
+       |  - Catalog, CatalogEntry (with CatalogSource attribution)                |
+       |  - QueryRequest, QueryResult                                             |
+       |  - Config, BaseConfig (CatalogURLs list, Adapter options)                 |
+       +--------------------------------------------------------------------------+
+                                            |
+                                            v
+       +--------------------------------------------------------------------------+
+       |                             OUTBOUND PORTS                               |
+       |  - CatalogResolverPort                                                   |
+       |  - DataProductResolverPort                                               |
+       |  - StoragePort                                                           |
+       |  - QueryEnginePort                                                       |
+       |  - ConfigLoaderPort                                                      |
+       +--------------------------------------------------------------------------+
+                                            |
+                                            v
+       +--------------------------------------------------------------------------+
+       |                            DRIVEN / OUTBOUND                             |
+       |  [LLMSTxtResolver]  [NodeResolver]  [FileStorage]  [QueryEngine]  [Loader]
+       +--------------------------------------------------------------------------+
 ```
 
 ## 2. Esquema de Configuración

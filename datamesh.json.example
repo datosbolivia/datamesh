@@ -1,5 +1,9 @@
 {
   "catalog_url": "https://datosbolivia.github.io/llms.txt",
+  "catalogs": [
+    "https://datosbolivia.github.io/llms.txt",
+    "https://custom-dataspace.org/llms.txt"
+  ],
   "storage_path": ".datamesh/cache",
   "timeout": 30,
   "log_level": "info",

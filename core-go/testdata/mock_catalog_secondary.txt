@@ -1,0 +1,6 @@
+# Catálogo Federado Municipal
+> Datos abiertos del municipio
+
+## Catálogo de Datasets Federados (Open Knowledge Format v0.2)
+- [Presupuesto Municipal 2024](/raw/nodes/presupuesto/index.md): Ejecución presupuestaria municipal. (Dominio: Economía y Finanzas. Recursos: presupuesto_2024)
+- [Rutas de Transporte Urbano](/raw/nodes/transporte/index.md): Trazado y paradas de buses. (Dominio: Infraestructura y Movilidad. Recursos: lineas_bus)

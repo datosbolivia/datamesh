@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-import ctypes
+import csv
+import io
 import json
 import os
-import urllib.request
 import re
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, List, Optional
 
 class DataMeshRuntime:
-    """Python ctypes bridge to Go Core libdatamesh.so with pure Python HTTP fallback."""
+    """Python runtime providing local fallback and ctypes bridge to Go core."""
 
     def __init__(self, lib_path: Optional[str] = None):
         self._lib = None
         target_path = lib_path or os.environ.get("DATAMESH_LIB_PATH", "libdatamesh.so")
         if os.path.exists(target_path):
             try:
+                import ctypes
                 self._lib = ctypes.CDLL(target_path)
                 self._lib.DataMeshInit.argtypes = [ctypes.c_char_p]
                 self._lib.DataMeshInit.restype = ctypes.c_char_p
@@ -28,20 +31,56 @@ class DataMeshRuntime:
             except Exception:
                 self._lib = None
 
-    def discover(self, catalog_url: Optional[str] = None) -> Dict[str, Any]:
-        url = catalog_url or os.environ.get("DATAMESH_CATALOG_URL", "https://datosbolivia.github.io/llms.txt")
-        if self._lib:
-            c_url = ctypes.c_char_p(url.encode("utf-8"))
-            raw_ptr = self._lib.DataMeshDiscoverCatalog(c_url)
-            raw_json = ctypes.string_at(raw_ptr).decode("utf-8")
-            self._lib.DataMeshFreeString(raw_ptr)
-            res = json.loads(raw_json)
-            if not res.get("success"):
-                raise RuntimeError(res.get("error", "Unknown discovery error"))
-            return res.get("data", {})
+    def get_catalog_urls(self) -> List[str]:
+        env_catalogs = os.environ.get("DATAMESH_CATALOGS") or os.environ.get("DATAMESH_CATALOG_URLS")
+        if env_catalogs:
+            return [c.strip() for c in env_catalogs.split(",") if c.strip()]
+        single = os.environ.get("DATAMESH_CATALOG_URL")
+        if single:
+            return [single]
+        return ["https://datosbolivia.github.io/llms.txt"]
 
-        # Python fallback mirror
-        req = urllib.request.Request(url, headers={"User-Agent": "datamesh-sdk/0.2 (Python-Fallback)"})
+    def discover(self, catalog_url: Optional[str] = None) -> Dict[str, Any]:
+        """Discovers a specific catalog or aggregates all configured catalogs."""
+        if catalog_url:
+            urls = [catalog_url]
+        else:
+            urls = self.get_catalog_urls()
+
+        if len(urls) == 1:
+            return self._fetch_single_catalog(urls[0])
+
+        # Aggregate multiple catalogs
+        combined_entries = []
+        source_catalogs = []
+        seen = set()
+
+        for u in urls:
+            try:
+                cat = self._fetch_single_catalog(u)
+                source_catalogs.append(u)
+                for entry in cat.get("entries", []):
+                    entry["catalog_source"] = u
+                    key = entry.get("resolved_url") or entry.get("title")
+                    if key not in seen:
+                        seen.add(key)
+                        combined_entries.append(entry)
+            except Exception as err:
+                continue
+
+        return {
+            "title": "DataMesh Federated Catalog",
+            "source_catalogs": source_catalogs,
+            "entries": combined_entries,
+        }
+
+    def _fetch_single_catalog(self, url: str) -> Dict[str, Any]:
+        if url.startswith("file://"):
+            with open(url[7:], "r", encoding="utf-8") as f:
+                content = f.read()
+            return self._parse_llms_txt(content, url)
+
+        req = urllib.request.Request(url, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
         with urllib.request.urlopen(req) as resp:
             content = resp.read().decode("utf-8")
         return self._parse_llms_txt(content, url)
@@ -50,20 +89,133 @@ class DataMeshRuntime:
         entries = []
         entry_pattern = re.compile(r"^-\s*\[(.*?)\]\((.*?)\)(?::\s*(.*))?$")
         domain_pattern = re.compile(r"\(Dominio:\s*([^)]*?)(?:\.|\)|Recursos:)")
+        rec_pattern = re.compile(r"Recursos:\s*([^)]+)\)")
         
+        title = ""
+        description = ""
+
         for line in content.splitlines():
-            m = entry_pattern.match(line.strip())
+            line_str = line.strip()
+            if not line_str:
+                continue
+            if line_str.startswith("# ") and not title:
+                title = line_str[2:].strip()
+                continue
+            if line_str.startswith("> ") and not description:
+                description = line_str[2:].strip()
+                continue
+
+            m = entry_pattern.match(line_str)
             if m:
-                title, raw_uri, desc = m.group(1), m.group(2), m.group(3) or ""
+                item_title, raw_uri, desc = m.group(1), m.group(2), m.group(3) or ""
                 resolved = urllib.parse.urljoin(source_url, raw_uri)
                 dm = domain_pattern.search(desc)
                 domain = dm.group(1).strip() if dm else ""
+                
+                rm = rec_pattern.search(desc)
+                recs = [r.strip() for r in rm.group(1).split(",")] if rm else []
                 clean_desc = desc.split("(Dominio:")[0].strip()
+                
                 entries.append({
-                    "title": title,
+                    "title": item_title,
                     "uri": raw_uri,
                     "resolved_url": resolved,
                     "description": clean_desc,
                     "domain": domain,
+                    "resources": recs,
+                    "catalog_source": source_url,
                 })
-        return {"source_url": source_url, "entries": entries}
+
+        return {
+            "title": title or "Sovereign Catalog",
+            "description": description,
+            "source_url": source_url,
+            "entries": entries,
+        }
+
+    def resolve(self, uri: str) -> Dict[str, Any]:
+        """Resolves node index.md and returns DataProduct metadata."""
+        if uri.startswith("file://"):
+            with open(uri[7:], "r", encoding="utf-8") as f:
+                content = f.read()
+        elif uri.startswith("http://") or uri.startswith("https://"):
+            req = urllib.request.Request(uri, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
+            with urllib.request.urlopen(req) as resp:
+                content = resp.read().decode("utf-8")
+        else:
+            with open(uri, "r", encoding="utf-8") as f:
+                content = f.read()
+
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            raise ValueError("No YAML frontmatter found in node markdown")
+
+        frontmatter = parts[1]
+        body = parts[2].strip()
+
+        manifest: Dict[str, Any] = {"dimensions": [], "contracts": []}
+        for line in frontmatter.splitlines():
+            line_str = line.strip()
+            if not line_str or line_str.startswith("#"):
+                continue
+            if line_str.startswith("title:"):
+                manifest["title"] = line_str.split(":", 1)[1].strip().strip("\"'")
+            elif line_str.startswith("type:"):
+                manifest["type"] = line_str.split(":", 1)[1].strip().strip("\"'")
+            elif line_str.startswith("- ") and "dimensions" in manifest:
+                manifest["dimensions"].append(line_str[2:].strip().strip("\"'"))
+
+        return {
+            "id": uri,
+            "manifest": manifest,
+            "description": body,
+        }
+
+    def query(
+        self,
+        resource_uri: str,
+        filters: Optional[Dict[str, str]] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Queries CSV or tabular resource."""
+        if resource_uri.startswith("file://"):
+            with open(resource_uri[7:], "r", encoding="utf-8") as f:
+                raw_text = f.read()
+        elif resource_uri.startswith("http://") or resource_uri.startswith("https://"):
+            req = urllib.request.Request(resource_uri, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
+            with urllib.request.urlopen(req) as resp:
+                raw_text = resp.read().decode("utf-8")
+        else:
+            with open(resource_uri, "r", encoding="utf-8") as f:
+                raw_text = f.read()
+
+        reader = csv.reader(io.StringIO(raw_text))
+        headers = next(reader, None)
+        if not headers:
+            return {"columns": [], "rows": [], "row_count": 0}
+
+        headers_norm = [h.strip().lower() for h in headers]
+        filter_indices = {}
+        if filters:
+            for k, v in filters.items():
+                kn = k.strip().lower()
+                if kn in headers_norm:
+                    filter_indices[headers_norm.index(kn)] = str(v).strip().lower()
+
+        matched_rows = []
+        for row in reader:
+            matches = True
+            for idx, exp_val in filter_indices.items():
+                if idx >= len(row) or row[idx].strip().lower() != exp_val:
+                    matches = False
+                    break
+            if matches:
+                matched_rows.append(row)
+                if limit and len(matched_rows) >= limit:
+                    break
+
+        return {
+            "columns": headers,
+            "rows": matched_rows,
+            "row_count": len(matched_rows),
+        }

@@ -1,0 +1,6 @@
+# Catálogo Primario Soberano
+> Datos abiertos oficiales
+
+## Catálogo de Datasets Federados (Open Knowledge Format v0.2)
+- [Atlas Electoral de Bolivia](/raw/nodes/elecciones/index.md): Datos de elecciones nacionales y subnacionales. (Dominio: Demografía y Sociedad. Recursos: elecciones_2020)
+- [Calidad del Aire Urbano](/raw/nodes/aire/index.md): Mediciones de estaciones meteorológicas e ICA. (Dominio: Medio Ambiente. Recursos: mediciones_ica)

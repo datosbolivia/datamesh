@@ -61,6 +61,7 @@ from datamesh.adapters.engine.duckdb_engine import DuckDBQueryEngine
 from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
 from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
 from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
+from datamesh.server import run_server
 
 __all__ = [
     "discover",
@@ -70,6 +71,7 @@ __all__ = [
     "sql",
     "storage",
     "config",
+    "run_server",
     "DataMeshRuntime",
     "StorageConfig",
     "ResourceDescriptor",

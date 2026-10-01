@@ -332,6 +332,7 @@ export class DuckDBBrowserEngine {
 export class DataMeshClient {
     catalogUrls;
     engine;
+    proxyUrl;
     duckdbEngine;
     catalogCache = null;
     constructor(options = {}) {
@@ -344,8 +345,32 @@ export class DataMeshClient {
                 ? options.catalogUrls
                 : [getDefaultCatalogUrl()];
             this.engine = options.engine || "duckdb";
+            this.proxyUrl = options.proxyUrl;
         }
         this.duckdbEngine = new DuckDBBrowserEngine();
+    }
+    /**
+     * Sets or updates the active CORS proxy URL or template.
+     * e.g. "https://api.allorigins.win/raw?url={url}" or "https://corsproxy.io/?url={url}"
+     */
+    setProxy(proxyUrl) {
+        this.proxyUrl = proxyUrl;
+    }
+    /**
+     * Formats a target URL through the configured proxy.
+     */
+    formatProxiedUrl(targetUrl, customProxy) {
+        const proxy = customProxy || this.proxyUrl;
+        if (!proxy || !targetUrl)
+            return targetUrl;
+        if (proxy.includes('{url}')) {
+            return proxy.replace('{url}', encodeURIComponent(targetUrl));
+        }
+        if (proxy.endsWith('=') || proxy.endsWith('?url=')) {
+            return `${proxy}${encodeURIComponent(targetUrl)}`;
+        }
+        const sep = proxy.includes('?') ? '&' : '?';
+        return `${proxy}${sep}url=${encodeURIComponent(targetUrl)}`;
     }
     /**
      * Resolves any canonical triad ('ds:res', 'cat:ds:res'), sovereign URI ('datamesh://...'),
@@ -485,7 +510,10 @@ export class DataMeshClient {
             throw new Error("QueryRequest requires a 'resource_uri'");
         }
         // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
-        const resolvedUrl = await this.resolveResource(req.resource_uri);
+        let resolvedUrl = await this.resolveResource(req.resource_uri);
+        if (req.proxy_url || this.proxyUrl) {
+            resolvedUrl = this.formatProxiedUrl(resolvedUrl, req.proxy_url);
+        }
         const res = await fetch(resolvedUrl);
         if (!res.ok) {
             throw new Error(`Failed to fetch tabular resource from '${resolvedUrl}' (resolved from '${req.resource_uri}'): HTTP ${res.status}`);

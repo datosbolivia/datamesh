@@ -32,27 +32,7 @@ func NewNodeDataProductResolver(timeout time.Duration) *NodeDataProductResolver 
 // and constructs a DataProduct aggregate.
 func (r *NodeDataProductResolver) FetchDataProduct(ctx context.Context, resolvedURL string) (*domain.DataProduct, error) {
 	reader := manifests.NewUnifiedMetadataReader("", r.httpClient.Timeout)
-	lower := strings.ToLower(resolvedURL)
-	if strings.HasSuffix(lower, ".json") || strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") || !strings.HasSuffix(lower, ".md") {
-		return reader.ReadNode(ctx, resolvedURL)
-	}
-
-	raw, err := r.readContent(ctx, resolvedURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch node at %s: %w", resolvedURL, err)
-	}
-
-	manifest, desc, err := manifests.ParseOKFFrontmatter([]byte(raw))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse OKF frontmatter: %w", err)
-	}
-
-	dp, err := domain.NewDataProduct(resolvedURL, manifest, desc, nil)
-	if err != nil {
-		return nil, err
-	}
-	dp.RawContent = raw
-	return dp, nil
+	return reader.ReadNode(ctx, resolvedURL)
 }
 
 func (r *NodeDataProductResolver) readContent(ctx context.Context, targetURL string) (string, error) {

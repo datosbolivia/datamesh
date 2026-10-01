@@ -48,6 +48,7 @@ export interface QueryRequest {
     sort_direction?: "asc" | "desc";
     limit?: number;
     offset?: number;
+    proxy_url?: string;
 }
 export interface QueryResult {
     columns: string[];
@@ -60,6 +61,7 @@ export type ExecutionEngine = "duckdb" | "in-memory" | "hyparquet";
 export interface DataMeshClientOptions {
     catalogUrls?: string[];
     engine?: ExecutionEngine;
+    proxyUrl?: string;
 }
 /**
  * Standard sovereign endpoints for OKF / ODKF v0.2 catalogs and portals.
@@ -142,9 +144,19 @@ export declare class DuckDBBrowserEngine {
 export declare class DataMeshClient {
     private catalogUrls;
     engine: ExecutionEngine;
+    proxyUrl?: string;
     private duckdbEngine;
     private catalogCache;
     constructor(options?: DataMeshClientOptions | string[]);
+    /**
+     * Sets or updates the active CORS proxy URL or template.
+     * e.g. "https://api.allorigins.win/raw?url={url}" or "https://corsproxy.io/?url={url}"
+     */
+    setProxy(proxyUrl?: string): void;
+    /**
+     * Formats a target URL through the configured proxy.
+     */
+    formatProxiedUrl(targetUrl: string, customProxy?: string): string;
     /**
      * Resolves any canonical triad ('ds:res', 'cat:ds:res'), sovereign URI ('datamesh://...'),
      * or direct URL into a physical fetchable URL.

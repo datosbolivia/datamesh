@@ -230,3 +230,5 @@ public/
 .coverage
 *.code-workspace
 docs/proyecto_grado/*
+
+.env

@@ -5,6 +5,9 @@
   "main": "bindings/typescript/dist/index.js",
   "module": "bindings/typescript/dist/index.js",
   "types": "bindings/typescript/dist/index.d.ts",
+  "bin": {
+    "datamesh": "./bin/datamesh.js"
+  },
   "exports": {
     ".": {
       "types": "./bindings/typescript/dist/index.d.ts",

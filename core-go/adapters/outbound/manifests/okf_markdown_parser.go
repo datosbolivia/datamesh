@@ -121,12 +121,19 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 				continue
 			}
 			if currentSection == "contracts" {
-				if currentContract.Type != "" {
+				if currentContract.Type != "" || currentContract.Path != "" {
 					m.Contracts = append(m.Contracts, currentContract)
 					currentContract = domain.Contract{}
 				}
-				if strings.HasPrefix(itemVal, "type:") {
-					currentContract.Type = strings.Trim(strings.TrimSpace(strings.TrimPrefix(itemVal, "type:")), "\"'")
+				if strings.Contains(itemVal, ":") {
+					parts := strings.SplitN(itemVal, ":", 2)
+					subK := strings.TrimSpace(parts[0])
+					subV := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+					if subK == "type" {
+						currentContract.Type = subV
+					} else if subK == "path" {
+						currentContract.Path = subV
+					}
 				}
 				continue
 			}
@@ -163,7 +170,7 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 		}
 	}
 
-	if currentContract.Type != "" {
+	if currentContract.Type != "" || currentContract.Path != "" {
 		m.Contracts = append(m.Contracts, currentContract)
 	}
 

@@ -54,6 +54,7 @@ export interface QueryRequest {
   sort_direction?: "asc" | "desc";
   limit?: number;
   offset?: number;
+  proxy_url?: string;
 }
 
 export interface QueryResult {
@@ -69,6 +70,7 @@ export type ExecutionEngine = "duckdb" | "in-memory" | "hyparquet";
 export interface DataMeshClientOptions {
   catalogUrls?: string[];
   engine?: ExecutionEngine;
+  proxyUrl?: string;
 }
 
 /**
@@ -422,6 +424,7 @@ export class DuckDBBrowserEngine {
 export class DataMeshClient {
   private catalogUrls: string[];
   public engine: ExecutionEngine;
+  public proxyUrl?: string;
   private duckdbEngine: DuckDBBrowserEngine;
   private catalogCache: Catalog | null = null;
 
@@ -434,8 +437,33 @@ export class DataMeshClient {
         ? options.catalogUrls
         : [getDefaultCatalogUrl()];
       this.engine = options.engine || "duckdb";
+      this.proxyUrl = options.proxyUrl;
     }
     this.duckdbEngine = new DuckDBBrowserEngine();
+  }
+
+  /**
+   * Sets or updates the active CORS proxy URL or template.
+   * e.g. "https://api.allorigins.win/raw?url={url}" or "https://corsproxy.io/?url={url}"
+   */
+  setProxy(proxyUrl?: string): void {
+    this.proxyUrl = proxyUrl;
+  }
+
+  /**
+   * Formats a target URL through the configured proxy.
+   */
+  formatProxiedUrl(targetUrl: string, customProxy?: string): string {
+    const proxy = customProxy || this.proxyUrl;
+    if (!proxy || !targetUrl) return targetUrl;
+    if (proxy.includes('{url}')) {
+      return proxy.replace('{url}', encodeURIComponent(targetUrl));
+    }
+    if (proxy.endsWith('=') || proxy.endsWith('?url=')) {
+      return `${proxy}${encodeURIComponent(targetUrl)}`;
+    }
+    const sep = proxy.includes('?') ? '&' : '?';
+    return `${proxy}${sep}url=${encodeURIComponent(targetUrl)}`;
   }
 
   /**
@@ -597,7 +625,10 @@ export class DataMeshClient {
     }
 
     // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
-    const resolvedUrl = await this.resolveResource(req.resource_uri);
+    let resolvedUrl = await this.resolveResource(req.resource_uri);
+    if (req.proxy_url || this.proxyUrl) {
+      resolvedUrl = this.formatProxiedUrl(resolvedUrl, req.proxy_url);
+    }
 
     const res = await fetch(resolvedUrl);
     if (!res.ok) {

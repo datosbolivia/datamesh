@@ -41,6 +41,11 @@ def main():
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
 
+    # serve
+    serve_parser = subparsers.add_parser("serve", help="Run full HTTP REST, CORS proxy, and MCP server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+    serve_parser.add_argument("--port", "-p", type=int, default=8000, help="Bind port (default: 8000)")
+
     args = parser.parse_args()
 
     if args.command == "catalog":
@@ -72,6 +77,10 @@ def main():
     elif args.command == "mcp-serve":
         from datamesh.mcp_server import run_mcp_server
         run_mcp_server()
+
+    elif args.command == "serve":
+        from datamesh.server import run_server
+        run_server(host=args.host, port=args.port)
 
 if __name__ == "__main__":
     main()

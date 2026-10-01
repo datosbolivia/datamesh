@@ -151,6 +151,31 @@ func main() {
 		out, _ := json.MarshalIndent(cfg, "", "  ")
 		fmt.Println(string(out))
 
+	case "serve":
+		port := "8000"
+		host := "0.0.0.0"
+		for i := 2; i < len(os.Args); i++ {
+			if (os.Args[i] == "--port" || os.Args[i] == "-p") && i+1 < len(os.Args) {
+				port = os.Args[i+1]
+				i++
+			} else if os.Args[i] == "--host" && i+1 < len(os.Args) {
+				host = os.Args[i+1]
+				i++
+			}
+		}
+
+		serverCfg := ServerConfig{
+			Port:        port,
+			Host:        host,
+			EnableProxy: true,
+			EnableMcp:   true,
+			EnableCors:  true,
+		}
+		if err := StartDataMeshServer(serverCfg, catalogUC, dataProductUC, queryUC, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Server failed: %v\n", err)
+			os.Exit(1)
+		}
+
 	default:
 		printUsage()
 		os.Exit(1)
@@ -165,5 +190,6 @@ func printUsage() {
 	fmt.Println("  datamesh get <url_or_path>                   Resolve and validate OKF v0.2 Data Product")
 	fmt.Println("  datamesh sql \"<SQL_QUERY>\"                   Execute full ANSI/DuckDB SQL with triad URIs")
 	fmt.Println("  datamesh query <uri> [--filter k=v] [--limit N] Query tabular resource")
+	fmt.Println("  datamesh serve [--port 8000] [--host 0.0.0.0] Launch HTTP REST, CORS proxy, and MCP server")
 	fmt.Println("  datamesh config                              Print active merged configuration")
 }

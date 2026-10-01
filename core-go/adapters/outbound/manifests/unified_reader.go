@@ -64,13 +64,26 @@ func (r *UnifiedMetadataReader) ReadPackage(ctx context.Context, uriOrPath strin
 
 // ReadNode resolves a node directory or index.md and returns a unified DataProduct with resources.
 func (r *UnifiedMetadataReader) ReadNode(ctx context.Context, uriOrPath string) (*domain.DataProduct, error) {
+	isURL := strings.HasPrefix(uriOrPath, "http://") || strings.HasPrefix(uriOrPath, "https://")
 	baseDir := uriOrPath
-	if strings.HasSuffix(baseDir, ".md") || strings.HasSuffix(baseDir, ".json") || strings.HasSuffix(baseDir, ".yaml") || strings.HasSuffix(baseDir, ".yml") {
-		baseDir = filepath.Dir(baseDir)
+	var indexPath string
+
+	if isURL {
+		if strings.HasSuffix(baseDir, ".md") || strings.HasSuffix(baseDir, ".json") || strings.HasSuffix(baseDir, ".yaml") || strings.HasSuffix(baseDir, ".yml") {
+			if idx := strings.LastIndex(baseDir, "/"); idx != -1 {
+				baseDir = baseDir[:idx]
+			}
+		}
+		baseDir = strings.TrimSuffix(baseDir, "/")
+		indexPath = baseDir + "/index.md"
+	} else {
+		if strings.HasSuffix(baseDir, ".md") || strings.HasSuffix(baseDir, ".json") || strings.HasSuffix(baseDir, ".yaml") || strings.HasSuffix(baseDir, ".yml") {
+			baseDir = filepath.Dir(baseDir)
+		}
+		indexPath = filepath.Join(baseDir, "index.md")
 	}
 
 	// 1. Read index.md for frontmatter and descriptions
-	indexPath := filepath.Join(baseDir, "index.md")
 	var manifest domain.Manifest
 	var description string
 	var rawContent string
@@ -82,18 +95,52 @@ func (r *UnifiedMetadataReader) ReadNode(ctx context.Context, uriOrPath string) 
 			manifest = m
 			description = desc
 		}
+	} else if strings.HasSuffix(uriOrPath, ".md") {
+		if data, err := r.readData(ctx, uriOrPath); err == nil {
+			rawContent = string(data)
+			m, desc, err := ParseOKFFrontmatter(data)
+			if err == nil {
+				manifest = m
+				description = desc
+			}
+		}
 	}
 
-	// 2. Discover package manifest (datapackage.json, datapackage.yaml, datapackage.yml)
+	// 2. Discover package manifest guided by contracts in frontmatter or standard files
 	var resources []domain.Resource
-	candidateFiles := []string{
-		"datapackage.json",
-		"datapackage.yaml",
-		"datapackage.yml",
+	var candidateFiles []string
+
+	for _, c := range manifest.Contracts {
+		if c.Path != "" {
+			targetP := c.Path
+			if isURL {
+				if !strings.HasPrefix(targetP, "http://") && !strings.HasPrefix(targetP, "https://") {
+					targetP = fmt.Sprintf("%s/%s", baseDir, strings.TrimPrefix(targetP, "./"))
+				}
+			} else {
+				if !filepath.IsAbs(targetP) && !strings.HasPrefix(targetP, "http://") && !strings.HasPrefix(targetP, "https://") {
+					targetP = filepath.Join(baseDir, strings.TrimPrefix(targetP, "./"))
+				}
+			}
+			candidateFiles = append(candidateFiles, targetP)
+		}
 	}
 
-	for _, fname := range candidateFiles {
-		targetP := filepath.Join(baseDir, fname)
+	if isURL {
+		candidateFiles = append(candidateFiles,
+			fmt.Sprintf("%s/datapackage.json", baseDir),
+			fmt.Sprintf("%s/datapackage.yaml", baseDir),
+			fmt.Sprintf("%s/datapackage.yml", baseDir),
+		)
+	} else {
+		candidateFiles = append(candidateFiles,
+			filepath.Join(baseDir, "datapackage.json"),
+			filepath.Join(baseDir, "datapackage.yaml"),
+			filepath.Join(baseDir, "datapackage.yml"),
+		)
+	}
+
+	for _, targetP := range candidateFiles {
 		if pkg, err := r.ReadPackage(ctx, targetP); err == nil {
 			resources = pkg.Resources
 			if manifest.Title == "" && pkg.Title != "" {
@@ -104,7 +151,12 @@ func (r *UnifiedMetadataReader) ReadNode(ctx context.Context, uriOrPath string) 
 	}
 
 	if manifest.Title == "" {
-		manifest.Title = filepath.Base(baseDir)
+		if isURL {
+			parts := strings.Split(baseDir, "/")
+			manifest.Title = parts[len(parts)-1]
+		} else {
+			manifest.Title = filepath.Base(baseDir)
+		}
 	}
 	if manifest.Type == "" {
 		manifest.Type = "dataset"
@@ -141,7 +193,7 @@ func (r *UnifiedMetadataReader) ResolveTriad(ctx context.Context, triad domain.R
 	dataset := triad.Dataset
 	resourceName := triad.Resource
 
-	// 1. Search candidate local node directories
+	// 1. Search candidate local node directories via ReadNode (contracts-guided)
 	candidateDirs := []string{
 		filepath.Join("knowledge", "nodes", dataset),
 		filepath.Join("nodes", dataset),
@@ -149,10 +201,9 @@ func (r *UnifiedMetadataReader) ResolveTriad(ctx context.Context, triad domain.R
 	}
 
 	for _, dir := range candidateDirs {
-		for _, fname := range []string{"datapackage.json", "datapackage.yaml", "datapackage.yml"} {
-			fullP := filepath.Join(dir, fname)
-			if pkg, err := r.ReadPackage(ctx, fullP); err == nil {
-				if res, found := pkg.FindResource(resourceName); found {
+		if dp, err := r.ReadNode(ctx, dir); err == nil && len(dp.Resources) > 0 {
+			for _, res := range dp.Resources {
+				if strings.EqualFold(res.Name, resourceName) {
 					return &domain.ResolvedResource{
 						Triad:       triad,
 						PhysicalURI: res.Path,
@@ -172,15 +223,9 @@ func (r *UnifiedMetadataReader) ResolveTriad(ctx context.Context, triad domain.R
 				rUrl := strings.ToLower(entry.ResolvedURL)
 				t := strings.ToLower(entry.Title)
 				if strings.Contains(u, cleanDs) || strings.Contains(rUrl, cleanDs) || t == cleanDs || domain.Slugify(t) == cleanDs {
-					baseDir := entry.ResolvedURL
-					if idx := strings.LastIndex(baseDir, "/"); idx != -1 {
-						baseDir = baseDir[:idx]
-					}
-
-					for _, fname := range []string{"datapackage.json", "datapackage.yaml", "datapackage.yml"} {
-						dpURL := fmt.Sprintf("%s/%s", baseDir, fname)
-						if pkg, err := r.ReadPackage(ctx, dpURL); err == nil {
-							if res, found := pkg.FindResource(resourceName); found {
+					if dp, err := r.ReadNode(ctx, entry.ResolvedURL); err == nil && len(dp.Resources) > 0 {
+						for _, res := range dp.Resources {
+							if strings.EqualFold(res.Name, resourceName) {
 								return &domain.ResolvedResource{
 									Triad:       triad,
 									PhysicalURI: res.Path,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any, Dict
 
@@ -87,9 +88,45 @@ TOOLS = [
                 "sql_query": {
                     "type": "string",
                     "description": "Full ANSI SQL query referencing tables as 'catalogo:dataset:resource'."
+                },
+                "sql": {
+                    "type": "string",
+                    "description": "Alternative alias for sql_query."
                 }
             },
             "required": ["sql_query"]
+        }
+    },
+    {
+        "name": "query_sql",
+        "description": "Alias for datamesh_sql_query. Executes DuckDB SQL queries over datasets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "sql": {
+                    "type": "string",
+                    "description": "Full ANSI SQL query referencing dataset tables."
+                },
+                "sql_query": {
+                    "type": "string",
+                    "description": "Full ANSI SQL query."
+                }
+            },
+            "required": ["sql"]
+        }
+    },
+    {
+        "name": "read_resource",
+        "description": "Fetches a remote or cached dataset resource bypassing browser CORS restrictions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uri": {
+                    "type": "string",
+                    "description": "Resource URI or HTTP URL."
+                }
+            },
+            "required": ["uri"]
         }
     }
 ]
@@ -256,10 +293,38 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                 data = dm.query(resource_uri, filters=filters, limit=limit)
                 return make_tool_result(msg_id, data)
 
-            elif tool_name == "datamesh_sql_query":
-                sql_query = args.get("sql_query", "")
+            elif tool_name in ("datamesh_sql_query", "query_sql"):
+                sql_query = args.get("sql_query") or args.get("sql") or ""
                 data = dm.sql(sql_query)
                 return make_tool_result(msg_id, data)
+
+            elif tool_name in ("read_resource", "datamesh_read_resource"):
+                resource_uri = args.get("resource_uri") or args.get("uri") or ""
+                limit = args.get("limit")
+                
+                # 1. First attempt resolver_usecase to locate local or cached file (Parquet/CSV)
+                try:
+                    resolved = dm._runtime.resolver_usecase.resolve(resource_uri)
+                    if resolved and resolved.local_path and os.path.exists(resolved.local_path):
+                        import duckdb
+                        local_p = str(resolved.local_path)
+                        read_clause = f"read_parquet('{local_p}')" if local_p.endswith(".parquet") else f"read_csv_auto('{local_p}')"
+                        limit_clause = f" LIMIT {int(limit)}" if limit else ""
+                        df = duckdb.query(f"SELECT * FROM {read_clause}{limit_clause}").to_df()
+                        cols = list(df.columns)
+                        rows = df.astype(str).values.tolist()
+                        return make_tool_result(msg_id, {
+                            "columns": cols,
+                            "rows": rows,
+                            "row_count": len(rows),
+                            "format": resolved.format or "tabular",
+                        })
+                except Exception as res_err:
+                    sys.stderr.write(f"[mcp read_resource] Resolver conversion failed: {res_err}\n")
+
+                # 2. Fallback to dm.query
+                res = dm.query(resource_uri, limit=limit)
+                return make_tool_result(msg_id, res)
 
             else:
                 return {

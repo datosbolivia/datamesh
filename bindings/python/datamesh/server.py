@@ -99,12 +99,24 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 sys.stderr.write(f"[datamesh serve] Resolver fallback skipped: {resolve_err}\n")
 
             # B. Direct HTTP fetch attempt
+            import ssl
             try:
                 req = urllib.request.Request(
                     target_url,
                     headers={"User-Agent": "DataMesh-Sovereign-Proxy/0.2.0 (+https://datosbolivia.org)"},
                 )
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                try:
+                    resp_ctx = urllib.request.urlopen(req, timeout=30)
+                except urllib.error.URLError as u_err:
+                    if isinstance(u_err.reason, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in str(u_err) or "certificate" in str(u_err).lower():
+                        unverified = ssl.create_default_context()
+                        unverified.check_hostname = False
+                        unverified.verify_mode = ssl.CERT_NONE
+                        resp_ctx = urllib.request.urlopen(req, timeout=30, context=unverified)
+                    else:
+                        raise
+
+                with resp_ctx as resp:
                     status_code = resp.status
                     content_type = resp.headers.get("Content-Type", "application/octet-stream")
                     body = resp.read()

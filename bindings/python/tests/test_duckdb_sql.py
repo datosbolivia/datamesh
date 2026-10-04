@@ -149,3 +149,18 @@ def test_air_quality_single_quoted_query():
 def test_unresolvable_table_raises_descriptive_error():
     with pytest.raises(RuntimeError, match="Could not resolve table reference"):
         dm.sql("SELECT * FROM 'non_existent_dataset:missing_resource' LIMIT 1")
+
+def test_slash_separated_triad_and_url_query():
+    mapping = {
+        "bolivia/elecciones/votos": CSV_PATH,
+        "https://datosbolivia.github.io/datasets/cartera-creditos/creditos.csv": CSV_PATH,
+    }
+    # Test slash notation 'cat/ds/res'
+    r1 = dm.sql("SELECT departamento, total_votos FROM (SELECT departamento, SUM(votos_validos) as total_votos FROM 'bolivia/elecciones/votos' GROUP BY departamento) LIMIT 2", table_mapping=mapping)
+    assert r1["row_count"] == 2
+    assert "departamento" in r1["columns"]
+
+    # Test direct URL notation
+    r2 = dm.sql("SELECT COUNT(*) as cnt FROM 'https://datosbolivia.github.io/datasets/cartera-creditos/creditos.csv'", table_mapping=mapping)
+    assert r2["row_count"] == 1
+    assert r2["rows"][0][0] == 6

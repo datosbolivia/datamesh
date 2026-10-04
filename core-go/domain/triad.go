@@ -11,6 +11,7 @@ var (
 	ErrInvalidTriadFormat = errors.New("invalid triad format: expected '[catalog:]dataset:resource' or 'datamesh://[catalog/]dataset/resource'")
 	tableRefSQLRegex      = regexp.MustCompile(`(?i)\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_\-\.:/]+))`)
 	quotedColonRegex      = regexp.MustCompile(`["']([^"':\s]+:[^"']+)["']`)
+	quotedSlashRegex      = regexp.MustCompile(`["']([^"'\s]+/[^"'\s]+)["']`)
 )
 
 // ResourceTriad represents the canonical address '[catalog:]dataset:resource' in the federated DataMesh.
@@ -63,7 +64,28 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 		return nil, ErrInvalidTriadFormat
 	}
 
-	// 2. Colon-separated format
+	// 2. HTTP/HTTPS or file URLs (e.g. https://.../datasets/cartera-creditos/creditos.csv)
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "file://") {
+		cleanURL := strings.Split(strings.Split(trimmed, "?")[0], "#")[0]
+		cleanURL = strings.TrimRight(cleanURL, "/")
+		parts := strings.Split(cleanURL, "/")
+		if len(parts) >= 2 {
+			ds := strings.TrimSpace(parts[len(parts)-2])
+			resRaw := strings.TrimSpace(parts[len(parts)-1])
+			res := resRaw
+			if dotIdx := strings.LastIndex(resRaw, "."); dotIdx > 0 {
+				res = resRaw[:dotIdx]
+			}
+			if ds != "" && res != "" {
+				return &ResourceTriad{
+					Dataset:  ds,
+					Resource: res,
+				}, nil
+			}
+		}
+	}
+
+	// 3. Colon-separated format ('cat:ds:res' or 'ds:res')
 	if strings.Contains(trimmed, ":") {
 		parts := strings.Split(trimmed, ":")
 		if len(parts) == 3 {
@@ -87,6 +109,28 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 			return &ResourceTriad{
 				Dataset:  ds,
 				Resource: res,
+			}, nil
+		}
+	}
+
+	// 4. Slash-separated format ('cat/ds/res' or 'ds/res')
+	if strings.Contains(trimmed, "/") {
+		var parts []string
+		for _, p := range strings.Split(trimmed, "/") {
+			if s := strings.TrimSpace(p); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) == 3 {
+			return &ResourceTriad{
+				Catalog:  parts[0],
+				Dataset:  parts[1],
+				Resource: parts[2],
+			}, nil
+		} else if len(parts) == 2 {
+			return &ResourceTriad{
+				Dataset:  parts[0],
+				Resource: parts[1],
 			}, nil
 		}
 	}
@@ -123,6 +167,21 @@ func ExtractTriadsFromSQL(sqlQuery string) []ResourceTriad {
 	// 2. Scan quoted strings with colons
 	quotedMatches := quotedColonRegex.FindAllStringSubmatch(sqlQuery, -1)
 	for _, m := range quotedMatches {
+		if len(m) > 1 {
+			rawRef := strings.TrimSpace(m[1])
+			if triad, err := ParseTriad(rawRef); err == nil {
+				key := triad.String()
+				if !seen[key] {
+					seen[key] = true
+					triads = append(triads, *triad)
+				}
+			}
+		}
+	}
+
+	// 3. Scan quoted strings with slashes
+	quotedSlashMatches := quotedSlashRegex.FindAllStringSubmatch(sqlQuery, -1)
+	for _, m := range quotedSlashMatches {
 		if len(m) > 1 {
 			rawRef := strings.TrimSpace(m[1])
 			if triad, err := ParseTriad(rawRef); err == nil {

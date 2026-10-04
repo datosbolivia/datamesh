@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import re
 from typing import Any, Dict, Optional
 
 @dataclass(frozen=True)
@@ -39,20 +40,50 @@ class CanonicalURI:
         trimmed = raw.strip().strip("'\"`")
         if not trimmed:
             return None
+        # 1. datamesh:// or odkf:// scheme
         if trimmed.startswith(("datamesh://", "odkf://")):
             clean = trimmed.split("://", 1)[1]
-            parts = clean.split("/")
+            parts = [p.strip() for p in clean.split("/") if p.strip()]
             if len(parts) >= 3:
-                return cls(catalog=parts[0].strip(), dataset=parts[1].strip(), resource=parts[2].strip())
+                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2])
             elif len(parts) == 2:
-                return cls(catalog=None, dataset=parts[0].strip(), resource=parts[1].strip())
+                return cls(catalog=None, dataset=parts[0], resource=parts[1])
             return None
+
+        # 2. HTTP/HTTPS or file URLs containing /datasets/<dataset>/<resource> or /nodes/<dataset>/<resource>
+        if trimmed.startswith(("http://", "https://", "file://")):
+            # Match e.g. .../datasets/cartera-creditos/creditos.csv or .../nodes/elecciones/votos.parquet
+            match = re.search(r'/(?:datasets|nodes)/([^/]+)/([^/?#]+)', trimmed)
+            if match:
+                ds = match.group(1).strip()
+                res_raw = match.group(2).strip()
+                res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
+                return cls(catalog=None, dataset=ds, resource=res)
+            # Match generic URL ending with /<dataset>/<resource.ext>
+            parsed_path = trimmed.split("?")[0].split("#")[0].rstrip("/")
+            path_parts = [p for p in parsed_path.split("/") if p]
+            if len(path_parts) >= 2:
+                ds = path_parts[-2]
+                res_raw = path_parts[-1]
+                res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
+                return cls(catalog=None, dataset=ds, resource=res)
+
+        # 3. Colon-separated format ('cat:ds:res' or 'ds:res')
         if ":" in trimmed:
             parts = trimmed.split(":")
             if len(parts) == 3:
                 return cls(catalog=parts[0].strip(), dataset=parts[1].strip(), resource=parts[2].strip())
             elif len(parts) == 2:
                 return cls(catalog=None, dataset=parts[0].strip(), resource=parts[1].strip())
+
+        # 4. Slash-separated format ('cat/ds/res' or 'ds/res')
+        if "/" in trimmed:
+            parts = [p.strip() for p in trimmed.split("/") if p.strip()]
+            if len(parts) == 3:
+                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2])
+            elif len(parts) == 2:
+                return cls(catalog=None, dataset=parts[0], resource=parts[1])
+
         return None
 
     @property

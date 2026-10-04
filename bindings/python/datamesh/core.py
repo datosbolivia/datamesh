@@ -13,7 +13,7 @@ try:
 except ImportError:
     yaml = None
 from datamesh.constants import DEFAULT_CACHE_DIR, DEFAULT_DATAMESH_HOME, get_workspace_search_dirs
-from datamesh.domain.models import StorageConfig
+from datamesh.domain.models import StorageConfig, CanonicalURI
 from datamesh.ports.storage import StoragePort
 from datamesh.ports.resolver import ConfigPort, ResourceAdapterPort
 from datamesh.ports.engine import QueryEnginePort
@@ -354,9 +354,15 @@ class DataMeshRuntime:
 
         candidates.extend([
             f"knowledge/nodes/{clean_ds}",
+            f"../catalogo-datamesh/knowledge/nodes/{clean_ds}",
+            f"../../catalogo-datamesh/knowledge/nodes/{clean_ds}",
             str(DEFAULT_DATAMESH_HOME / "knowledge" / "nodes" / clean_ds),
             str(DEFAULT_CACHE_DIR / "nodes" / clean_ds),
         ])
+        for ws in get_workspace_search_dirs():
+            candidates.append(str(ws / "catalogo-datamesh" / "knowledge" / "nodes" / clean_ds))
+            candidates.append(str(ws / "knowledge" / "nodes" / clean_ds))
+            candidates.append(str(ws / clean_ds))
 
         # 1. Local check
         for c in candidates:
@@ -399,21 +405,28 @@ class DataMeshRuntime:
         return None
 
     def _resolve_triad_to_path(self, table_ref: str, *args) -> Optional[str]:
-        """Resolves table reference ('cat:ds:res', 'ds:res', or slug) to concrete physical file or URL."""
+        # 1. Direct file path
+        if os.path.exists(table_ref):
+            return os.path.abspath(table_ref)
+
+        parsed_uri = CanonicalURI.parse(table_ref)
         if args:
             dataset = args[0] if len(args) > 0 else ""
             resource = args[1] if len(args) > 1 else ""
+        elif parsed_uri:
+            dataset = parsed_uri.dataset
+            resource = parsed_uri.resource
         elif ":" in table_ref:
             parts = table_ref.split(":")
+            dataset = parts[-2]
+            resource = parts[-1]
+        elif "/" in table_ref:
+            parts = [p.strip() for p in table_ref.split("/") if p.strip()]
             dataset = parts[-2]
             resource = parts[-1]
         else:
             dataset = table_ref.split("_")[0]
             resource = table_ref
-
-        # 1. Direct file path
-        if os.path.exists(table_ref):
-            return os.path.abspath(table_ref)
 
         # 2. Datapackage manifest lookup
         pkg_data = self._find_node_datapackage(dataset)

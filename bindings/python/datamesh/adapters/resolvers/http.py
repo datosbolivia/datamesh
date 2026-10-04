@@ -87,8 +87,21 @@ class HttpAdapter(ResourceAdapterPort):
             }
         )
 
+        import ssl
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            try:
+                resp = urllib.request.urlopen(req, timeout=30)
+            except urllib.error.URLError as url_err:
+                # Fallback on SSL verification failure (e.g. self-signed, expired, or non-standard government CAs)
+                if isinstance(url_err.reason, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in str(url_err) or "certificate" in str(url_err).lower():
+                    unverified_ctx = ssl.create_default_context()
+                    unverified_ctx.check_hostname = False
+                    unverified_ctx.verify_mode = ssl.CERT_NONE
+                    resp = urllib.request.urlopen(req, timeout=30, context=unverified_ctx)
+                else:
+                    raise
+
+            with resp:
                 content_type = resp.headers.get("Content-Type")
                 etag = resp.headers.get("ETag")
                 ext = self._infer_extension(uri_or_path, content_type)

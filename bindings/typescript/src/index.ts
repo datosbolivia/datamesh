@@ -94,6 +94,11 @@ export const TABLE_REF_PATTERN = /\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["']([^"']+)[
 export const QUOTED_COLON_PATTERN = /["']([^"':\s]+:[^"']+)["']/g;
 
 /**
+ * Matches quoted identifiers with slashes (slash-separated triads or relative paths).
+ */
+export const QUOTED_SLASH_PATTERN = /["']([^"'\s]+/[^"'\s]+)["']/g;
+
+/**
  * Sanitizes text replacing non-alphanumeric chars with underscores.
  */
 export function slugify(text: string): string {
@@ -174,10 +179,13 @@ export function parseSimpleYamlResources(text: string): Array<{ name?: string; p
 }
 
 /**
- * Parses any canonical triad, datamesh:// URI, or table identifier into a structured ResourceTriad.
+ * Parses any canonical triad, datamesh:// URI, URL, or table identifier into a structured ResourceTriad.
  * Supports:
  * - 'catalogo:dataset:resource' (3 parts)
  * - 'dataset:resource' (2 parts)
+ * - 'catalogo/dataset/recurso' (3 parts)
+ * - 'dataset/recurso' (2 parts)
+ * - 'https://.../datasets/cartera-creditos/creditos.csv'
  * - 'datamesh://catalogo/dataset/resource'
  * - 'datamesh://dataset/resource'
  */
@@ -197,7 +205,21 @@ export function parseCanonicalUri(raw: string): ResourceTriad | null {
     return null;
   }
 
-  // 2. Colon-separated format ('cat:ds:res' or 'ds:res')
+  // 2. HTTP/HTTPS or file URLs (e.g. https://.../datasets/cartera-creditos/creditos.csv)
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("file://")) {
+    const cleanUrl = trimmed.split("?")[0].split("#")[0].replace(/\/+$/, '');
+    const urlParts = cleanUrl.split("/").filter(Boolean);
+    if (urlParts.length >= 2) {
+      const ds = urlParts[urlParts.length - 2];
+      const resRaw = urlParts[urlParts.length - 1];
+      const res = resRaw.includes(".") ? resRaw.substring(0, resRaw.lastIndexOf(".")) : resRaw;
+      if (ds && res) {
+        return { dataset: ds, resource: res };
+      }
+    }
+  }
+
+  // 3. Colon-separated format ('cat:ds:res' or 'ds:res')
   if (trimmed.includes(":") && !trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("file://")) {
     const parts = trimmed.split(":");
     if (parts.length === 3) {
@@ -213,6 +235,16 @@ export function parseCanonicalUri(raw: string): ResourceTriad | null {
       if (ds && res) {
         return { dataset: ds, resource: res };
       }
+    }
+  }
+
+  // 4. Slash-separated format ('cat/ds/res' or 'ds/res')
+  if (trimmed.includes("/")) {
+    const parts = trimmed.split("/").map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 3) {
+      return { catalog: parts[0], dataset: parts[1], resource: parts[2] };
+    } else if (parts.length === 2) {
+      return { dataset: parts[0], resource: parts[1] };
     }
   }
 
@@ -745,6 +777,13 @@ export class DataMeshClient {
     }
     const quotedMatches = Array.from(sqlQuery.matchAll(QUOTED_COLON_PATTERN));
     for (const m of quotedMatches) {
+      const ref = (m[1] || "").trim();
+      if (ref && !tableRefs.includes(ref)) {
+        tableRefs.push(ref);
+      }
+    }
+    const quotedSlashMatches = Array.from(sqlQuery.matchAll(QUOTED_SLASH_PATTERN));
+    for (const m of quotedSlashMatches) {
       const ref = (m[1] || "").trim();
       if (ref && !tableRefs.includes(ref)) {
         tableRefs.push(ref);

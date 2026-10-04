@@ -11,14 +11,16 @@ import duckdb
 from datamesh.constants import DEFAULT_CACHE_DIR, get_workspace_search_dirs
 from datamesh.ports.engine import QueryEnginePort
 
-# Matches table names in FROM and JOIN clauses (quoted or unquoted)
+# Matches table names in FROM and JOIN clauses (quoted or unquoted, including slashes and URLs)
 TABLE_REF_PATTERN = re.compile(
-    r'\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\-\.:]+))',
+    r'\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\-\.:/]+))',
     re.IGNORECASE
 )
 
 # Matches any quoted identifier containing colons (e.g. "dataset:resource" or "cat:ds:res")
 QUOTED_COLON_PATTERN = re.compile(r'["\']([^"\':\s]+:[^"\']+)["\']')
+# Matches any quoted identifier containing slashes (e.g. "dataset/resource" or "cat/ds/res")
+QUOTED_SLASH_PATTERN = re.compile(r'["\']([^"\'\s]+/[^"\'\s]+)["\']')
 
 def slugify(text: str) -> str:
     """Sanitizes text replacing non-alphanumeric chars with underscores."""
@@ -148,20 +150,48 @@ class DuckDBQueryEngine(QueryEnginePort):
     def register_table_aliases(self, table_ref: str, file_path_or_url: str) -> None:
         """
         Registers a physical resource as a DuckDB virtual view under multiple canonical and slugified aliases.
+        If registering a remote URL fails (e.g. SSL peer verification or HTTP IO error),
+        downloads the file to local cache and registers the local copy.
         """
         read_expr = self._get_read_expression(file_path_or_url)
         aliases = self._generate_aliases(table_ref)
 
+        actual_path = file_path_or_url
+        is_remote = actual_path.startswith(("http://", "https://"))
+
         for alias in aliases:
-            if self._registered_views.get(alias) != file_path_or_url:
+            if self._registered_views.get(alias) != actual_path:
                 view_sql = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM {read_expr}'
                 try:
                     self.conn.execute(view_sql)
-                    self._registered_views[alias] = file_path_or_url
-                    # Also register unquoted if valid SQL identifier
+                    self._registered_views[alias] = actual_path
                     if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
                         self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {read_expr}')
                 except Exception as e:
+                    # If remote URL failed with SSL/IO/network error, fetch locally via resolver/storage and retry
+                    if is_remote and (self.resolver_usecase or self.storage):
+                        try:
+                            resolved = None
+                            if self.resolver_usecase:
+                                resolved = self.resolver_usecase.resolve(actual_path)
+                            elif self.storage:
+                                from datamesh.adapters.resolvers.http import HttpAdapter
+                                resolved = HttpAdapter().resolve_and_fetch(actual_path, self.storage)
+
+                            if resolved and resolved.local_path and os.path.exists(resolved.local_path):
+                                actual_path = str(resolved.local_path)
+                                is_remote = False
+                                read_expr = self._get_read_expression(actual_path)
+                                view_sql = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM {read_expr}'
+                                self.conn.execute(view_sql)
+                                self._registered_views[alias] = actual_path
+                                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
+                                    self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {read_expr}')
+                                continue
+                        except Exception as dl_err:
+                            self._view_errors[alias] = f"Remote view failed ({e}) and local cache fetch failed ({dl_err})"
+                            continue
+
                     self._view_errors[alias] = str(e)
 
     def _generate_aliases(self, table_ref: str) -> List[str]:
@@ -170,15 +200,60 @@ class DuckDBQueryEngine(QueryEnginePort):
         if clean_slug:
             aliases.append(clean_slug)
 
+        # 1. URL pattern: https://datosbolivia.github.io/datasets/cartera-creditos/creditos.csv
+        if table_ref.startswith(("http://", "https://", "file://")):
+            parsed_path = table_ref.split("?")[0].split("#")[0].rstrip("/")
+            path_parts = [p for p in parsed_path.split("/") if p]
+            if len(path_parts) >= 2:
+                ds = path_parts[-2]
+                res_raw = path_parts[-1]
+                res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
+                aliases.extend([
+                    f"{ds}:{res}",
+                    f"{ds}/{res}",
+                    res,
+                    slugify(f"{ds}_{res}"),
+                    slugify(res),
+                ])
+            elif len(path_parts) == 1:
+                res_raw = path_parts[0]
+                res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
+                aliases.extend([res, slugify(res)])
+
+        # 2. Colon-separated format ('cat:ds:res' or 'ds:res')
         if ":" in table_ref:
             parts = table_ref.split(":")
             if len(parts) == 3:
                 aliases.append(f"{parts[1]}:{parts[2]}")
+                aliases.append(f"{parts[0]}/{parts[1]}/{parts[2]}")
+                aliases.append(f"{parts[1]}/{parts[2]}")
                 aliases.append(parts[1])
+                aliases.append(parts[2])
                 aliases.append(slugify(f"{parts[1]}_{parts[2]}"))
+                aliases.append(slugify(parts[2]))
             elif len(parts) == 2:
+                aliases.append(f"{parts[0]}/{parts[1]}")
                 aliases.append(parts[0])
+                aliases.append(parts[1])
                 aliases.append(slugify(f"{parts[0]}_{parts[1]}"))
+                aliases.append(slugify(parts[1]))
+
+        # 3. Slash-separated format ('cat/ds/res' or 'ds/res')
+        if "/" in table_ref and not table_ref.startswith(("http://", "https://", "file://")):
+            parts = [p.strip() for p in table_ref.split("/") if p.strip()]
+            if len(parts) == 3:
+                aliases.append(f"{parts[0]}:{parts[1]}:{parts[2]}")
+                aliases.append(f"{parts[1]}:{parts[2]}")
+                aliases.append(parts[1])
+                aliases.append(parts[2])
+                aliases.append(slugify(f"{parts[1]}_{parts[2]}"))
+                aliases.append(slugify(parts[2]))
+            elif len(parts) == 2:
+                aliases.append(f"{parts[0]}:{parts[1]}")
+                aliases.append(parts[0])
+                aliases.append(parts[1])
+                aliases.append(slugify(f"{parts[0]}_{parts[1]}"))
+                aliases.append(slugify(parts[1]))
 
         return list(dict.fromkeys(aliases))
 
@@ -211,6 +286,11 @@ class DuckDBQueryEngine(QueryEnginePort):
             if table and table not in candidates:
                 candidates.append(table.strip())
 
+        for m in QUOTED_SLASH_PATTERN.finditer(query):
+            table = m.group(1)
+            if table and table not in candidates:
+                candidates.append(table.strip())
+
         return candidates
 
     def _resolve_table_locally(self, table_ref: str) -> Optional[str]:
@@ -220,8 +300,19 @@ class DuckDBQueryEngine(QueryEnginePort):
 
         dataset = ""
         resource = ""
-        if ":" in table_ref:
+        if table_ref.startswith(("http://", "https://")):
+            parsed_path = table_ref.split("?")[0].split("#")[0].rstrip("/")
+            path_parts = [p for p in parsed_path.split("/") if p]
+            if len(path_parts) >= 2:
+                dataset = path_parts[-2]
+                res_raw = path_parts[-1]
+                resource = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
+        elif ":" in table_ref:
             parts = table_ref.split(":")
+            dataset = parts[-2]
+            resource = parts[-1]
+        elif "/" in table_ref:
+            parts = [p.strip() for p in table_ref.split("/") if p.strip()]
             dataset = parts[-2]
             resource = parts[-1]
         else:

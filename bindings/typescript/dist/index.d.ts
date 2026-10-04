@@ -96,10 +96,25 @@ export interface QueryResult {
     engine?: string;
 }
 export type ExecutionEngine = "duckdb" | "in-memory" | "hyparquet";
+export interface DatasetContext {
+    dataset?: string;
+    slug?: string;
+    resources?: Array<{
+        name?: string;
+        path?: string;
+        [key: string]: any;
+    }>;
+}
 export interface DataMeshClientOptions {
     catalogUrls?: string[];
     engine?: ExecutionEngine;
     proxyUrl?: string;
+    defaultDataset?: string;
+    defaultResources?: Array<{
+        name?: string;
+        path?: string;
+        [key: string]: any;
+    }>;
 }
 /**
  * Standard sovereign endpoints for OKF / ODKF v0.2 catalogs and portals.
@@ -221,6 +236,12 @@ export declare class DataMeshClient {
     proxyUrl?: string;
     private duckdbEngine;
     private catalogCache;
+    defaultDataset?: string;
+    defaultResources?: Array<{
+        name?: string;
+        path?: string;
+        [key: string]: any;
+    }>;
     constructor(options?: DataMeshClientOptions | string[]);
     /**
      * Sets or updates the active CORS proxy URL or template.
@@ -235,7 +256,7 @@ export declare class DataMeshClient {
      * Resolves any canonical triad ('ds:res', 'cat:ds:res'), sovereign URI ('datamesh://...'),
      * or direct URL into a physical fetchable URL.
      */
-    resolveResource(uriOrTriad: string): Promise<string>;
+    resolveResource(uriOrTriad: string, context?: DatasetContext): Promise<string>;
     /**
      * Discovers sovereign data products across configured federated catalogs or a specified endpoint.
      * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
@@ -256,7 +277,7 @@ export declare class DataMeshClient {
      * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
      * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
-    query(req: QueryRequest): Promise<QueryResult>;
+    query(req: QueryRequest, context?: DatasetContext): Promise<QueryResult>;
     /**
      * Runs in-memory filtering, keyword search, sorting, and pagination on parsed tabular data.
      */
@@ -286,7 +307,7 @@ export declare const datamesh: DataMeshClient;
 export declare const discover: (url?: string) => Promise<Catalog>;
 export declare const search: (keyword: string, url?: string) => Promise<CatalogEntry[]>;
 export declare const get: (uriOrUrl: string) => Promise<DataProduct>;
-export declare const query: (req: QueryRequest) => Promise<QueryResult>;
+export declare const query: (req: QueryRequest, context?: DatasetContext) => Promise<QueryResult>;
 export declare const sql: (sqlQuery: string, sourceOrOptions?: string | {
     columns: string[];
     rows: string[][];

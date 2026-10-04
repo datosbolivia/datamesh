@@ -499,6 +499,8 @@ export class DataMeshClient {
     proxyUrl;
     duckdbEngine;
     catalogCache = null;
+    defaultDataset;
+    defaultResources;
     constructor(options = {}) {
         if (Array.isArray(options)) {
             this.catalogUrls = options.length > 0 ? options : [getDefaultCatalogUrl()];
@@ -510,6 +512,8 @@ export class DataMeshClient {
                 : [getDefaultCatalogUrl()];
             this.engine = options.engine || "duckdb";
             this.proxyUrl = options.proxyUrl;
+            this.defaultDataset = options.defaultDataset;
+            this.defaultResources = options.defaultResources;
         }
         this.duckdbEngine = new DuckDBBrowserEngine();
     }
@@ -540,7 +544,7 @@ export class DataMeshClient {
      * Resolves any canonical triad ('ds:res', 'cat:ds:res'), sovereign URI ('datamesh://...'),
      * or direct URL into a physical fetchable URL.
      */
-    async resolveResource(uriOrTriad) {
+    async resolveResource(uriOrTriad, context) {
         const trimmed = uriOrTriad.trim().replace(/^['"`]|['"`]$/g, '');
         if (trimmed.startsWith("http://") ||
             trimmed.startsWith("https://") ||
@@ -548,7 +552,28 @@ export class DataMeshClient {
             trimmed.startsWith("/")) {
             return normalizeResourceUrl(trimmed);
         }
-        const parsed = parseCanonicalUri(trimmed);
+        const activeResources = context?.resources || this.defaultResources;
+        const activeDataset = context?.dataset || context?.slug || this.defaultDataset;
+        // Check if matching resource is present in scoped resources
+        if (activeResources && activeResources.length > 0) {
+            const cleanTarget = trimmed.toLowerCase();
+            const matched = activeResources.find((r) => {
+                const rName = String(r.name || "").toLowerCase();
+                const rPath = String(r.path || "").toLowerCase();
+                return (rName === cleanTarget ||
+                    slugify(rName) === slugify(cleanTarget) ||
+                    rPath === cleanTarget ||
+                    rPath.endsWith(`/${cleanTarget}`) ||
+                    rPath.endsWith(`\\${cleanTarget}`));
+            });
+            if (matched && matched.path) {
+                return normalizeResourceUrl(matched.path);
+            }
+        }
+        let parsed = parseCanonicalUri(trimmed);
+        if (!parsed && activeDataset && !trimmed.includes(':') && !trimmed.includes('/')) {
+            parsed = { dataset: activeDataset, resource: trimmed };
+        }
         if (!parsed) {
             return normalizeResourceUrl(trimmed);
         }
@@ -770,7 +795,7 @@ export class DataMeshClient {
      * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
      * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
-    async query(req) {
+    async query(req, context) {
         if (!req.resource_uri) {
             throw new Error("QueryRequest requires a 'resource_uri'");
         }
@@ -785,7 +810,7 @@ export class DataMeshClient {
             }
         }
         // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
-        let resolvedUrl = await this.resolveResource(req.resource_uri);
+        let resolvedUrl = await this.resolveResource(req.resource_uri, context);
         if (req.proxy_url || this.proxyUrl) {
             resolvedUrl = this.formatProxiedUrl(resolvedUrl, req.proxy_url);
         }
@@ -1158,7 +1183,7 @@ export const datamesh = new DataMeshClient();
 export const discover = (url) => datamesh.discover(url);
 export const search = (keyword, url) => datamesh.search(keyword, url);
 export const get = (uriOrUrl) => datamesh.get(uriOrUrl);
-export const query = (req) => datamesh.query(req);
+export const query = (req, context) => datamesh.query(req, context);
 export const sql = (sqlQuery, sourceOrOptions, tableAlias) => datamesh.sql(sqlQuery, sourceOrOptions, tableAlias);
 export const validate = (target) => datamesh.validate(target);
 /**

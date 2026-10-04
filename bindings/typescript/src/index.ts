@@ -110,10 +110,18 @@ export interface QueryResult {
 
 export type ExecutionEngine = "duckdb" | "in-memory" | "hyparquet";
 
+export interface DatasetContext {
+  dataset?: string;
+  slug?: string;
+  resources?: Array<{ name?: string; path?: string; [key: string]: any }>;
+}
+
 export interface DataMeshClientOptions {
   catalogUrls?: string[];
   engine?: ExecutionEngine;
   proxyUrl?: string;
+  defaultDataset?: string;
+  defaultResources?: Array<{ name?: string; path?: string; [key: string]: any }>;
 }
 
 /**
@@ -638,6 +646,9 @@ export class DataMeshClient {
   private duckdbEngine: DuckDBBrowserEngine;
   private catalogCache: Catalog | null = null;
 
+  public defaultDataset?: string;
+  public defaultResources?: Array<{ name?: string; path?: string; [key: string]: any }>;
+
   constructor(options: DataMeshClientOptions | string[] = {}) {
     if (Array.isArray(options)) {
       this.catalogUrls = options.length > 0 ? options : [getDefaultCatalogUrl()];
@@ -648,6 +659,8 @@ export class DataMeshClient {
         : [getDefaultCatalogUrl()];
       this.engine = options.engine || "duckdb";
       this.proxyUrl = options.proxyUrl;
+      this.defaultDataset = options.defaultDataset;
+      this.defaultResources = options.defaultResources;
     }
     this.duckdbEngine = new DuckDBBrowserEngine();
   }
@@ -680,7 +693,7 @@ export class DataMeshClient {
    * Resolves any canonical triad ('ds:res', 'cat:ds:res'), sovereign URI ('datamesh://...'),
    * or direct URL into a physical fetchable URL.
    */
-  async resolveResource(uriOrTriad: string): Promise<string> {
+  async resolveResource(uriOrTriad: string, context?: DatasetContext): Promise<string> {
     const trimmed = uriOrTriad.trim().replace(/^['"`]|['"`]$/g, '');
     if (
       trimmed.startsWith("http://") ||
@@ -691,7 +704,33 @@ export class DataMeshClient {
       return normalizeResourceUrl(trimmed);
     }
 
-    const parsed = parseCanonicalUri(trimmed);
+    const activeResources = context?.resources || this.defaultResources;
+    const activeDataset = context?.dataset || context?.slug || this.defaultDataset;
+
+    // Check if matching resource is present in scoped resources
+    if (activeResources && activeResources.length > 0) {
+      const cleanTarget = trimmed.toLowerCase();
+      const matched = activeResources.find((r) => {
+        const rName = String(r.name || "").toLowerCase();
+        const rPath = String(r.path || "").toLowerCase();
+        return (
+          rName === cleanTarget ||
+          slugify(rName) === slugify(cleanTarget) ||
+          rPath === cleanTarget ||
+          rPath.endsWith(`/${cleanTarget}`) ||
+          rPath.endsWith(`\\${cleanTarget}`)
+        );
+      });
+      if (matched && matched.path) {
+        return normalizeResourceUrl(matched.path);
+      }
+    }
+
+    let parsed = parseCanonicalUri(trimmed);
+    if (!parsed && activeDataset && !trimmed.includes(':') && !trimmed.includes('/')) {
+      parsed = { dataset: activeDataset, resource: trimmed };
+    }
+
     if (!parsed) {
       return normalizeResourceUrl(trimmed);
     }
@@ -931,7 +970,7 @@ export class DataMeshClient {
    * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
    * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
    */
-  async query(req: QueryRequest): Promise<QueryResult> {
+  async query(req: QueryRequest, context?: DatasetContext): Promise<QueryResult> {
     if (!req.resource_uri) {
       throw new Error("QueryRequest requires a 'resource_uri'");
     }
@@ -946,7 +985,7 @@ export class DataMeshClient {
     }
 
     // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
-    let resolvedUrl = await this.resolveResource(req.resource_uri);
+    let resolvedUrl = await this.resolveResource(req.resource_uri, context);
     if (req.proxy_url || this.proxyUrl) {
       resolvedUrl = this.formatProxiedUrl(resolvedUrl, req.proxy_url);
     }
@@ -1380,7 +1419,7 @@ export const datamesh = new DataMeshClient();
 export const discover = (url?: string) => datamesh.discover(url);
 export const search = (keyword: string, url?: string) => datamesh.search(keyword, url);
 export const get = (uriOrUrl: string) => datamesh.get(uriOrUrl);
-export const query = (req: QueryRequest) => datamesh.query(req);
+export const query = (req: QueryRequest, context?: DatasetContext) => datamesh.query(req, context);
 export const sql = (
   sqlQuery: string,
   sourceOrOptions?: string | { columns: string[]; rows: string[][] } | Record<string, string>,

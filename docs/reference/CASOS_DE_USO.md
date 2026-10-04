@@ -115,3 +115,23 @@
   4. Resuelve nombres y recursos con `FindResource(nameOrSlug)` soportando nombres exactos, case-insensitive y slugificados (`slugify`).
   5. Facilita la resolución canónica de tríadas `[catalogo:dataset:resource]` en C-ABI y WASM con rutas normalizadas a recursos físicos.
 
+## CU-11: Publicación Estandarizada Multi-Plataforma (`PublishDatasetUseCase`)
+- **Actor:** Publicador de datos, analista, CLI (`datamesh publish`), o script ETL Python (`dm.publish()`).
+- **Entrada:** `dataset_path` (directorio de bundle o archivo `datapackage.yaml`), lista de destinos `targets` (`local`, `portal`, `kaggle`), opciones adicionales (`destination`, `portal_dir`, `owner`).
+- **Comportamiento:**
+  1. Analiza y valida el contrato ODKF / Frictionless extrayendo esquema, metadatos espaciales (`SpatialCoverage`), temporales (`TemporalCoverage`), de calidad (`QualityProfile`) y recursos tabulares.
+  2. Ejecuta los adaptadores de destino registrados concurrentemente o en secuencia:
+     - `LocalBundlePublisherAdapter`: Genera o empaqueta el bundle OKF completo (`datapackage.yaml`, `index.md` con frontmatter conforme, carpeta de conceptos `concepts/`).
+     - `PortalPublisherAdapter`: Publica directamente en el repositorio local o remoto de un catálogo soberano (`knowledge/nodes/<slug>/`).
+     - `KagglePublisherAdapter`: Genera `dataset-metadata.json` con enriquecimiento de cobertura espacio-temporal y opcionalmente publica mediante Kaggle API.
+  3. Retorna un informe estructurado con el estado de cada plataforma (`PublicationTargetResult`).
+
+## CU-12: Mapeo y Normalización Semántica de Categorías (`SemanticAlignmentUseCase`)
+- **Actor:** Analista de datos, motor de consultas DuckDB, Agente IA o CLI (`datamesh align`).
+- **Entrada:** `datapackage_or_schema` con definiciones de columnas que enlazan a conceptos (`concept`) o diccionarios valor-concepto (`value_mapping`).
+- **Comportamiento:**
+  1. Extrae los mapeos ontológicos de cada columna declarados en el contrato sintáctico.
+  2. Genera expresiones SQL estándar (`CASE WHEN raw = 'val' THEN 'concept:...' ELSE raw END`).
+  3. Permite que DuckDB ejecute joins y agregaciones sobre columnas heterogéneas (ej. `"LP"`, `"02"`, `"La Paz"`) unificándolas bajo el mismo concepto canónico sin alterar los archivos de microdatos crudos.
+
+

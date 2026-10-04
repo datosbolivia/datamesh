@@ -38,6 +38,16 @@ def main():
     sql_parser.add_argument("query", help="SQL query string")
     sql_parser.add_argument("--engine", choices=["duckdb", "inmem", "go"], default=None, help="Query engine to use (default: duckdb)")
 
+    # publish
+    pub_parser = subparsers.add_parser("publish", help="Publish ODKF dataset bundle to target platforms (local, portal, kaggle)")
+    pub_parser.add_argument("path", help="Path to dataset directory or datapackage.yaml")
+    pub_parser.add_argument("--target", "-t", action="append", dest="targets", help="Target platform (local, portal, kaggle)")
+    pub_parser.add_argument("--dest", "-d", help="Destination path or directory (optional)")
+
+    # align
+    align_parser = subparsers.add_parser("align", help="Extract semantic field mappings from a DataPackage")
+    align_parser.add_argument("path", help="Path to datapackage.yaml or JSON")
+
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
 
@@ -72,6 +82,22 @@ def main():
 
     elif args.command == "sql":
         res = dm.sql(args.query, engine=args.engine)
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+
+    elif args.command == "publish":
+        opts = {}
+        if args.dest:
+            opts["destination"] = args.dest
+        res = dm.publish(args.path, targets=args.targets, options=opts)
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+
+    elif args.command == "align":
+        import yaml
+        from pathlib import Path
+        p = Path(args.path)
+        content = p.read_text(encoding="utf-8")
+        parsed = yaml.safe_load(content) if p.suffix in (".yaml", ".yml") else json.loads(content)
+        res = dm.align_semantics(parsed)
         print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "mcp-serve":

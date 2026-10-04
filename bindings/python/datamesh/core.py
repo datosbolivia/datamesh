@@ -28,6 +28,12 @@ from datamesh.adapters.engine.duckdb_engine import DuckDBQueryEngine, slugify
 from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
 from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
 from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
+from datamesh.ports.publisher import PublisherPort
+from datamesh.adapters.publishers.local_publisher import LocalBundlePublisherAdapter
+from datamesh.adapters.publishers.kaggle_publisher import KagglePublisherAdapter
+from datamesh.adapters.publishers.portal_publisher import PortalPublisherAdapter
+from datamesh.usecases.publish_dataset import PublishDatasetUseCase
+from datamesh.usecases.semantic_alignment import SemanticAlignmentUseCase
 
 def _safe_urlopen(req: Any, timeout: int = 2) -> Any:
     try:
@@ -99,6 +105,14 @@ class DataMeshRuntime:
             "inmem": self._inmem_engine,
             "go": self._go_engine,
         }
+
+        self._publishers: List[PublisherPort] = [
+            LocalBundlePublisherAdapter(),
+            PortalPublisherAdapter(),
+            KagglePublisherAdapter(),
+        ]
+        self._publish_usecase = PublishDatasetUseCase(publishers=self._publishers)
+        self._semantic_aligner = SemanticAlignmentUseCase()
 
     @property
     def storage(self) -> StoragePort:
@@ -437,6 +451,34 @@ class DataMeshRuntime:
             "total_warnings": 0,
             "issues": [] if valid else [{"code": "VALIDATION-FAILED", "severity": "ERROR", "message": f"Could not validate target '{target}'"}],
         }
+
+    def publish(
+        self,
+        dataset_path: str,
+        targets: Optional[List[str]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Publishes an ODKF dataset bundle to one or more platforms (local, portal, kaggle).
+        """
+        results = self._publish_usecase.execute(dataset_path, targets=targets, options=options)
+        return [
+            {
+                "target": r.target,
+                "success": r.success,
+                "destination_uri": r.destination_uri,
+                "message": r.message,
+                "error": r.error,
+            }
+            for r in results
+        ]
+
+    def align_semantics(self, datapackage_or_schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extracts semantic field mappings from a DataPackage or schema.
+        """
+        mappings = self._semantic_aligner.extract_mappings(datapackage_or_schema)
+        return [m.to_dict() for m in mappings]
 
     def _find_matching_local_file(self, dataset: str, filename: str) -> Optional[str]:
         """Finds existing local copy of a dataset file in cache or sibling projects."""

@@ -128,6 +128,9 @@ export function parseDataPackageManifest(rawContent, options) {
                     name: parsed.name,
                     title: parsed.title,
                     description: parsed.description,
+                    spatial: parsed.spatial,
+                    temporal: parsed.temporal,
+                    quality: parsed.quality,
                     resources: Array.isArray(parsed.resources) ? parsed.resources : [],
                 };
             }
@@ -145,6 +148,9 @@ export function parseDataPackageManifest(rawContent, options) {
                     name: parsed.name,
                     title: parsed.title,
                     description: parsed.description,
+                    spatial: parsed.spatial,
+                    temporal: parsed.temporal,
+                    quality: parsed.quality,
                     resources: Array.isArray(parsed.resources) ? parsed.resources : [],
                 };
             }

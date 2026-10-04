@@ -25,6 +25,36 @@ export interface ResourceField {
     description?: string;
     format?: string;
     constraints?: Record<string, any>;
+    concept?: string;
+    value_mapping?: Record<string, string>;
+    categories?: Record<string, string> | Array<{
+        value: string;
+        concept?: string;
+        id?: string;
+    }>;
+}
+export interface SpatialCoverage {
+    country?: string;
+    regions?: string[];
+    bbox?: [number, number, number, number];
+    geometry?: Record<string, any>;
+    granularity?: "country" | "region" | "municipality" | "point" | string;
+}
+export interface TemporalCoverage {
+    start?: string;
+    end?: string;
+    frequency?: "daily" | "weekly" | "monthly" | "annual" | "irregular" | "streaming" | string;
+    timezone?: string;
+}
+export interface QualityProfile {
+    status?: "raw" | "curated" | "verified" | "official" | string;
+    completeness?: number;
+    row_count?: number;
+    checks?: Array<{
+        rule: string;
+        field?: string;
+        [key: string]: any;
+    }>;
 }
 export interface DataResource {
     name: string;
@@ -41,6 +71,9 @@ export interface DataPackage {
     name?: string;
     title?: string;
     description?: string;
+    spatial?: SpatialCoverage;
+    temporal?: TemporalCoverage;
+    quality?: QualityProfile;
     resources: DataResource[];
 }
 export interface Contract {

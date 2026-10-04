@@ -155,3 +155,162 @@ class ResolvedResource:
     format: str  # parquet, csv, tsv, json, jsonl
     is_cached: bool = False
     metadata: Optional[CacheEntryMetadata] = None
+
+
+@dataclass(frozen=True)
+class SpatialCoverage:
+    """Standardized spatial coverage conforming to W3C DCAT v3 / ISO 19115."""
+    country: Optional[str] = None          # ISO 3166-1 alpha-2 (e.g. 'BO')
+    regions: tuple[str, ...] = ()          # ISO 3166-2 (e.g. ('BO-L', 'BO-C', 'BO-S'))
+    bbox: Optional[tuple[float, float, float, float]] = None # (minX, minY, maxX, maxY) EPSG:4326
+    geometry: Optional[Dict[str, Any]] = None # GeoJSON geometry object
+    granularity: Optional[str] = None      # country | region | municipality | point
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.country:
+            out["country"] = self.country
+        if self.regions:
+            out["regions"] = list(self.regions)
+        if self.bbox:
+            out["bbox"] = list(self.bbox)
+        if self.geometry:
+            out["geometry"] = self.geometry
+        if self.granularity:
+            out["granularity"] = self.granularity
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> SpatialCoverage:
+        regions_raw = data.get("regions") or ()
+        if isinstance(regions_raw, list):
+            regions = tuple(str(r) for r in regions_raw)
+        else:
+            regions = ()
+        bbox_raw = data.get("bbox")
+        bbox = tuple(float(x) for x in bbox_raw) if isinstance(bbox_raw, (list, tuple)) and len(bbox_raw) == 4 else None
+        return cls(
+            country=data.get("country"),
+            regions=regions,
+            bbox=bbox,
+            geometry=data.get("geometry") if isinstance(data.get("geometry"), dict) else None,
+            granularity=data.get("granularity"),
+        )
+
+
+@dataclass(frozen=True)
+class TemporalCoverage:
+    """Standardized temporal coverage conforming to ISO 8601 and W3C DCAT."""
+    start: Optional[str] = None            # ISO 8601 start date/time
+    end: Optional[str] = None              # ISO 8601 end date/time
+    frequency: Optional[str] = None        # daily | weekly | monthly | annual | irregular | streaming
+    timezone: Optional[str] = None         # e.g. 'America/La_Paz'
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.start:
+            out["start"] = self.start
+        if self.end:
+            out["end"] = self.end
+        if self.frequency:
+            out["frequency"] = self.frequency
+        if self.timezone:
+            out["timezone"] = self.timezone
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> TemporalCoverage:
+        return cls(
+            start=data.get("start"),
+            end=data.get("end"),
+            frequency=data.get("frequency"),
+            timezone=data.get("timezone"),
+        )
+
+
+@dataclass(frozen=True)
+class SemanticFieldMapping:
+    """Maps raw column categories to ODKF Knowledge Base concept IDs without changing raw files."""
+    field_name: str
+    concept_ref: Optional[str] = None      # Local relative path or concept identifier, e.g. 'concepts/departamentos.md'
+    value_mapping: Dict[str, str] = field(default_factory=dict) # e.g. {'LPZ': 'concept:departamentos:la_paz'}
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"field_name": self.field_name}
+        if self.concept_ref:
+            out["concept_ref"] = self.concept_ref
+        if self.value_mapping:
+            out["value_mapping"] = dict(self.value_mapping)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> SemanticFieldMapping:
+        return cls(
+            field_name=data.get("field_name", ""),
+            concept_ref=data.get("concept_ref") or data.get("concept"),
+            value_mapping=data.get("value_mapping") or {},
+        )
+
+
+@dataclass(frozen=True)
+class QualityCheckRule:
+    """Quality rule declaration for Frictionless / DataMesh quality evaluation."""
+    rule: str                              # no_nulls | unique | range | regex | custom
+    target_field: Optional[str] = None
+    params: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out = {"rule": self.rule}
+        if self.target_field:
+            out["field"] = self.target_field
+        if self.params:
+            out.update(self.params)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> QualityCheckRule:
+        rule = data.get("rule", "custom")
+        f = data.get("field") or data.get("target_field")
+        params = {k: v for k, v in data.items() if k not in ("rule", "field", "target_field")}
+        return cls(rule=rule, target_field=f, params=params)
+
+
+@dataclass(frozen=True)
+class QualityProfile:
+    """Data quality and completeness profile."""
+    status: str = "curated"                # raw | curated | verified | official
+    completeness: Optional[float] = None   # Ratio between 0.0 and 1.0
+    row_count: Optional[int] = None
+    checks: tuple[QualityCheckRule, ...] = ()
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"status": self.status}
+        if self.completeness is not None:
+            out["completeness"] = self.completeness
+        if self.row_count is not None:
+            out["row_count"] = self.row_count
+        if self.checks:
+            out["checks"] = [c.to_dict() for c in self.checks]
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> QualityProfile:
+        checks_raw = data.get("checks") or ()
+        checks = tuple(QualityCheckRule.from_dict(c) for c in checks_raw if isinstance(c, dict))
+        return cls(
+            status=data.get("status", "curated"),
+            completeness=float(data["completeness"]) if "completeness" in data and data["completeness"] is not None else None,
+            row_count=int(data["row_count"]) if "row_count" in data and data["row_count"] is not None else None,
+            checks=checks,
+        )
+
+
+@dataclass(frozen=True)
+class PublicationTargetResult:
+    """Result of publishing a dataset or bundle to a specific platform."""
+    target: str                            # portal | local | kaggle | github
+    success: bool
+    destination_uri: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+

@@ -48,10 +48,32 @@ def validate(target: str) -> Dict[str, Any]:
     """Validate OKF/ODKF concept document, bundle directory, or canonical triad."""
     return _runtime.validate(target)
 
+def publish(
+    dataset_path: str,
+    targets: Optional[List[str]] = None,
+    options: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Publish an ODKF dataset bundle to target platforms (local, portal, kaggle)."""
+    return _runtime.publish(dataset_path, targets=targets, options=options)
+
+def align_semantics(datapackage_or_schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract semantic field mappings from a DataPackage or schema."""
+    return _runtime.align_semantics(datapackage_or_schema)
+
 storage = _runtime.storage
 config = _runtime.config_adapter
 
-from datamesh.domain.models import StorageConfig, ResourceDescriptor, ResolvedResource, CacheEntryMetadata
+from datamesh.domain.models import (
+    StorageConfig,
+    ResourceDescriptor,
+    ResolvedResource,
+    CacheEntryMetadata,
+    SpatialCoverage,
+    TemporalCoverage,
+    QualityProfile,
+    SemanticFieldMapping,
+    PublicationTargetResult,
+)
 from datamesh.ports.storage import StoragePort
 from datamesh.ports.resolver import ResourceAdapterPort, ConfigPort
 from datamesh.ports.engine import QueryEnginePort
@@ -74,6 +96,8 @@ __all__ = [
     "query",
     "sql",
     "validate",
+    "publish",
+    "align_semantics",
     "storage",
     "config",
     "run_server",
@@ -82,10 +106,16 @@ __all__ = [
     "ResourceDescriptor",
     "ResolvedResource",
     "CacheEntryMetadata",
+    "SpatialCoverage",
+    "TemporalCoverage",
+    "QualityProfile",
+    "SemanticFieldMapping",
+    "PublicationTargetResult",
     "StoragePort",
     "ResourceAdapterPort",
     "ConfigPort",
     "QueryEnginePort",
+    "PublisherPort",
     "LocalStorageManager",
     "FileConfigAdapter",
     "LocalFileAdapter",

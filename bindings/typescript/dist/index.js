@@ -16,10 +16,83 @@ export const TABLE_REF_PATTERN = /\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["']([^"']+)[
  */
 export const QUOTED_COLON_PATTERN = /["']([^"':\s]+:[^"']+)["']/g;
 /**
+ * Matches quoted identifiers with slashes (slash-separated triads or relative paths).
+ */
+export const QUOTED_SLASH_PATTERN = /["']([^"'\s]+\/[^"'\s]+)["']/g;
+/**
  * Sanitizes text replacing non-alphanumeric chars with underscores.
  */
 export function slugify(text) {
     return text.toLowerCase().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+/**
+ * Known domains and suffixes with strict browser CORS restrictions.
+ */
+export const KNOWN_CORS_RESTRICTED_DOMAINS = [
+    'kaggle.com',
+    'docs.google.com',
+    'drive.google.com',
+    'sheets.googleapis.com',
+    'dropbox.com',
+    'onedrive.live.com',
+    '1drv.ms',
+    'gob.bo',
+    'bo',
+];
+/**
+ * Standard CORS proxy templates.
+ */
+export const DEFAULT_PROXY_PROVIDERS = {
+    local: (url) => `http://localhost:8000/proxy?url=${encodeURIComponent(url)}`,
+    allorigins: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    corsproxy: (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+};
+/**
+ * Checks if a given domain or URL is CORS restricted for client browsers.
+ */
+export function isCorsRestrictedDomain(url, restrictedDomains = KNOWN_CORS_RESTRICTED_DOMAINS) {
+    if (!url)
+        return false;
+    try {
+        const hostname = new URL(url).hostname.toLowerCase();
+        return restrictedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Pings a proxy or server endpoint to verify connectivity.
+ */
+export async function pingProxy(urlOrTemplate, timeoutMs = 2500) {
+    try {
+        let testUrl = urlOrTemplate;
+        if (testUrl === 'local' || testUrl.includes('localhost:8000')) {
+            testUrl = 'http://localhost:8000/health';
+        }
+        else if (testUrl === 'allorigins') {
+            testUrl = 'https://api.allorigins.win/raw?url=https%3A%2F%2Ficanhazip.com';
+        }
+        else if (testUrl === 'corsproxy') {
+            testUrl = 'https://corsproxy.io/?url=https%3A%2F%2Ficanhazip.com';
+        }
+        else if (testUrl.includes('{url}')) {
+            testUrl = testUrl.replace('{url}', encodeURIComponent('https://icanhazip.com'));
+        }
+        else if (testUrl.endsWith('=')) {
+            testUrl = `${testUrl}${encodeURIComponent('https://icanhazip.com')}`;
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const resp = await fetch(testUrl, { method: 'GET', signal: controller.signal }).catch((err) => {
+            throw err;
+        });
+        clearTimeout(timer);
+        return { ok: resp.ok, status: resp.status };
+    }
+    catch (err) {
+        return { ok: false, error: err?.message || 'Connection error' };
+    }
 }
 /**
  * Normalizes remote URLs (e.g. GitHub blob/raw links to raw.githubusercontent.com for CORS compatibility).
@@ -94,10 +167,13 @@ export function parseSimpleYamlResources(text) {
     return resources;
 }
 /**
- * Parses any canonical triad, datamesh:// URI, or table identifier into a structured ResourceTriad.
+ * Parses any canonical triad, datamesh:// URI, URL, or table identifier into a structured ResourceTriad.
  * Supports:
  * - 'catalogo:dataset:resource' (3 parts)
  * - 'dataset:resource' (2 parts)
+ * - 'catalogo/dataset/recurso' (3 parts)
+ * - 'dataset/recurso' (2 parts)
+ * - 'https://.../datasets/cartera-creditos/creditos.csv'
  * - 'datamesh://catalogo/dataset/resource'
  * - 'datamesh://dataset/resource'
  */
@@ -117,7 +193,20 @@ export function parseCanonicalUri(raw) {
         }
         return null;
     }
-    // 2. Colon-separated format ('cat:ds:res' or 'ds:res')
+    // 2. HTTP/HTTPS or file URLs (e.g. https://.../datasets/cartera-creditos/creditos.csv)
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("file://")) {
+        const cleanUrl = trimmed.split("?")[0].split("#")[0].replace(/\/+$/, '');
+        const urlParts = cleanUrl.split("/").filter(Boolean);
+        if (urlParts.length >= 2) {
+            const ds = urlParts[urlParts.length - 2];
+            const resRaw = urlParts[urlParts.length - 1];
+            const res = resRaw.includes(".") ? resRaw.substring(0, resRaw.lastIndexOf(".")) : resRaw;
+            if (ds && res) {
+                return { dataset: ds, resource: res };
+            }
+        }
+    }
+    // 3. Colon-separated format ('cat:ds:res' or 'ds:res')
     if (trimmed.includes(":") && !trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("file://")) {
         const parts = trimmed.split(":");
         if (parts.length === 3) {
@@ -134,6 +223,16 @@ export function parseCanonicalUri(raw) {
             if (ds && res) {
                 return { dataset: ds, resource: res };
             }
+        }
+    }
+    // 4. Slash-separated format ('cat/ds/res' or 'ds/res')
+    if (trimmed.includes("/")) {
+        const parts = trimmed.split("/").map((p) => p.trim()).filter(Boolean);
+        if (parts.length === 3) {
+            return { catalog: parts[0], dataset: parts[1], resource: parts[2] };
+        }
+        else if (parts.length === 2) {
+            return { dataset: parts[0], resource: parts[1] };
         }
     }
     return null;
@@ -449,8 +548,19 @@ export class DataMeshClient {
     }
     /**
      * Discovers sovereign data products across configured federated catalogs or a specified endpoint.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
     async discover(url) {
+        if (typeof window !== "undefined" && window.DataMesh?.discover) {
+            try {
+                const cat = await window.DataMesh.discover(url || "");
+                if (cat && cat.entries)
+                    return cat;
+            }
+            catch {
+                // Fallback to pure TS client
+            }
+        }
         const targets = url ? [url] : this.catalogUrls;
         if (!url && this.catalogCache && targets.length === this.catalogUrls.length) {
             return this.catalogCache;
@@ -493,8 +603,19 @@ export class DataMeshClient {
     }
     /**
      * Searches entries across sovereign catalogs matching title, description, or domain.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
     async search(keyword, url) {
+        if (typeof window !== "undefined" && window.DataMesh?.search) {
+            try {
+                const entries = await window.DataMesh.search(keyword, url || "");
+                if (entries && Array.isArray(entries))
+                    return entries;
+            }
+            catch {
+                // Fallback
+            }
+        }
         const cat = await this.discover(url);
         const kw = keyword.toLowerCase();
         return cat.entries.filter((e) => e.title.toLowerCase().includes(kw) ||
@@ -502,12 +623,101 @@ export class DataMeshClient {
             e.domain.toLowerCase().includes(kw));
     }
     /**
+     * Resolves an OKF v0.2 Data Product manifest, description, and resources from a node URI or URL.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
+     */
+    async get(uriOrUrl) {
+        if (typeof window !== "undefined" && (window.DataMesh?.get || window.DataMesh?.resolve)) {
+            try {
+                const fn = window.DataMesh.get || window.DataMesh.resolve;
+                const dp = await fn(uriOrUrl);
+                if (dp && dp.manifest)
+                    return dp;
+            }
+            catch {
+                // Fallback
+            }
+        }
+        const trimmed = uriOrUrl.trim().replace(/^['"`]|['"`]$/g, '');
+        let targetUrl = trimmed;
+        // Check if it's already a direct HTTP URL to index.md or a directory
+        if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://") && !targetUrl.startsWith("file://")) {
+            const parsed = parseCanonicalUri(trimmed);
+            const ds = parsed ? parsed.dataset : trimmed.split(":")[0];
+            const cat = await this.discover();
+            const matched = cat.entries.find((e) => {
+                const u = e.uri.toLowerCase();
+                const r = (e.resolved_url || "").toLowerCase();
+                const t = e.title.toLowerCase();
+                return u.includes(ds.toLowerCase()) || r.includes(ds.toLowerCase()) || t === ds.toLowerCase();
+            });
+            if (matched && matched.resolved_url) {
+                targetUrl = matched.resolved_url;
+            }
+        }
+        if (targetUrl.endsWith('/')) {
+            targetUrl += 'index.md';
+        }
+        else if (!targetUrl.endsWith('.md') && !targetUrl.endsWith('.yaml') && !targetUrl.endsWith('.json')) {
+            targetUrl += '/index.md';
+        }
+        if (this.proxyUrl) {
+            targetUrl = this.formatProxiedUrl(targetUrl);
+        }
+        const resp = await fetch(targetUrl);
+        if (!resp.ok) {
+            throw new Error(`Failed to resolve Data Product from '${targetUrl}': HTTP ${resp.status}`);
+        }
+        const text = await resp.text();
+        let manifest = {
+            type: "dataset",
+            title: trimmed,
+            dimensions: [],
+            lineage: { version: "1.0.0" }
+        };
+        let description = "";
+        if (text.startsWith("---")) {
+            const parts = text.split("---");
+            if (parts.length >= 3) {
+                description = parts.slice(2).join("---").trim();
+                const frontLines = parts[1].split("\n");
+                for (const line of frontLines) {
+                    const l = line.trim();
+                    if (l.startsWith("title:"))
+                        manifest.title = l.substring(6).trim().replace(/^['"]|['"]$/g, '');
+                    else if (l.startsWith("type:"))
+                        manifest.type = l.substring(5).trim().replace(/^['"]|['"]$/g, '');
+                }
+            }
+        }
+        else {
+            description = text;
+        }
+        return {
+            id: trimmed,
+            manifest,
+            description,
+            raw_content: text
+        };
+    }
+    /**
      * Fetches and queries a tabular resource directly from the browser/client.
      * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
     async query(req) {
         if (!req.resource_uri) {
             throw new Error("QueryRequest requires a 'resource_uri'");
+        }
+        if (typeof window !== "undefined" && window.DataMesh?.query) {
+            try {
+                const qRes = await window.DataMesh.query(req.resource_uri, JSON.stringify(req));
+                if (qRes && qRes.columns)
+                    return qRes;
+            }
+            catch {
+                // Fallback
+            }
         }
         // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
         let resolvedUrl = await this.resolveResource(req.resource_uri);
@@ -604,6 +814,13 @@ export class DataMeshClient {
         }
         const quotedMatches = Array.from(sqlQuery.matchAll(QUOTED_COLON_PATTERN));
         for (const m of quotedMatches) {
+            const ref = (m[1] || "").trim();
+            if (ref && !tableRefs.includes(ref)) {
+                tableRefs.push(ref);
+            }
+        }
+        const quotedSlashMatches = Array.from(sqlQuery.matchAll(QUOTED_SLASH_PATTERN));
+        for (const m of quotedSlashMatches) {
             const ref = (m[1] || "").trim();
             if (ref && !tableRefs.includes(ref)) {
                 tableRefs.push(ref);
@@ -845,6 +1062,25 @@ export class DataMeshClient {
             entries,
         };
     }
+    async validate(target) {
+        if (typeof window !== "undefined" && window.DataMesh?.validate) {
+            try {
+                return await window.DataMesh.validate(target);
+            }
+            catch (e) {
+                console.warn("WASM validate failed, falling back to JS", e);
+            }
+        }
+        const clean = target.trim().replace(/^["']|["']$/g, "");
+        const isTriad = /^[a-zA-Z0-9_\-\.]+[:/][a-zA-Z0-9_\-\. ]+([:/][a-zA-Z0-9_\-\. ]+)?$/.test(clean);
+        return {
+            valid: isTriad,
+            target,
+            total_errors: isTriad ? 0 : 1,
+            total_warnings: 0,
+            issues: isTriad ? [] : [{ code: "RULE-08-TRIAD-SYNTAX", severity: "ERROR", message: `Invalid syntax for triad '${target}'` }],
+        };
+    }
 }
 /**
  * Universal hook / factory function for initializing DataMesh client in web applications.
@@ -853,3 +1089,126 @@ export function useDataMesh(options) {
     return new DataMeshClient(options);
 }
 export const datamesh = new DataMeshClient();
+// Standalone 1-line unified functions matching Python dm.discover, dm.search, dm.get, dm.query, dm.sql, dm.validate
+export const discover = (url) => datamesh.discover(url);
+export const search = (keyword, url) => datamesh.search(keyword, url);
+export const get = (uriOrUrl) => datamesh.get(uriOrUrl);
+export const query = (req) => datamesh.query(req);
+export const sql = (sqlQuery, sourceOrOptions, tableAlias) => datamesh.sql(sqlQuery, sourceOrOptions, tableAlias);
+export const validate = (target) => datamesh.validate(target);
+/**
+ * Standard client for interacting with DataMesh MCP / JSON-RPC servers.
+ */
+export class DataMeshMcpClient {
+    serverUrl;
+    timeoutMs;
+    headers;
+    requestId = 1;
+    constructor(config) {
+        this.serverUrl = config?.serverUrl || 'http://localhost:8000/mcp';
+        this.timeoutMs = config?.timeoutMs || 30000;
+        this.headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/event-stream',
+            ...(config?.headers || {}),
+        };
+    }
+    setServerUrl(url) {
+        this.serverUrl = url;
+    }
+    async ping() {
+        try {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 3000);
+            const res = await fetch(`${this.serverUrl.replace(/\/mcp$/, '')}/health`, {
+                method: 'GET',
+                signal: controller.signal,
+            }).catch(() => null);
+            clearTimeout(id);
+            if (res && res.ok)
+                return true;
+            const rpcRes = await this.callRpc('ping', {}, 3000).catch(() => null);
+            return Boolean(rpcRes);
+        }
+        catch {
+            return false;
+        }
+    }
+    async callRpc(method, params = {}, customTimeout) {
+        const id = this.requestId++;
+        const payload = {
+            jsonrpc: '2.0',
+            id,
+            method,
+            params,
+        };
+        const controller = new AbortController();
+        const timeout = customTimeout || this.timeoutMs;
+        const timer = setTimeout(() => controller.abort(), timeout);
+        try {
+            const res = await fetch(this.serverUrl, {
+                method: 'POST',
+                headers: this.headers,
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+            });
+            clearTimeout(timer);
+            if (!res.ok) {
+                throw new Error(`MCP backend HTTP ${res.status}: ${res.statusText}`);
+            }
+            const json = await res.json();
+            if (json.error) {
+                throw new Error(json.error.message || `MCP Error ${json.error.code}`);
+            }
+            return json.result;
+        }
+        catch (err) {
+            clearTimeout(timer);
+            if (err.name === 'AbortError') {
+                throw new Error(`Timeout connecting to backend/MCP server (${timeout}ms)`);
+            }
+            throw err;
+        }
+    }
+    async callTool(name, args = {}) {
+        const rpcResult = await this.callRpc('tools/call', {
+            name,
+            arguments: args,
+        });
+        if (rpcResult?.isError) {
+            const errMsg = rpcResult.content?.map((c) => c.text).filter(Boolean).join('\n') || 'Error in MCP tool call';
+            throw new Error(errMsg);
+        }
+        if (Array.isArray(rpcResult?.content) && rpcResult.content.length > 0) {
+            const first = rpcResult.content[0];
+            if (first.type === 'text') {
+                try {
+                    return JSON.parse(first.text);
+                }
+                catch {
+                    return first.text;
+                }
+            }
+            if (first.data !== undefined) {
+                return first.data;
+            }
+        }
+        return rpcResult;
+    }
+    async querySql(sql, options) {
+        return this.callTool('datamesh_sql_query', {
+            sql_query: sql,
+            ...options,
+        });
+    }
+    async readResource(resourceUriOrUrl) {
+        return this.callTool('read_resource', {
+            uri: resourceUriOrUrl,
+        });
+    }
+    async listTools() {
+        const res = await this.callRpc('tools/list', {});
+        return res?.tools || [];
+    }
+}
+export const datameshMcp = new DataMeshMcpClient();

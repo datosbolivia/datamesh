@@ -22,6 +22,33 @@ export interface Catalog {
   entries: CatalogEntry[];
 }
 
+export interface ResourceField {
+  name: string;
+  type: string;
+  description?: string;
+  format?: string;
+  constraints?: Record<string, any>;
+}
+
+export interface DataResource {
+  name: string;
+  path: string;
+  format?: string;
+  mediatype?: string;
+  schema?: {
+    fields?: ResourceField[];
+  };
+  policy?: string;
+  description?: string;
+}
+
+export interface DataPackage {
+  name?: string;
+  title?: string;
+  description?: string;
+  resources: DataResource[];
+}
+
 export interface Contract {
   type: string;
   path: string;
@@ -112,13 +139,80 @@ export const QUOTED_COLON_PATTERN = /["']([^"':\s]+:[^"']+)["']/g;
 /**
  * Matches quoted identifiers with slashes (slash-separated triads or relative paths).
  */
-export const QUOTED_SLASH_PATTERN = /["']([^"'\s]+/[^"'\s]+)["']/g;
+export const QUOTED_SLASH_PATTERN = /["']([^"'\s]+\/[^"'\s]+)["']/g;
 
 /**
  * Sanitizes text replacing non-alphanumeric chars with underscores.
  */
 export function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Known domains and suffixes with strict browser CORS restrictions.
+ */
+export const KNOWN_CORS_RESTRICTED_DOMAINS: string[] = [
+  'kaggle.com',
+  'docs.google.com',
+  'drive.google.com',
+  'sheets.googleapis.com',
+  'dropbox.com',
+  'onedrive.live.com',
+  '1drv.ms',
+  'gob.bo',
+  'bo',
+];
+
+/**
+ * Standard CORS proxy templates.
+ */
+export const DEFAULT_PROXY_PROVIDERS: Record<string, (url: string) => string> = {
+  local: (url: string) => `http://localhost:8000/proxy?url=${encodeURIComponent(url)}`,
+  allorigins: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  corsproxy: (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+};
+
+/**
+ * Checks if a given domain or URL is CORS restricted for client browsers.
+ */
+export function isCorsRestrictedDomain(url: string, restrictedDomains: string[] = KNOWN_CORS_RESTRICTED_DOMAINS): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return restrictedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pings a proxy or server endpoint to verify connectivity.
+ */
+export async function pingProxy(urlOrTemplate: string, timeoutMs: number = 2500): Promise<{ ok: boolean; status?: number; error?: string }> {
+  try {
+    let testUrl = urlOrTemplate;
+    if (testUrl === 'local' || testUrl.includes('localhost:8000')) {
+      testUrl = 'http://localhost:8000/health';
+    } else if (testUrl === 'allorigins') {
+      testUrl = 'https://api.allorigins.win/raw?url=https%3A%2F%2Ficanhazip.com';
+    } else if (testUrl === 'corsproxy') {
+      testUrl = 'https://corsproxy.io/?url=https%3A%2F%2Ficanhazip.com';
+    } else if (testUrl.includes('{url}')) {
+      testUrl = testUrl.replace('{url}', encodeURIComponent('https://icanhazip.com'));
+    } else if (testUrl.endsWith('=')) {
+      testUrl = `${testUrl}${encodeURIComponent('https://icanhazip.com')}`;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const resp = await fetch(testUrl, { method: 'GET', signal: controller.signal }).catch((err) => {
+      throw err;
+    });
+    clearTimeout(timer);
+    return { ok: resp.ok, status: resp.status };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Connection error' };
+  }
 }
 
 /**
@@ -1225,5 +1319,154 @@ export const sql = (
   tableAlias?: string
 ) => datamesh.sql(sqlQuery, sourceOrOptions, tableAlias);
 export const validate = (target: string) => datamesh.validate(target);
+
+/**
+ * Configuration options for DataMesh MCP Client.
+ */
+export interface McpServerConfig {
+  serverUrl: string;
+  timeoutMs?: number;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Standard client for interacting with DataMesh MCP / JSON-RPC servers.
+ */
+export class DataMeshMcpClient {
+  private serverUrl: string;
+  private timeoutMs: number;
+  private headers: Record<string, string>;
+  private requestId: number = 1;
+
+  constructor(config?: Partial<McpServerConfig>) {
+    this.serverUrl = config?.serverUrl || 'http://localhost:8000/mcp';
+    this.timeoutMs = config?.timeoutMs || 30000;
+    this.headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+      ...(config?.headers || {}),
+    };
+  }
+
+  setServerUrl(url: string) {
+    this.serverUrl = url;
+  }
+
+  async ping(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`${this.serverUrl.replace(/\/mcp$/, '')}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+      }).catch(() => null);
+      clearTimeout(id);
+      if (res && res.ok) return true;
+
+      const rpcRes = await this.callRpc('ping', {}, 3000).catch(() => null);
+      return Boolean(rpcRes);
+    } catch {
+      return false;
+    }
+  }
+
+  async callRpc(method: string, params: Record<string, any> = {}, customTimeout?: number): Promise<any> {
+    const id = this.requestId++;
+    const payload = {
+      jsonrpc: '2.0',
+      id,
+      method,
+      params,
+    };
+
+    const controller = new AbortController();
+    const timeout = customTimeout || this.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const res = await fetch(this.serverUrl, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        throw new Error(`MCP backend HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const json = await res.json();
+      if (json.error) {
+        throw new Error(json.error.message || `MCP Error ${json.error.code}`);
+      }
+
+      return json.result;
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new Error(`Timeout connecting to backend/MCP server (${timeout}ms)`);
+      }
+      throw err;
+    }
+  }
+
+  async callTool<T = any>(name: string, args: Record<string, any> = {}): Promise<T> {
+    const rpcResult = await this.callRpc('tools/call', {
+      name,
+      arguments: args,
+    });
+
+    if (rpcResult?.isError) {
+      const errMsg = rpcResult.content?.map((c: any) => c.text).filter(Boolean).join('\n') || 'Error in MCP tool call';
+      throw new Error(errMsg);
+    }
+
+    if (Array.isArray(rpcResult?.content) && rpcResult.content.length > 0) {
+      const first = rpcResult.content[0];
+      if (first.type === 'text') {
+        try {
+          return JSON.parse(first.text);
+        } catch {
+          return first.text as unknown as T;
+        }
+      }
+      if (first.data !== undefined) {
+        return first.data;
+      }
+    }
+
+    return rpcResult as T;
+  }
+
+  async querySql(sql: string, options?: { catalog?: string; dataset?: string; resource?: string }): Promise<{
+    columns: string[];
+    rows: any[][];
+    row_count: number;
+  }> {
+    return this.callTool('datamesh_sql_query', {
+      sql_query: sql,
+      ...options,
+    });
+  }
+
+  async readResource(resourceUriOrUrl: string): Promise<{
+    uri: string;
+    content: string;
+    mime_type?: string;
+  }> {
+    return this.callTool('read_resource', {
+      uri: resourceUriOrUrl,
+    });
+  }
+
+  async listTools(): Promise<Array<{ name: string; description?: string; inputSchema?: any }>> {
+    const res = await this.callRpc('tools/list', {});
+    return res?.tools || [];
+  }
+}
+
+export const datameshMcp = new DataMeshMcpClient();
 
 

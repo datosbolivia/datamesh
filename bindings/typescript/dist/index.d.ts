@@ -19,6 +19,30 @@ export interface Catalog {
     source_catalogs?: string[];
     entries: CatalogEntry[];
 }
+export interface ResourceField {
+    name: string;
+    type: string;
+    description?: string;
+    format?: string;
+    constraints?: Record<string, any>;
+}
+export interface DataResource {
+    name: string;
+    path: string;
+    format?: string;
+    mediatype?: string;
+    schema?: {
+        fields?: ResourceField[];
+    };
+    policy?: string;
+    description?: string;
+}
+export interface DataPackage {
+    name?: string;
+    title?: string;
+    description?: string;
+    resources: DataResource[];
+}
 export interface Contract {
     type: string;
     path: string;
@@ -39,6 +63,20 @@ export interface DataProduct {
     manifest: Manifest;
     description: string;
     raw_content?: string;
+}
+export interface ValidationIssue {
+    code: string;
+    severity: "ERROR" | "WARNING" | "INFO";
+    message: string;
+    path?: string;
+    line?: number;
+}
+export interface ValidationReport {
+    valid: boolean;
+    target: string;
+    total_errors: number;
+    total_warnings: number;
+    issues: ValidationIssue[];
 }
 export interface QueryRequest {
     resource_uri?: string;
@@ -81,9 +119,33 @@ export declare const TABLE_REF_PATTERN: RegExp;
  */
 export declare const QUOTED_COLON_PATTERN: RegExp;
 /**
+ * Matches quoted identifiers with slashes (slash-separated triads or relative paths).
+ */
+export declare const QUOTED_SLASH_PATTERN: RegExp;
+/**
  * Sanitizes text replacing non-alphanumeric chars with underscores.
  */
 export declare function slugify(text: string): string;
+/**
+ * Known domains and suffixes with strict browser CORS restrictions.
+ */
+export declare const KNOWN_CORS_RESTRICTED_DOMAINS: string[];
+/**
+ * Standard CORS proxy templates.
+ */
+export declare const DEFAULT_PROXY_PROVIDERS: Record<string, (url: string) => string>;
+/**
+ * Checks if a given domain or URL is CORS restricted for client browsers.
+ */
+export declare function isCorsRestrictedDomain(url: string, restrictedDomains?: string[]): boolean;
+/**
+ * Pings a proxy or server endpoint to verify connectivity.
+ */
+export declare function pingProxy(urlOrTemplate: string, timeoutMs?: number): Promise<{
+    ok: boolean;
+    status?: number;
+    error?: string;
+}>;
 /**
  * Normalizes remote URLs (e.g. GitHub blob/raw links to raw.githubusercontent.com for CORS compatibility).
  */
@@ -96,10 +158,13 @@ export declare function parseSimpleYamlResources(text: string): Array<{
     path?: string;
 }>;
 /**
- * Parses any canonical triad, datamesh:// URI, or table identifier into a structured ResourceTriad.
+ * Parses any canonical triad, datamesh:// URI, URL, or table identifier into a structured ResourceTriad.
  * Supports:
  * - 'catalogo:dataset:resource' (3 parts)
  * - 'dataset:resource' (2 parts)
+ * - 'catalogo/dataset/recurso' (3 parts)
+ * - 'dataset/recurso' (2 parts)
+ * - 'https://.../datasets/cartera-creditos/creditos.csv'
  * - 'datamesh://catalogo/dataset/resource'
  * - 'datamesh://dataset/resource'
  */
@@ -164,15 +229,23 @@ export declare class DataMeshClient {
     resolveResource(uriOrTriad: string): Promise<string>;
     /**
      * Discovers sovereign data products across configured federated catalogs or a specified endpoint.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
     discover(url?: string): Promise<Catalog>;
     /**
      * Searches entries across sovereign catalogs matching title, description, or domain.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
     search(keyword: string, url?: string): Promise<CatalogEntry[]>;
     /**
+     * Resolves an OKF v0.2 Data Product manifest, description, and resources from a node URI or URL.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
+     */
+    get(uriOrUrl: string): Promise<DataProduct>;
+    /**
      * Fetches and queries a tabular resource directly from the browser/client.
      * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
+     * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
      */
     query(req: QueryRequest): Promise<QueryResult>;
     /**
@@ -194,9 +267,61 @@ export declare class DataMeshClient {
     private queryTableWithSql;
     private fetchSingleCatalog;
     private parseLLMSTxt;
+    validate(target: string): Promise<ValidationReport>;
 }
 /**
  * Universal hook / factory function for initializing DataMesh client in web applications.
  */
 export declare function useDataMesh(options?: DataMeshClientOptions): DataMeshClient;
 export declare const datamesh: DataMeshClient;
+export declare const discover: (url?: string) => Promise<Catalog>;
+export declare const search: (keyword: string, url?: string) => Promise<CatalogEntry[]>;
+export declare const get: (uriOrUrl: string) => Promise<DataProduct>;
+export declare const query: (req: QueryRequest) => Promise<QueryResult>;
+export declare const sql: (sqlQuery: string, sourceOrOptions?: string | {
+    columns: string[];
+    rows: string[][];
+} | Record<string, string>, tableAlias?: string) => Promise<QueryResult>;
+export declare const validate: (target: string) => Promise<ValidationReport>;
+/**
+ * Configuration options for DataMesh MCP Client.
+ */
+export interface McpServerConfig {
+    serverUrl: string;
+    timeoutMs?: number;
+    headers?: Record<string, string>;
+}
+/**
+ * Standard client for interacting with DataMesh MCP / JSON-RPC servers.
+ */
+export declare class DataMeshMcpClient {
+    private serverUrl;
+    private timeoutMs;
+    private headers;
+    private requestId;
+    constructor(config?: Partial<McpServerConfig>);
+    setServerUrl(url: string): void;
+    ping(): Promise<boolean>;
+    callRpc(method: string, params?: Record<string, any>, customTimeout?: number): Promise<any>;
+    callTool<T = any>(name: string, args?: Record<string, any>): Promise<T>;
+    querySql(sql: string, options?: {
+        catalog?: string;
+        dataset?: string;
+        resource?: string;
+    }): Promise<{
+        columns: string[];
+        rows: any[][];
+        row_count: number;
+    }>;
+    readResource(resourceUriOrUrl: string): Promise<{
+        uri: string;
+        content: string;
+        mime_type?: string;
+    }>;
+    listTools(): Promise<Array<{
+        name: string;
+        description?: string;
+        inputSchema?: any;
+    }>>;
+}
+export declare const datameshMcp: DataMeshMcpClient;

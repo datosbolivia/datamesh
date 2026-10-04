@@ -445,7 +445,11 @@ class DataMeshRuntime:
                             target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/blob/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
                         return target_path
                     else:
-                        if base_loc and not base_loc.startswith(("http://", "https://")):
+                        if base_loc and base_loc.startswith(("http://", "https://")):
+                            # Remote node with relative path (e.g. ../data_abastecimiento/*.csv)
+                            base_url_dir = base_loc if base_loc.endswith("/") else f"{base_loc}/"
+                            return urllib.parse.urljoin(base_url_dir, target_path)
+                        elif base_loc and not base_loc.startswith(("http://", "https://")):
                             candidate = os.path.normpath(os.path.join(base_loc, target_path))
                             if os.path.exists(candidate):
                                 return os.path.abspath(candidate)

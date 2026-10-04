@@ -1,0 +1,51 @@
+---
+title: "Núcleo Go (core-go)"
+subtitle: "Autoridad Única de Dominio y Lógica de Negocio"
+---
+
+El directorio `core-go` constituye el centro neurálgico del SDK. Implementa el estándar **Open Knowledge Format (OKF / ODKF v0.2)** y encapsula todas las reglas de negocio.
+
+## Estructura de Directorios
+
+```
+core-go/
+├── domain/                      # Entidades puras y Value Objects (Cero I/O)
+│   ├── dataproduct.go           # Aggregate Root: DataProduct
+│   ├── canonical_triad.go       # Value Object: Tríada catalogo:dataset:recurso
+│   └── contract.go              # Reglas sintácticas y schemas Frictionless
+├── ports/                       # Interfaces abstractas
+│   ├── inbound/                 # Casos de uso conducidos por clientes
+│   └── outbound/                # Puertos secundarios (almacenamiento, red, SQL)
+├── usecases/                    # Orquestadores de flujos de negocio
+│   ├── discover_catalog.go      # Descubrimiento de llms.txt
+│   ├── resolve_dataproduct.go   # Resolución de manifiestos index.md y datapackage.yaml
+│   └── execute_sql.go           # Orquestación analítica con DuckDB
+└── adapters/                    # Implementaciones concretas de puertos
+    ├── inbound/
+    │   ├── cli/                 # Binario de línea de comandos (Cobra)
+    │   ├── cshared/             # Exportaciones C-ABI (libdatamesh.so)
+    │   └── wasm/                # Exportaciones WebAssembly para navegadores
+    └── outbound/
+        ├── storage/             # Almacenamiento local (~/.datamesh/cache)
+        └── engine/              # Adaptador de motor DuckDB
+```
+
+## Value Object: Tríada Canónica
+
+Una innovación clave de OKF v0.2 es el formato de direccionamiento universal:
+
+```
+[catálogo]:[dataset]:[recurso]
+```
+
+O alternativamente con formato de rutas:
+
+```
+[catálogo]/[dataset]/[recurso]
+```
+
+El objeto de valor `CanonicalTriad` se encarga de:
+- Parsear y normalizar identificadores.
+- Aislar el contexto soberano del catálogo origen.
+- Generar alias compatibles con identificadores SQL de DuckDB.
+- Manejar caracteres acentuados, espacios y mayúsculas mediante técnicas de *slugification* predecible.

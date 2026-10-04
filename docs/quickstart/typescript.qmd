@@ -1,0 +1,61 @@
+---
+title: "Inicio Rápido con TypeScript"
+subtitle: "Uso del SDK en frontend moderno (React, Vue, Astro) y Node.js"
+---
+
+El paquete `@datamesh/sdk` proporciona acceso universal a las capacidades de DataMesh tanto en el navegador como en runtimes de servidor.
+
+## Instalación
+
+```bash
+npm install ./bindings/typescript
+```
+
+O agrégalo a tu `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@datamesh/sdk": "file:../../bindings/typescript"
+  }
+}
+```
+
+## Primeros Pasos
+
+### 1. Funciones de Nivel Superior (Estilo 1 Línea)
+
+```typescript
+import { discover, search, get, query, sql } from "@datamesh/sdk";
+
+// 1. Descubrir catálogo
+const catalog = await discover("https://datosbolivia.github.io/llms.txt");
+console.log(`Catálogo cargado: ${catalog.title}`);
+
+// 2. Buscar por término
+const matches = await search("calidad del aire");
+console.log(`Encontrados: ${matches.length}`);
+
+// 3. Obtener DataProduct
+const product = await get("https://datosbolivia.github.io/datasets/air_quality/index.md");
+console.log(product.manifest.title);
+```
+
+### 2. Consultas Tabulares en Streaming
+
+```typescript
+import { query } from "@datamesh/sdk";
+
+// Consulta con filtros sobre recurso CSV remoto
+const data = await query("https://datosbolivia.github.io/datasets/elecciones/votos.csv", {
+  filters: { departamento: "La Paz" },
+  limit: 50,
+});
+
+console.log(data.columns);
+console.log(`Filas recuperadas: ${data.rowCount}`);
+```
+
+### 3. Aceleración con WebAssembly (WASM)
+
+Cuando el archivo `main.wasm` compilado desde `core-go` está instanciado en el entorno de navegación (`window.DataMesh`), el SDK delega de forma transparente todas las llamadas al motor de Go compilado, reduciendo la latencia de parsing a milisegundos. Si WASM no está disponible, `@datamesh/sdk` utiliza su adaptador fallback nativo en JavaScript sin interrupciones.

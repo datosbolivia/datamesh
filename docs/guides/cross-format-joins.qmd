@@ -1,0 +1,44 @@
+---
+title: "JOINs Federados Heterogéneos"
+subtitle: "Cruce analítico transparente entre archivos CSV, Parquet y JSON"
+---
+
+Uno de los problemas más comunes en la gestión de datos es la heterogeneidad de formatos: diferentes departamentos publican archivos en CSV, Parquet o JSON en servidores distintos. DataMesh SDK resuelve esta heterogeneidad de manera nativa.
+
+## Ejemplo: Cruzando Datos Electorales (CSV) con Presupuesto Municipal (Parquet)
+
+Imaginemos que deseamos analizar la correlación entre la cantidad de votantes por municipio (almacenado en CSV) y la ejecución presupuestaria municipal (almacenada en Parquet).
+
+```python
+import datamesh as dm
+
+# Definir mapeo explícito o dejar que el catálogo resuelva las tríadas
+mapping = {
+    "bolivia:elecciones:votos": "data/mock_elecciones.csv",
+    "municipal:presupuesto:ejecucion": "data/mock_presupuesto.parquet",
+}
+
+sql = """
+SELECT 
+    e.departamento,
+    SUM(e.votos_validos) as votos_totales,
+    p.presupuesto,
+    p.sector
+FROM 'bolivia:elecciones:votos' e
+JOIN 'municipal:presupuesto:ejecucion' p 
+    ON e.departamento = p.municipio
+GROUP BY e.departamento, p.presupuesto, p.sector
+ORDER BY votos_totales DESC
+"""
+
+res = dm.sql(sql, table_mapping=mapping)
+
+for row in res["rows"]:
+    print(f"Departamento: {row[0]}, Votos: {row[1]}, Presupuesto: ${row[2]:,.2f}")
+```
+
+## Beneficios Arquitectónicos
+
+- **Cero Conversión Previa**: No necesitas transformar el CSV a Parquet ni cargar el Parquet en PostgreSQL antes de ejecutar el análisis.
+- **Transmisión Eficiente (Streaming)**: DuckDB lee únicamente las columnas y rangos necesarios de los archivos Parquet en disco o red.
+- **Tipado Fuerte**: DuckDB realiza la inferencia automática de esquemas y conversiones de tipo en tiempo de ejecución.

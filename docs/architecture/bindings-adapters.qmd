@@ -1,0 +1,36 @@
+---
+title: "Adaptadores y Bindings de Lenguaje"
+subtitle: "Estrategia de Interoperabilidad con C-ABI, WebAssembly y Fallbacks Nativos"
+---
+
+Para evitar la fragmentación de lógica entre múltiples lenguajes, DataMesh SDK utiliza una arquitectura de adaptadores delegados con doble vía de ejecución.
+
+## Principio de Diseño
+
+Cada binding de lenguaje implementa la misma fachada de 5 métodos:
+- Si el artefacto binario nativo compilado de Go (`libdatamesh.so` o `main.wasm`) está disponible en el entorno de ejecución, el binding delega la llamada directamente a la función de Go a través de FFI / CTypes / WASM.
+- Si el entorno es un contenedor minimalista o una instalación `pip` sin compilador CGO, el binding activa un adaptador de respaldo (fallback) 100% nativo que emula el comportamiento de forma transparente.
+
+```{mermaid}
+flowchart LR
+    UserCode["Código de Usuario (Python/R/TS)"] --> Facade["Fachada dm.*"]
+    Facade --> Check{"¿Binario Go Disponible?"}
+    Check -- Sí --> CTypesBridge["C-ABI / WASM Bridge"] --> CoreGo["core-go Engine"]
+    Check -- No --> PureFallback["Fallback Adaptador Nativo"] --> DirectExec["DuckDB / HTTP Nativo"]
+```
+
+## 1. Python Binding (`bindings/python`)
+
+- **Puente C-ABI**: `datamesh/core.py` utiliza el módulo estándar `ctypes` para interactuar con `libdatamesh.so`.
+- **Estructuras de Retorno**: Las llamadas C-ABI retornan cadenas JSON gestionadas en memoria con `DataMeshFreeString` para garantizar cero fugas de memoria (memory leaks).
+- **Fallback**: Implementación hexagonal completa en `datamesh/adapters/` con soporte DuckDB y HTTP con timeouts seguros.
+
+## 2. TypeScript Binding (`bindings/typescript`)
+
+- **Puente WebAssembly**: Instancia `dist/main.wasm` compilado con Go `js/wasm`, exponiendo promesas directas en el objeto global `window.DataMesh`.
+- **Fallback**: Implementación estándar en JavaScript para Node.js y navegadores utilizando `fetch` y streams asíncronos.
+
+## 3. R Binding (`bindings/r`)
+
+- **Puente C-ABI**: Enlaza dinámicamente mediante `dyn.load` en el hook `.onLoad()` del paquete.
+- **Retorno**: Convierte los resultados analíticos directamente en objetos `data.frame` listos para ser consumidos por paquetes de tidyverse o ggplot2.

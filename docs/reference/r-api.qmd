@@ -1,0 +1,55 @@
+---
+title: "Referencia de API: R"
+subtitle: "Paquete datamesh para R"
+---
+
+El paquete de R expone funciones con prefijo canónico `datamesh_*` y alias cortos estilo 1 línea `dm_*`.
+
+## Funciones Exportadas
+
+### `datamesh_discover(catalog_url = NULL)` / `dm_discover(...)`
+Retorna una lista con metadatos del catálogo y un data frame de entradas.
+
+- **Parámetros**:
+  - `catalog_url`: Enlace HTTP a un `llms.txt`. Si es `NULL`, utiliza la variable de entorno `DATAMESH_CATALOG_URL`.
+- **Valor Retornado**: Lista con campos `title`, `description`, `source_url`, `entries`.
+
+---
+
+### `datamesh_search(query, catalog_url = NULL)` / `dm_search(...)`
+Busca dentro del catálogo y retorna las filas correspondientes en un `data.frame`.
+
+- **Parámetros**:
+  - `query`: Cadena de búsqueda.
+  - `catalog_url`: URL opcional del catálogo.
+- **Valor Retornado**: `data.frame` con columnas `title`, `uri`, `resolved_url`, `domain`, `description`.
+
+---
+
+### `datamesh_get(uri)` / `dm_get(...)`
+Obtiene los metadatos de un nodo de datos OKF v0.2.
+
+- **Parámetros**:
+  - `uri`: Ruta o URL hacia el archivo `index.md`.
+- **Valor Retornado**: Lista con identificador y manifiesto estructurado.
+
+---
+
+### `datamesh_query(resource_uri, filters = list(), limit = NULL)` / `dm_query(...)`
+Consulta un recurso tabular remoto y retorna un `data.frame`.
+
+- **Parámetros**:
+  - `resource_uri`: URL del archivo CSV.
+  - `filters`: Lista nombrada con condiciones clave-valor (ej. `list(departamento = "La Paz")`).
+  - `limit`: Límite máximo de filas.
+- **Valor Retornado**: `data.frame` nativo de R.
+
+---
+
+### `datamesh_sql(sql_query, table_mapping = list())` / `dm_sql(...)`
+Ejecuta ANSI SQL sobre tríadas canónicas mediante el paquete `duckdb` de R o delegación a Go Core.
+
+- **Parámetros**:
+  - `sql_query`: Cadena SQL a ejecutar.
+  - `table_mapping`: Lista nombrada mapeando tríadas a rutas de archivo locales.
+- **Valor Retornado**: `data.frame` con los resultados tipados.

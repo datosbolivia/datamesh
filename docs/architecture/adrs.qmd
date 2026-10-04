@@ -1,0 +1,17 @@
+---
+title: "Registro de Decisiones Arquitectónicas (ADRs)"
+subtitle: "Historial formal de decisiones de diseño y compromisos técnicos"
+---
+
+El proyecto DataMesh SDK sigue el estándar formal de Registro de Decisiones de Arquitectura (Architecture Decision Records) para mantener la trazabilidad de cada cambio estructural significativo.
+
+| ADR | Título | Estado | Fecha | Contexto / Impacto |
+| :--- | :--- | :--- | :--- | :--- |
+| [**ADR-0001**](../decisions/0001-go-core-hexagonal-architecture.md) | Núcleo Go con Arquitectura Hexagonal | Aceptado | 2026-09-24 | Aislamiento estricto del dominio en Go con puertos y adaptadores. |
+| [**ADR-0002**](../decisions/0002-decentralized-multi-catalog-and-mcp-server.md) | Descubrimiento Descentralizado y Servidor MCP | Aceptado | 2026-09-25 | Integración del protocolo Model Context Protocol (MCP) para LLMs y `llms.txt`. |
+| [**ADR-0003**](../decisions/0003-full-sql-duckdb-and-canonical-triad.md) | Motor SQL Completo con DuckDB y Tríadas | Aceptado | 2026-09-26 | Soporte analítico ANSI SQL y direccionamiento `cat:ds:res`. |
+| [**ADR-0004**](../decisions/0004-agent-guardrails-and-anti-hallucination.md) | Guardrails Antialucinación para Agentes | Aceptado | 2026-09-27 | Reglas estrictas de fundamentación en datos reales y citación obligatoria. |
+| [**ADR-0005**](../decisions/0005-generic-storage-manager-and-service-resolvers.md) | Gestor de Almacenamiento y Resolutores | Aceptado | 2026-09-28 | Gestión de caché temporal y desacoplamiento de orígenes (GitHub, Kaggle, HTTP). |
+| [**ADR-0006**](../decisions/0006-abstract-query-engine-cross-language.md) | Motores de Consulta Abstractos | Aceptado | 2026-09-29 | Abstracción de motores (DuckDB, Tabular en memoria, Go core). |
+| [**ADR-0007**](../decisions/0007-unified-reading-formats-and-manifest-abstraction.md) | Formatos Unificados y Abstracción de Manifiestos | Aceptado | 2026-09-30 | Inferencia polimórfica de CSV, Parquet y JSON en manifiestos OKF. |
+| [**ADR-0008**](../decisions/0008-go-core-domain-and-bindings-edge-adapters.md) | Go Core como Dominio y Bindings como Edge Adapters | Aceptado | 2026-10-04 | Eliminación de duplicidad; bindings como adaptadores hacia C-ABI y WASM. |

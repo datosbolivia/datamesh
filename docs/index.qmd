@@ -1,0 +1,93 @@
+---
+title: "DataMesh SDK"
+subtitle: "Infraestructura Hexagonal y Soberana para el Formato de Conocimiento Abierto (OKF/ODKF v0.2)"
+---
+
+::: {.hero-banner}
+**DataMesh SDK** es la biblioteca oficial multiplataforma para interactuar con mallas de datos y conocimiento federado. Proporciona una interfaz unificada de 5 métodos en **Python**, **TypeScript**, **R** y **Go**, respaldada por un motor central de alta velocidad en Go, capacidades analíticas embebidas con DuckDB y servidor de protocolo de contexto de modelos (MCP).
+:::
+
+## Pilares Fundamentales
+
+::: {.feature-grid}
+::: {.feature-card}
+### 🏛️ Soberanía de Datos
+Descubrimiento federado a través de archivos estáticos `llms.txt` y nodos OKF v0.2. Sin intermediarios propietarios ni dependencias de nube cerrada.
+:::
+
+::: {.feature-card}
+### ⚙️ Arquitectura Hexagonal
+El núcleo en Go (`core-go`) es la única autoridad de dominio. Los bindings de Python, TypeScript y R operan como adaptadores de borde compilados a C-ABI o WASM.
+:::
+
+::: {.feature-card}
+### ⚡ Fachada Unificada
+API de 5 verbos universales (`discover`, `search`, `get`, `query`, `sql`) idénticos en todos los lenguajes de programación soportados.
+:::
+
+::: {.feature-card}
+### 🦆 Motor DuckDB Integrado
+Consultas SQL analíticas directamente sobre tríadas canónicas (`catalogo:dataset:recurso` o `catalogo/dataset/recurso`), con JOINs transparentes entre CSV, Parquet y JSON.
+:::
+:::
+
+## Matriz de Soporte por Lenguaje
+
+| Lenguaje | Runtime / Binding | Delegación Core | Dependencias Clave | Estado |
+| :--- | :--- | :--- | :--- | :--- |
+| **Go** | Nativo (`core-go`) | Núcleo de Dominio | `duckdb`, `cobra`, `yaml` | Estable (v0.2.0) |
+| **Python** | `datamesh` | C-ABI (`libdatamesh.so`) + Fallback | `duckdb`, `pyarrow`, `pyyaml` | Estable (v0.2.0) |
+| **TypeScript** | `@datamesh/sdk` | WebAssembly (`main.wasm`) + Fallback | Browser Fetch / Node HTTP | Estable (v0.2.0) |
+| **R** | `datamesh` | C-ABI (`dyn.load`) + Fallback | `duckdb`, `jsonlite`, `curl` | Estable (v0.2.0) |
+
+## Ejemplo de 1 Línea
+
+::: {.panel-tabset}
+### Python
+```python
+import datamesh as dm
+
+# Consulta federada SQL con DuckDB sobre tríada canónica
+df = dm.sql("SELECT departamento, SUM(votos) FROM 'bolivia:elecciones:votos' GROUP BY departamento")
+```
+
+### TypeScript
+```typescript
+import { sql } from "@datamesh/sdk";
+
+// Consulta analítica asíncrona
+const result = await sql("SELECT departamento, SUM(votos) FROM 'bolivia:elecciones:votos' GROUP BY departamento");
+console.log(result.rows);
+```
+
+### R
+```r
+library(datamesh)
+
+# Ejecución analítica con retorno data.frame
+df <- dm_sql("SELECT departamento, SUM(votos) FROM 'bolivia:elecciones:votos' GROUP BY departamento")
+head(df)
+```
+
+### Go
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/datosbolivia/datamesh-sdk/core-go/usecases"
+)
+
+func main() {
+    res, err := usecases.ExecuteSQL("SELECT departamento, SUM(votos) FROM 'bolivia:elecciones:votos' GROUP BY departamento")
+    fmt.Printf("Filas recuperadas: %d\n", res.RowCount)
+}
+```
+:::
+
+## Navegación de la Documentación
+
+- [**Guía de Inicio Rápido**](quickstart/index.qmd): Instalación y primeros pasos en menos de 5 minutos para cada lenguaje.
+- [**Arquitectura de Sistema**](architecture/index.qmd): Explicación detallada de la arquitectura hexagonal, puertos, adaptadores y registro formal de decisiones (ADRs).
+- [**Guías de Casos de Uso**](guides/index.qmd): Tutoriales paso a paso de descubrimiento, analítica cruzada, joins federados y agentes MCP.
+- [**Referencia de APIs**](reference/index.qmd): Especificación exhaustiva de firmas, tipos de retorno, endpoints CLI y esquemas MCP.

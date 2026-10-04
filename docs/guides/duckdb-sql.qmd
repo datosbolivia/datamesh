@@ -1,0 +1,45 @@
+---
+title: "Consultas SQL con DuckDB y Tríadas Canónicas"
+subtitle: "Ejecución analítica directa sobre identificadores soberanos"
+---
+
+DataMesh SDK integra internamente el motor columnar **DuckDB**, permitiendo ejecutar consultas SQL estándar (ANSI SQL) directamente sobre datasets sin necesidad de cargarlos previamente en una base de datos externa.
+
+## Direccionamiento con Tríadas Canónicas
+
+En lugar de referenciar tablas por nombres locales arbitrarios, DataMesh SDK utiliza tríadas canónicas:
+
+1. **Notación con dos puntos**: `'catalogo:dataset:recurso'`
+2. **Notación con barras**: `'catalogo/dataset/recurso'`
+3. **Notación directa por URL**: `'https://servidor.org/datos.csv'`
+
+### Ejemplo de Consulta Básica
+
+```python
+import datamesh as dm
+
+query = """
+SELECT 
+    departamento, 
+    SUM(votos_validos) AS total_votos,
+    ROUND(AVG(votos_validos), 2) AS promedio_por_mesa
+FROM 'bolivia:elecciones:votos'
+GROUP BY departamento
+ORDER BY total_votos DESC
+"""
+
+resultado = dm.sql(query)
+
+print(f"Total registros: {resultado['row_count']}")
+for row in resultado["rows"]:
+    print(f"{row[0]}: {row[1]} votos")
+```
+
+## Resolución Dinámica de Esquemas
+
+Cuando ejecutas una consulta:
+1. El parser SQL de DataMesh detecta los identificadores de tablas entrecomillados.
+2. Identifica si corresponden a una tríada canónica, a una ruta de archivo local o a una URL HTTP.
+3. Si la tabla no está en el motor local, busca su descriptor en los nodos del catálogo federado o en la caché `~/.datamesh/cache`.
+4. Registra automáticamente una vista virtual en DuckDB (`read_csv_auto` o `read_parquet`) y ejecuta la consulta.
+5. Serializa los resultados a estructuras seguras compatibles con JSON (`DECIMAL` a `float`, fechas a ISO 8601).

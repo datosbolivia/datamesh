@@ -1,0 +1,80 @@
+---
+title: "Arquitectura del Sistema"
+subtitle: "Diseño Hexagonal (Puertos y Adaptadores) y Soberanía Tecnológica"
+---
+
+El SDK de DataMesh está estructurado siguiendo los principios de la **Arquitectura Hexagonal (Ports and Adapters)** de Alistair Cockburn, combinada con **Domain-Driven Design (DDD)**.
+
+## Diagrama Conceptual de Capas
+
+```{mermaid}
+flowchart TB
+    subgraph EdgeAdapters["Adaptadores de Borde (Inbound Drivers)"]
+        CLI["CLI Go (`datamesh`)"]
+        MCP["Servidor MCP (Stdio/SSE)"]
+        PY["Python Binding (`import datamesh`)"]
+        TS["TypeScript Binding (`@datamesh/sdk`)"]
+        R["R Binding (`library(datamesh)`)"]
+    end
+
+    subgraph Bridges["Puentes de Interoperabilidad"]
+        CABI["Go C-ABI (`libdatamesh.so`)"]
+        WASM["Go WASM (`main.wasm`)"]
+    end
+
+    subgraph HexagonCore["Núcleo Hexagonal (`core-go`)"]
+        direction TB
+        subgraph InboundPorts["Puertos de Entrada (Use Cases)"]
+            UC1["Descubrir Catálogos"]
+            UC2["Buscar Datasets"]
+            UC3["Resolver DataProduct"]
+            UC4["Consultar Tabular"]
+            UC5["Ejecutar DuckDB SQL"]
+        end
+        subgraph DomainModel["Dominio y Lenguaje Ubicuo"]
+            DP["DataProduct Aggregate"]
+            TR["CanonicalTriad ValueObject"]
+            CT["SyntacticContract"]
+        end
+        subgraph OutboundPorts["Puertos de Salida (Secondary Ports)"]
+            PStorage["StoragePort"]
+            PResolver["ResourceResolverPort"]
+            PEngine["QueryEnginePort"]
+        end
+    end
+
+    subgraph InfraAdapters["Adaptadores de Infraestructura (Outbound)"]
+        DuckDBEngine["DuckDB In-Memory Engine"]
+        LocalFS["Local Storage Manager"]
+        HTTPResolver["HTTP / HTTPS Resolver"]
+        GitHubResolver["GitHub CDN Resolver"]
+        KaggleResolver["Kaggle API Resolver"]
+    end
+
+    CLI --> UC1 & UC5
+    MCP --> UC1 & UC5
+    PY --> CABI --> UC1 & UC5
+    R --> CABI
+    TS --> WASM --> UC1 & UC5
+
+    InboundPorts --> DomainModel
+    InboundPorts --> OutboundPorts
+
+    OutboundPorts --> DuckDBEngine
+    OutboundPorts --> LocalFS
+    OutboundPorts --> HTTPResolver
+    OutboundPorts --> GitHubResolver
+    OutboundPorts --> KaggleResolver
+```
+
+## Inversión de Dependencias y Regla de Oro
+
+1. **El Núcleo No Conoce a los Clientes**: `core-go/domain` y `core-go/usecases` no importan ningún framework externo, ni código de Python, TypeScript o R.
+2. **Los Bindings son Adaptadores de Borde**: Python, TypeScript y R ofrecen la API idiomática adecuada para sus desarrolladores y delegan la ejecución lógica al núcleo compilado.
+3. **Cero Dependencia de Red Obligatoria**: Todo el sistema está diseñado para funcionar en entornos aislados (air-gapped) o con caches locales cuando no hay conexión disponible.
+
+## Secciones de Arquitectura
+
+- [**Núcleo Go (`core-go`)**](core-go.qmd): Entidades de dominio, contratos y casos de uso.
+- [**Adaptadores y Bindings**](bindings-adapters.qmd): Implementación de C-ABI, WebAssembly y mecanismos de fallback.
+- [**Registro de Decisiones (ADRs)**](adrs.qmd): Registro formal de decisiones técnicas (ADR-0001 a ADR-0008).

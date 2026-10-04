@@ -1,0 +1,40 @@
+---
+title: "Guía de Inicio Rápido"
+subtitle: "Comienza a utilizar DataMesh SDK en tu lenguaje favorito"
+---
+
+Esta sección te guiará para instalar y ejecutar tus primeras consultas con **DataMesh SDK** en cuestión de minutos.
+
+## La Fachada Canónica de 5 Métodos
+
+Sin importar el lenguaje que utilices, DataMesh SDK estandariza las 5 operaciones fundamentales:
+
+1. **`discover(catalog_url)`**: Descubre catálogos federados y lista nodos de datos disponibles parseando `llms.txt`.
+2. **`search(query, catalog_url)`**: Busca datasets y recursos por palabras clave, títulos o tags semánticos.
+3. **`get(uri)`**: Obtiene el descriptor canónico, manifiesto YAML y metadatos de un DataProduct.
+4. **`query(resource_uri, filters, limit)`**: Consulta tabular directa a recursos CSV con filtrado en streaming.
+5. **`sql(sql_query, table_mapping, engine)`**: Ejecuta ANSI SQL completo con motor DuckDB embebido sobre tríadas `catalogo:dataset:recurso`.
+
+## Selecciona tu Lenguaje
+
+::: {.feature-grid}
+::: {.feature-card}
+### 🐍 [Python](python.qmd)
+Instalación vía `pip`, integración fluida con Pandas, PyArrow y DuckDB, soporte CLI y servidor MCP.
+:::
+
+::: {.feature-card}
+### 🟦 [TypeScript / JavaScript](typescript.qmd)
+Para navegadores y Node.js, compatible con React, Vue, Svelte y Astro. Acelerado opcionalmente con Go WebAssembly.
+:::
+
+::: {.feature-card}
+### 📊 [R](r.qmd)
+Paquete para análisis estadístico y data science. Conversión nativa a `data.frame` e integración con `duckdb` R package.
+:::
+
+::: {.feature-card}
+### 🦫 [Go Core](go.qmd)
+Compilación de la CLI soberana `datamesh`, generación de binarios C-ABI (`libdatamesh.so`) y servidor MCP local.
+:::
+:::

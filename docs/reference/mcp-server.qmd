@@ -1,0 +1,51 @@
+---
+title: "Referencia del Servidor Model Context Protocol (MCP)"
+subtitle: "Protocolo estándar para agentes LLM y herramientas soberanas"
+---
+
+El módulo `datamesh.mcp_server` y el comando `datamesh serve --mcp` implementan la especificación **Model Context Protocol (MCP)** mediante transporte JSON-RPC 2.0 sobre `stdio`.
+
+Permite que cualquier agente o asistente de IA descubra, inspeccione y consulte productos de datos abiertos y soberanos sin alucinaciones.
+
+---
+
+## 1. Configuración del Servidor en Agentes
+
+### Configuración en Claude Desktop o Cursor (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "datamesh": {
+      "command": "python3",
+      "args": ["-m", "datamesh.cli", "mcp-serve"],
+      "env": {
+        "DATAMESH_CATALOGS": "https://datosbolivia.github.io/llms.txt"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 2. Catálogo de Herramientas Expuestas
+
+| Nombre de Herramienta | Parámetros | Descripción |
+|---|---|---|
+| `datamesh_discover_catalogs` | `catalog_url` *(opcional)* | Descubre y lista Data Products a través de los catálogos soberanos federados o una URL específica. |
+| `datamesh_search_catalog` | `keyword` *(requerido)*, `catalog_url` *(opcional)* | Busca Data Products por palabra clave en título, descripción o dominio. |
+| `datamesh_get_dataproduct` | `uri` *(requerido)* | Resuelve y devuelve el manifiesto OKF v0.2, dimensiones, contratos y linaje de un nodo. |
+| `datamesh_query_resource` | `resource_uri` *(requerido)*, `filters` *(opcional)*, `limit` *(opcional)* | Ejecuta consultas y filtrado tabular en memoria sobre recursos CSV/TSV. |
+| `datamesh_sql_query` | `sql_query` *(requerido)* | Ejecuta consultas ANSI SQL completas con DuckDB usando tríadas `"catalogo:dataset:resource"`. Normaliza formatos dispares (CSV, Parquet, JSON) en memoria. |
+
+---
+
+## 3. Guardrails Antialucinación Embebidos
+
+El servidor MCP inyecta instrucciones normativas en el mensaje de inicialización (`initialize`) para forzar al agente a seguir 5 guardrails inquebrantables:
+
+1. **Fundamentación Estricta:** Responder únicamente con los datos contenidos en el campo `rows` o `data` del resultado de la herramienta. Jamás inventar números, fechas o columnas.
+2. **Cita Obligatoria de Procedencia:** Citar la tríada canónica (`catalogo:dataset:resource`).
+3. **Transparencia ante Nulos:** Si una consulta devuelve 0 filas o `NULL`, declarar explícitamente que no se encontraron registros coincidentes. No generar datos ficticios.
+4. **Verificación de Esquema:** Comprobar nombres de columnas con `datamesh_get_dataproduct` o `LIMIT 1` antes de construir consultas complejas.
+5. **Separación de Hechos vs. Hipótesis:** Distinguir claramente los datos cuantitativos obtenidos de las interpretaciones subjetivas.

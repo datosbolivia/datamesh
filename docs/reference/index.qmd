@@ -1,0 +1,38 @@
+---
+title: "Referencia de APIs y Especificaciones"
+subtitle: "Documentación técnica formal de funciones, tipos, endpoints y estándares"
+---
+
+Esta sección contiene la especificación exhaustiva de interfaces y contratos expuestos por DataMesh SDK.
+
+::: {.feature-grid}
+::: {.feature-card}
+### 🐍 [API de Python](python-api.qmd)
+Firmas completas de `dm.*`, puertos, adaptadores, opciones de DuckDB y manejo de excepciones.
+:::
+
+::: {.feature-card}
+### 🟦 [API de TypeScript](typescript-api.qmd)
+Tipos TypeScript (`DataProduct`, `CatalogDiscoveryResult`, `QueryResult`), promesas y hooks.
+:::
+
+::: {.feature-card}
+### 📊 [API de R](r-api.qmd)
+Funciones exportadas (`dm_*` y `datamesh_*`), parámetros y conversión a objetos `data.frame`.
+:::
+
+::: {.feature-card}
+### 🦫 [C-ABI de Go Core](go-cabi.qmd)
+Exportaciones C compartidas (`libdatamesh.so`), tipos C y gestión de memoria.
+:::
+
+::: {.feature-card}
+### 💻 [Línea de Comandos (CLI)](cli.qmd)
+Subcomandos de `datamesh` (`discover`, `resolve`, `query`, `serve`).
+:::
+
+::: {.feature-card}
+### 🤖 [Protocolo MCP](mcp-server.qmd)
+Esquemas JSON-RPC de herramientas y especificación del protocolo de contexto para modelos.
+:::
+:::

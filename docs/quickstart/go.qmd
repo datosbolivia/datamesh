@@ -1,0 +1,51 @@
+---
+title: "Inicio Rápido con Go Core"
+subtitle: "Compilación de binarios, uso de la CLI y uso como módulo de Go"
+---
+
+`core-go` es el corazón de DataMesh SDK: implementa el modelo de dominio hexagonal, los casos de uso normativos y genera tanto el binario CLI como las librerías compartidas (`libdatamesh.so` y `main.wasm`).
+
+## Compilación de la CLI
+
+```bash
+cd core-go
+go build -o ../bin/datamesh ./adapters/inbound/cli/main.go ./adapters/inbound/cli/serve.go
+```
+
+Verifica la instalación:
+
+```bash
+../bin/datamesh --help
+```
+
+## Compilación de la Librería C-ABI
+
+Para habilitar la aceleración máxima en Python y R:
+
+```bash
+cd core-go
+go build -buildmode=c-shared -o ../libdatamesh.so ./adapters/inbound/cshared/exports.go
+```
+
+## Compilación del Módulo WebAssembly (WASM)
+
+Para habilitar la aceleración en navegadores con TypeScript:
+
+```bash
+cd core-go
+GOOS=js GOARCH=wasm go build -o ../bindings/typescript/dist/main.wasm ./adapters/inbound/wasm/main_wasm.go
+```
+
+## Comandos Esenciales de la CLI
+
+### Descubrir Catálogo
+```bash
+datamesh discover https://datosbolivia.github.io/llms.txt
+```
+
+### Ejecutar Servidor MCP (Model Context Protocol)
+Inicia el servidor MCP estándar compatible con agentes Claude Desktop, Cursor, Gemini y Antigravity:
+
+```bash
+datamesh serve --mcp
+```

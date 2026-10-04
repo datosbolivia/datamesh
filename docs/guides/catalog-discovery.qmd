@@ -1,0 +1,58 @@
+---
+title: "Descubrimiento y Búsqueda en Catálogos Federados"
+subtitle: "Indexación descentralizada de conocimiento soberano mediante llms.txt"
+---
+
+El estándar **OKF v0.2** promueve la publicación de catálogos descentralizados a través de archivos estáticos `llms.txt`. Un catálogo no requiere bases de datos activas ni microservicios complejos: basta con un archivo de texto alojado en GitHub Pages, S3 o cualquier servidor HTTP estático.
+
+## Estructura de un Catálogo `llms.txt`
+
+Un archivo `llms.txt` compatible con OKF v0.2 contiene encabezados y listas de enlaces estructurados:
+
+```markdown
+# Catálogo Soberano DataMesh Bolivia
+> Directorio federado de conjuntos de datos abiertos y conocimiento público.
+
+## Conjuntos de Datos
+- [Atlas Electoral Boliviano](nodes/elecciones/index.md): Resultados electorales oficiales. (Dominio: Demografía. Recursos: elecciones, candidatos)
+- [Monitoreo de Calidad del Aire](nodes/calidad_aire/index.md): Mediciones horarias de material particulado ICA. (Dominio: Medio Ambiente. Recursos: mediciones)
+```
+
+## Descubrimiento en Python
+
+```python
+import datamesh as dm
+
+# Descubrimiento automático del catálogo configurado por defecto
+catalog = dm.discover()
+
+print(f"Título del Catálogo: {catalog['title']}")
+print(f"Descripción: {catalog['description']}")
+
+for entry in catalog["entries"]:
+    print(f"- {entry['title']} [{entry['domain']}]")
+    print(f"  URL del nodo: {entry['resolved_url']}")
+    print(f"  Recursos: {', '.join(entry['resources'])}")
+```
+
+## Búsqueda Semántica y Filtrado
+
+Para buscar dentro del catálogo sin tener que inspeccionar todas las entradas manualmente:
+
+```python
+# Búsqueda por término en título, descripción o dominio
+matches = dm.search("aire")
+
+for match in matches:
+    print(f"Resultado: {match['title']} ({match['domain']})")
+```
+
+## Configuración de Múltiples Catálogos Federados
+
+Puedes especificar múltiples catálogos simultáneos utilizando variables de entorno separadas por coma:
+
+```bash
+export DATAMESH_CATALOGS="https://datosbolivia.github.io/llms.txt,https://otro-nodo.org/llms.txt"
+```
+
+El SDK agregará las entradas de todos los catálogos en una vista federada unificada.

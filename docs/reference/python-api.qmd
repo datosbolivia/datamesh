@@ -1,0 +1,59 @@
+---
+title: "Referencia de API: Python"
+subtitle: "Módulo datamesh para Python 3.10+"
+---
+
+El paquete `datamesh` expone tanto una fachada de nivel de módulo como acceso detallado a los casos de uso y puertos de la arquitectura hexagonal.
+
+## Fachada Principal (`datamesh`)
+
+### `datamesh.discover(catalog_url: Optional[str] = None) -> Dict[str, Any]`
+Descubre uno o varios catálogos federados y retorna su estructura jerárquica.
+
+- **Parámetros**:
+  - `catalog_url` *(opcional)*: URL HTTP o ruta `file://` hacia un archivo `llms.txt`. Si se omite, utiliza la variable `DATAMESH_CATALOG_URL` o `https://datosbolivia.github.io/llms.txt`.
+- **Retorno**: Diccionario con claves:
+  - `title` *(str)*: Nombre del catálogo.
+  - `description` *(str)*: Descripción contextual.
+  - `entries` *(List[Dict])*: Lista de datasets con campos `title`, `uri`, `resolved_url`, `domain`, `resources`.
+
+---
+
+### `datamesh.search(query: str, catalog_url: Optional[str] = None) -> List[Dict[str, Any]]`
+Filtra los datasets de los catálogos configurados según un término de búsqueda.
+
+- **Parámetros**:
+  - `query` *(str)*: Subcadena a buscar en títulos, descripciones o dominios temáticos.
+  - `catalog_url` *(opcional)*: URL del catálogo a inspeccionar.
+- **Retorno**: Lista de entradas del catálogo coincidentes.
+
+---
+
+### `datamesh.get(uri: str) -> Dict[str, Any]`
+Obtiene y parsea el manifiesto de un nodo de datos OKF v0.2.
+
+- **Parámetros**:
+  - `uri` *(str)*: URL o ruta local a un archivo `index.md` o nodo OKF.
+- **Retorno**: Diccionario que incluye `id`, `manifest` (con dimensiones y contratos) y `description`.
+
+---
+
+### `datamesh.query(resource_uri: str, filters: Optional[Dict[str, str]] = None, limit: Optional[int] = None) -> Dict[str, Any]`
+Consulta tabular de baja sobrecarga para archivos CSV.
+
+- **Parámetros**:
+  - `resource_uri` *(str)*: URL o ruta local a un recurso CSV.
+  - `filters` *(opcional)*: Diccionario columna-valor para filtrar filas en streaming.
+  - `limit` *(opcional)*: Número máximo de filas a retornar.
+- **Retorno**: Diccionario con `columns` *(List[str])*, `rows` *(List[List[str]])*, y `row_count` *(int)*.
+
+---
+
+### `datamesh.sql(sql_query: str, table_mapping: Optional[Dict[str, str]] = None, engine: Optional[str] = None) -> Dict[str, Any]`
+Ejecuta ANSI SQL sobre tríadas canónicas (`catalogo:dataset:recurso` o `catalogo/dataset/recurso`) con DuckDB.
+
+- **Parámetros**:
+  - `sql_query` *(str)*: Sentencia SQL a ejecutar.
+  - `table_mapping` *(opcional)*: Mapeo manual de nombres de tabla a rutas físicas de archivos.
+  - `engine` *(opcional)*: Identificador del motor (`"duckdb"`, `"inmem"` o `"go"`). Por defecto `"duckdb"`.
+- **Retorno**: Diccionario con `columns`, `rows` (con valores normalizados seguros para JSON), y `row_count`.

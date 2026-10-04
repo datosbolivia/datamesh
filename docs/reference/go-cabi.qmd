@@ -1,0 +1,52 @@
+---
+title: "Referencia: Go Core C-ABI"
+subtitle: "Interfaz Binaria de Aplicación en C (libdatamesh.so)"
+---
+
+El archivo `core-go/adapters/inbound/cshared/exports.go` expone funciones con convención de llamada C (`//export`) para permitir la integración con lenguajes como Python, R, C/C++, Rust y Zig.
+
+## Funciones Exportadas
+
+### `DataMeshInit(configJSON *C.char) *C.char`
+Inicializa el runtime de Go con opciones de configuración en formato JSON (rutas de caché, directorios de búsqueda y URLs de catálogo).
+
+---
+
+### `DataMeshDiscoverCatalog(catalogURL *C.char) *C.char`
+Ejecuta el caso de uso `DiscoverCatalog` de Go. Retorna un puntero a cadena C con la respuesta codificada en JSON:
+
+```json
+{
+  "success": true,
+  "data": {
+    "title": "Catálogo Soberano",
+    "description": "...",
+    "entries": [...]
+  }
+}
+```
+
+---
+
+### `DataMeshSearchCatalog(query *C.char, catalogURL *C.char) *C.char`
+Filtra entradas del catálogo directamente en memoria en el runtime de Go y retorna un array JSON con las coincidencias.
+
+---
+
+### `DataMeshResolveDataProduct(uri *C.char) *C.char`
+Parsea y valida un nodo OKF v0.2, retornando el objeto DataProduct en JSON.
+
+---
+
+### `DataMeshQueryResource(resourceURI *C.char, optionsJSON *C.char) *C.char`
+Ejecuta una consulta sobre un archivo CSV aplicando filtros y límites con streaming de memoria.
+
+---
+
+### `DataMeshExecuteSQL(sqlQuery *C.char, tableMappingJSON *C.char) *C.char`
+Ejecuta ANSI SQL con DuckDB embebido en Go sobre tríadas canónicas y retorna columnas y filas en formato JSON.
+
+---
+
+### `DataMeshFreeString(ptr *C.char)`
+Libera la memoria de cualquier cadena de texto retornada por las funciones de DataMesh. **Debe ser invocada siempre** tras procesar una respuesta para evitar memory leaks.

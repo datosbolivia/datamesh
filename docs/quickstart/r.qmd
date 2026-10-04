@@ -1,0 +1,70 @@
+---
+title: "Inicio Rápido con R"
+subtitle: "Análisis de datos soberanos y data frames en R con datamesh"
+---
+
+El paquete de R `datamesh` implementa la misma fachada de 5 verbos que los otros bindings, adaptada idiomáticamente al ecosistema estadístico de R (`data.frame`, `duckdb`, `DBI`).
+
+## Instalación
+
+Instala el paquete localmente en tu sesión de R:
+
+```r
+# Instalar dependencias si no están presentes
+install.packages(c("jsonlite", "curl", "duckdb", "DBI"))
+
+# Instalar datamesh desde el directorio local
+install.packages("bindings/r", repos = NULL, type = "source")
+```
+
+## Primeros Pasos
+
+### 1. Carga del Paquete
+
+```r
+library(datamesh)
+```
+
+Al cargarse, `datamesh` intenta enlazar dinámicamente con `libdatamesh.so` (C-ABI de Go Core). Si la librería no está compilada en el sistema, conmuta silenciosamente al adaptador nativo en R.
+
+### 2. Descubrimiento y Búsqueda
+
+```r
+# Descubrir catálogo
+cat <- dm_discover("https://datosbolivia.github.io/llms.txt")
+print(cat$title)
+
+# Buscar datasets por palabra clave
+elecciones <- dm_search("elecciones")
+print(elecciones)
+```
+
+### 3. Consultas SQL Directas a Data Frames
+
+```r
+# Ejecución ANSI SQL con DuckDB sobre tríadas canónicas
+df <- dm_sql("
+  SELECT departamento, SUM(votos_validos) as total_votos
+  FROM 'bolivia:elecciones:votos'
+  GROUP BY departamento
+  ORDER BY total_votos DESC
+")
+
+# Inspección estadística estándar
+summary(df)
+head(df)
+```
+
+### 4. Consultas con Filtros Tabulares
+
+```r
+res <- dm_query(
+  "https://datosbolivia.github.io/datasets/elecciones/votos.csv",
+  filters = list(partido = "MAS"),
+  limit = 100
+)
+
+# Convertir a data.frame nativo
+df_partido <- as.data.frame(res$rows)
+colnames(df_partido) <- res$columns
+```

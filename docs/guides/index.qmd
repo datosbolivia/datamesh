@@ -1,0 +1,28 @@
+---
+title: "Guías sobre Casos de Uso"
+subtitle: "Tutoriales prácticos y patrones de uso avanzado en DataMesh SDK"
+---
+
+Esta sección contiene tutoriales detallados para resolver necesidades analíticas reales utilizando DataMesh SDK.
+
+::: {.feature-grid}
+::: {.feature-card}
+### 🌐 [Descubrimiento de Catálogos](catalog-discovery.qmd)
+Aprende a federar múltiples orígenes descentralizados basados en `llms.txt` y buscar recursos soberanos.
+:::
+
+::: {.feature-card}
+### 🦆 [Consultas SQL con DuckDB](duckdb-sql.qmd)
+Aprende a ejecutar consultas analíticas sobre tríadas canónicas (`catalogo:dataset:recurso` o `catalogo/dataset/recurso`).
+:::
+
+::: {.feature-card}
+### 🔄 [JOINs Federados Heterogéneos](cross-format-joins.qmd)
+Cruza tablas en formato CSV, Parquet y JSON almacenadas en servidores remotos sin pasos de ETL manuales.
+:::
+
+::: {.feature-card}
+### 🤖 [Integración con Agentes MCP](mcp-agent-integration.qmd)
+Conecta el servidor MCP de DataMesh con Claude Desktop, Cursor, Gemini o asistentes autónomos con guardrails antialucinación.
+:::
+:::

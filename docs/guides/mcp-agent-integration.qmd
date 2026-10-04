@@ -1,0 +1,57 @@
+---
+title: "Integración con Agentes y Servidor MCP"
+subtitle: "Model Context Protocol para agentes autónomos con guardrails antialucinación"
+---
+
+DataMesh SDK incluye un servidor compatible con el protocolo abierto **Model Context Protocol (MCP)** desarrollado por Anthropic y ampliamente adoptado en la industria por herramientas como Claude Desktop, Cursor, Gemini y Antigravity.
+
+## Guardrails Antialucinación
+
+Para garantizar la precisión de los modelos de lenguaje al responder sobre datos públicos, el servidor MCP impone 4 guardrails inquebrantables:
+
+1. **Fundamentación Estricta**: Las respuestas deben basarse exclusivamente en los números y filas retornados por las herramientas del SDK.
+2. **Cita Obligatoria de Tríada**: Cada afirmación o dato numérico debe citar su origen canónico (ej. `[bolivia:elecciones:votos]`).
+3. **Transparencia ante Nulos**: Si una consulta devuelve cero filas o valores `NULL`, debe reportarse explícitamente sin extrapolar.
+4. **Verificación Previa de Esquema**: Los agentes deben invocar `datamesh_get_dataproduct` o consultas `LIMIT 1` antes de construir consultas complejas.
+
+## Herramientas Expuestas por el Servidor MCP
+
+El servidor expone las siguientes herramientas estándar:
+
+| Nombre de la Herramienta | Parámetros | Descripción |
+| :--- | :--- | :--- |
+| `datamesh_discover_catalogs` | `catalog_url` (opcional) | Lista datasets soberanos indexados en `llms.txt`. |
+| `datamesh_get_dataproduct` | `product_id` | Obtiene el manifiesto YAML y contratos de un dataset. |
+| `datamesh_sql_query` | `sql_query` | Ejecuta consultas ANSI SQL con DuckDB sobre tríadas o URLs. |
+| `datamesh_query_resource` | `resource_uri`, `filters`, `limit` | Consulta tabular filtrada en streaming sobre CSVs. |
+
+## Configuración en Claude Desktop
+
+Agrega la configuración en `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "datamesh": {
+      "command": "python",
+      "args": ["-m", "datamesh.mcp_server"],
+      "env": {
+        "DATAMESH_CATALOG_URL": "https://datosbolivia.github.io/llms.txt"
+      }
+    }
+  }
+}
+```
+
+O si utilizas el binario compilado de Go:
+
+```json
+{
+  "mcpServers": {
+    "datamesh-go": {
+      "command": "/ruta/a/datamesh",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}
+```

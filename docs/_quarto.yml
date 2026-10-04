@@ -1,0 +1,76 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "DataMesh SDK"
+  description: "SDK Hexagonal y Soberano para el Formato de Conocimiento Abierto (OKF/ODKF v0.2)"
+  site-url: "https://datosbolivia.github.io/datamesh-sdk/"
+  repo-url: "https://github.com/datosbolivia/datamesh-sdk"
+  repo-actions: [issue]
+  navbar:
+    title: "DataMesh SDK"
+    left:
+      - text: "Inicio"
+        href: index.qmd
+      - text: "Inicio Rápido"
+        href: quickstart/index.qmd
+      - text: "Arquitectura"
+        href: architecture/index.qmd
+      - text: "Guías"
+        href: guides/index.qmd
+      - text: "Referencia"
+        href: reference/index.qmd
+    right:
+      - icon: github
+        href: "https://github.com/datosbolivia/datamesh-sdk"
+        aria-label: GitHub
+  sidebar:
+    - id: quickstart
+      title: "Inicio Rápido"
+      style: "docked"
+      contents:
+        - quickstart/index.qmd
+        - quickstart/python.qmd
+        - quickstart/typescript.qmd
+        - quickstart/r.qmd
+        - quickstart/go.qmd
+    - id: architecture
+      title: "Arquitectura"
+      style: "docked"
+      contents:
+        - architecture/index.qmd
+        - architecture/core-go.qmd
+        - architecture/bindings-adapters.qmd
+        - architecture/adrs.qmd
+    - id: guides
+      title: "Guías de Casos de Uso"
+      style: "docked"
+      contents:
+        - guides/index.qmd
+        - guides/catalog-discovery.qmd
+        - guides/duckdb-sql.qmd
+        - guides/cross-format-joins.qmd
+        - guides/mcp-agent-integration.qmd
+    - id: reference
+      title: "Referencia de APIs"
+      style: "docked"
+      contents:
+        - reference/index.qmd
+        - reference/python-api.qmd
+        - reference/typescript-api.qmd
+        - reference/r-api.qmd
+        - reference/go-cabi.qmd
+        - reference/cli.qmd
+        - reference/mcp-server.qmd
+
+format:
+  html:
+    theme:
+      light: cosmo
+      dark: darkly
+    css: styles.css
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-fold: show

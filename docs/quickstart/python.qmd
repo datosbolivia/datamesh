@@ -1,0 +1,80 @@
+---
+title: "Inicio Rápido con Python"
+subtitle: "Instalación y primeros pasos con datamesh en Python"
+---
+
+El binding de Python de DataMesh SDK ofrece una experiencia de uso simple de una línea estilo Pandas / DuckDB, delegando al núcleo de Go compilado cuando está disponible o ejecutando adaptadores puros en Python.
+
+## Instalación
+
+Instala el paquete mediante `pip` desde el repositorio:
+
+```bash
+pip install ./bindings/python
+```
+
+O instala en modo desarrollo para contribuir:
+
+```bash
+cd bindings/python
+pip install -e .
+```
+
+## Primeros Pasos
+
+### 1. Descubrir un Catálogo
+
+```python
+import datamesh as dm
+
+# Descubrir catálogo remoto por defecto o URL específica
+catalog = dm.discover("https://datosbolivia.github.io/llms.txt")
+print(f"Catálogo: {catalog['title']}")
+print(f"Total datasets encontrados: {len(catalog['entries'])}")
+```
+
+### 2. Buscar Datasets
+
+```python
+# Buscar datasets relacionados con elecciones o calidad del aire
+results = dm.search("elecciones")
+for ds in results:
+    print(f"- {ds['title']} ({ds['domain']}) -> {ds['uri']}")
+```
+
+### 3. Obtener Metadatos de un DataProduct
+
+```python
+# Resolver manifiesto de un nodo OKF v0.2
+product = dm.get("https://datosbolivia.github.io/datasets/elecciones/index.md")
+print(product["manifest"]["title"])
+```
+
+### 4. Consultas SQL con DuckDB y Tríadas Canónicas
+
+Puedes consultar tablas utilizando el formato de tríada canónica `'catalogo:dataset:recurso'` o con barras `'catalogo/dataset/recurso'`:
+
+```python
+# Ejecución directa con DuckDB analítico
+res = dm.sql("""
+    SELECT departamento, SUM(votos_validos) as total_votos
+    FROM 'bolivia:elecciones:votos'
+    GROUP BY departamento
+    ORDER BY total_votos DESC
+""")
+
+print(res["columns"])
+for row in res["rows"]:
+    print(row)
+```
+
+### 5. Integración con Pandas DataFrame
+
+```python
+import pandas as pd
+import datamesh as dm
+
+res = dm.sql("SELECT * FROM 'bolivia:elecciones:votos' LIMIT 10")
+df = pd.DataFrame(res["rows"], columns=res["columns"])
+print(df.head())
+```

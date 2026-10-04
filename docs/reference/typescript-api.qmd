@@ -1,0 +1,63 @@
+---
+title: "Referencia de API: TypeScript"
+subtitle: "Paquete @datamesh/sdk para navegadores y Node.js"
+---
+
+El paquete `@datamesh/sdk` expone tipos tipados estrictos y funciones asíncronas para interactuar con DataMesh.
+
+## Tipos Principales
+
+```typescript
+export interface CatalogEntry {
+  title: string;
+  uri: string;
+  resolved_url: string;
+  description: string;
+  domain?: string;
+  resources?: string[];
+  catalog_source?: string;
+}
+
+export interface CatalogDiscoveryResult {
+  title: string;
+  description: string;
+  source_url: string;
+  entries: CatalogEntry[];
+}
+
+export interface DataProductManifest {
+  title: string;
+  type: string;
+  dimensions: string[];
+  contracts: string[];
+}
+
+export interface DataProduct {
+  id: string;
+  manifest: DataProductManifest;
+  description: string;
+}
+
+export interface QueryResult {
+  columns: string[];
+  rows: any[][];
+  rowCount: number;
+}
+```
+
+## Funciones Principales
+
+### `discover(catalogUrl?: string): Promise<CatalogDiscoveryResult>`
+Descubre las entradas de un catálogo remoto vía `llms.txt`.
+
+### `search(query: string, catalogUrl?: string): Promise<CatalogEntry[]>`
+Filtra entradas del catálogo de acuerdo al texto proporcionado.
+
+### `get(uri: string): Promise<DataProduct>`
+Obtiene el descriptor y metadatos de un nodo de datos OKF v0.2.
+
+### `query(resourceUri: string, options?: { filters?: Record<string, string>; limit?: number }): Promise<QueryResult>`
+Descarga y filtra un recurso CSV en memoria con soporte streaming.
+
+### `sql(sqlQuery: string, tableMapping?: Record<string, string>): Promise<QueryResult>`
+Ejecuta sentencias SQL analíticas mediante DuckDB WebAssembly o delegación a motor Go.

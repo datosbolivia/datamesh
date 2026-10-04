@@ -124,4 +124,44 @@ Para desacoplar el núcleo de formatos específicos y garantizar cero dependenci
   4. `llms.txt` y `llms-full.txt` (Índices federados vía `LLMsTxtParser`)
 - **Resolución Determinista de Tríadas (`TriadResolverPort`):** Vincula las tríadas canónicas `[catalogo:dataset:resource]` directamente al recurso físico subyacente tanto en C-ABI (`libdatamesh.so`) como en WebAssembly para navegadores web.
 
+## 6. Separación Canónica: Go Core como Autoridad de Dominio y Bindings como Adaptadores de Borde
+
+En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-architecture`:
+
+```text
++---------------------------------------------------------------------------------------------------------+
+|                                      GO CORE (DOMAIN & USE CASES)                                       |
+|  - Domain: ResourceTriad (Colon/Slash/URL syntax), DataProduct, PackageManifest                         |
+|  - Inbound Ports: CatalogServicePort, DataProductServicePort, QueryServicePort                           |
+|  - Outbound Ports: TriadResolverPort, QueryEnginePort, StoragePort, ManifestParser                       |
+|  - Use Cases: DiscoverCatalog, ResolveDataProduct, QueryDataProduct, Config                              |
++---------------------------------------------------------------------------------------------------------+
+                                                     |
+               +-------------------------------------+-------------------------------------+
+               |                                     |                                     |
+               v                                     v                                     v
++-----------------------------+       +-------------------------------+       +-----------------------------+
+|     PYTHON ADAPTER LAYER    |       |    TYPESCRIPT / WASM ADAPTER  |       |       R ADAPTER LAYER       |
+| - Inbound: Python Facade dm |       | - Inbound: TS Client / Hooks  |       | - Inbound: R Facade dm_*    |
+| - Outbound: DuckDBEngine    |       | - Outbound: DuckDBBrowser     |       | - Outbound: Go C-ABI dynload|
+|   (with unverified SSL      |       |   (WebAssembly Engine)        |       | - Outbound: DuckDB R driver |
+|    government fallback)     |       | - Outbound: InMemTabular      |       | - Pure R HTTP Fallback      |
+| - Outbound: LocalStorageMgr |       | - Composition: useDataMesh()  |       | - Composition: .onLoad()    |
+| - Composition: core.py      |       |   (isomorphic web/Node)       |       |   (CRAN-compliant package)  |
++-----------------------------+       +-------------------------------+       +-----------------------------+
+```
+
+### Principios Rectores:
+1. **Autoridad de Dominio en Go Core**: Ningún binding redefine reglas de negocio ni heurísticas de validación de esquemas OKF v0.2. Las tríadas canónicas (`cat:ds:res`), sintaxis de rutas con barras (`cat/ds/res`) y URLs de datasets (`https://.../datasets/ds/res.ext`) son procesadas uniformemente.
+2. **Fachada Unificada de 5 Métodos**:
+   - `discover(catalog_url?)`
+   - `search(keyword, catalog_url?)`
+   - `get(uri_or_url)`
+   - `query(resource_uri, filters?, limit?)`
+   - `sql(sql_query, options?)`
+3. **Paridad de Herramientas MCP**: Tanto el servidor MCP de Go (`datamesh serve`) como el de Python (`datamesh.mcp_server`) exponen las mismas 5 herramientas con idénticos contratos de entrada y salida JSON-RPC 2.0.
+4. **Resiliencia de Infraestructura en Adaptadores de Borde**:
+   - Fallos de certificados SSL de portales de gobierno son absorbidos a nivel de adaptador (`DuckDBQueryEngine` -> `HttpAdapter` con `ssl.CERT_NONE` hacia temporal cache) sin contaminar los casos de uso ni la capa de dominio.
+
+
 

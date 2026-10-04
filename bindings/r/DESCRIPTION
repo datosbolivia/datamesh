@@ -1,0 +1,21 @@
+Package: datamesh
+Type: Package
+Title: Sovereign DataMesh Client SDK for Open Knowledge Format (OKF v0.2)
+Version: 0.2.0
+Authors@R: person("Datos", "Bolivia", email = "contacto@datosbolivia.org", role = c("aut", "cre"))
+Description: R binding for DataMesh Core SDK. Provides 1-line facade for sovereign
+    federated open data catalogs, OKF / ODKF v0.2 data products, in-memory tabular streaming,
+    and ANSI SQL querying via compiled Go Core C-ABI (libdatamesh) with pure R fallback.
+License: MIT
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.3
+Imports:
+    jsonlite,
+    curl,
+    duckdb,
+    DBI
+Suggests:
+    testthat (>= 3.0.0)
+URL: https://github.com/datosbolivia/datamesh
+BugReports: https://github.com/datosbolivia/datamesh/issues

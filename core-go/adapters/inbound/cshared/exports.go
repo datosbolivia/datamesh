@@ -110,6 +110,22 @@ func DataMeshDiscoverCatalog(catalogURL *C.char) *C.char {
 	return makeJSONResponse(cat, err)
 }
 
+//export DataMeshSearchCatalog
+func DataMeshSearchCatalog(keyword *C.char, catalogURL *C.char) *C.char {
+	ensureInit()
+	if keyword == nil {
+		return makeJSONResponse(nil, errors.New("empty search keyword"))
+	}
+	kw := C.GoString(keyword)
+	var urlStr string
+	if catalogURL != nil {
+		urlStr = C.GoString(catalogURL)
+	}
+
+	entries, err := catalogUC.Search(context.Background(), urlStr, kw)
+	return makeJSONResponse(entries, err)
+}
+
 //export DataMeshResolveDataProduct
 func DataMeshResolveDataProduct(uri *C.char) *C.char {
 	ensureInit()
@@ -119,6 +135,27 @@ func DataMeshResolveDataProduct(uri *C.char) *C.char {
 
 	dp, err := dataProductUC.Resolve(context.Background(), C.GoString(uri))
 	return makeJSONResponse(dp, err)
+}
+
+//export DataMeshQueryResource
+func DataMeshQueryResource(resourceURI *C.char, queryOptionsJSON *C.char) *C.char {
+	ensureInit()
+	if resourceURI == nil {
+		return makeJSONResponse(nil, errors.New("empty resource URI"))
+	}
+	resURI := C.GoString(resourceURI)
+
+	var req domain.QueryRequest
+	req.ResourceURI = resURI
+	if queryOptionsJSON != nil {
+		optsStr := C.GoString(queryOptionsJSON)
+		if strings.TrimSpace(optsStr) != "" {
+			_ = json.Unmarshal([]byte(optsStr), &req)
+		}
+	}
+
+	res, err := queryUC.Query(context.Background(), req)
+	return makeJSONResponse(res, err)
 }
 
 //export DataMeshExecuteSQL

@@ -62,7 +62,38 @@ func main() {
 		return js.Global().Get("Promise").New(handler)
 	}))
 
-	// Promise-based resolve
+	// Promise-based search
+	dataMeshObj.Set("search", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		if len(args) == 0 {
+			return js.ValueOf("missing search keyword")
+		}
+		keyword := args[0].String()
+		targetURL := ""
+		if len(args) > 1 && !args[1].IsNull() && !args[1].IsUndefined() {
+			targetURL = args[1].String()
+		}
+
+		handler := js.FuncOf(func(pThis js.Value, pArgs []js.Value) interface{} {
+			resolve := pArgs[0]
+			reject := pArgs[1]
+
+			go func() {
+				entries, err := catalogUC.Search(context.Background(), targetURL, keyword)
+				if err != nil {
+					reject.Invoke(js.ValueOf(err.Error()))
+					return
+				}
+				bytes, _ := json.Marshal(entries)
+				parsed := js.Global().Get("JSON").Call("parse", string(bytes))
+				resolve.Invoke(parsed)
+			}()
+			return nil
+		})
+
+		return js.Global().Get("Promise").New(handler)
+	}))
+
+	// Promise-based resolve / get
 	dataMeshObj.Set("resolve", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if len(args) == 0 {
 			return js.ValueOf("missing URI")
@@ -80,6 +111,40 @@ func main() {
 					return
 				}
 				bytes, _ := json.Marshal(dp)
+				parsed := js.Global().Get("JSON").Call("parse", string(bytes))
+				resolve.Invoke(parsed)
+			}()
+			return nil
+		})
+
+		return js.Global().Get("Promise").New(handler)
+	}))
+	dataMeshObj.Set("get", dataMeshObj.Get("resolve"))
+
+	// Promise-based query
+	dataMeshObj.Set("query", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		if len(args) == 0 {
+			return js.ValueOf("missing resource URI")
+		}
+		resURI := args[0].String()
+		var req domain.QueryRequest
+		req.ResourceURI = resURI
+		if len(args) > 1 && !args[1].IsNull() && !args[1].IsUndefined() {
+			optsJSON := args[1].String()
+			_ = json.Unmarshal([]byte(optsJSON), &req)
+		}
+
+		handler := js.FuncOf(func(pThis js.Value, pArgs []js.Value) interface{} {
+			resolve := pArgs[0]
+			reject := pArgs[1]
+
+			go func() {
+				res, err := queryUC.Query(context.Background(), req)
+				if err != nil {
+					reject.Invoke(js.ValueOf(err.Error()))
+					return
+				}
+				bytes, _ := json.Marshal(res)
 				parsed := js.Global().Get("JSON").Call("parse", string(bytes))
 				resolve.Invoke(parsed)
 			}()

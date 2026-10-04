@@ -46,14 +46,27 @@
 
 ## CU-06: Ejecución SQL ANSI/DuckDB con Resolución de Tríadas y Heterogeneidad (`DuckDBSQLQueryUseCase`)
 - **Actor:** Consumidor de datos, analista, agente LLM (vía MCP `datamesh_sql_query`) o CLI (`datamesh sql`).
-- **Entrada:** `sql_query` ANSI/DuckDB SQL (ej. `SELECT * FROM 'p2p-bob-exchange:advertiser' LIMIT 25` o `FROM "air_quality:Compilación de datos de calidad del aire de Bolivia"`), `table_mapping` opcional.
+- **Entrada:** `sql_query` ANSI/DuckDB SQL (ej. `SELECT * FROM 'p2p-bob-exchange:advertiser' LIMIT 25`, `FROM "catalogo/dataset/recurso"`, o `FROM "https://datosbolivia.github.io/datasets/cartera-creditos/creditos.csv"`), `table_mapping` opcional.
 - **Comportamiento:**
-  1. Extrae referencias de tablas y tríadas canónicas (`catalogo:dataset:resource` o `dataset:resource`).
-  2. Resuelve cada tríada contra manifiestos locales `datapackage.{yaml,yml,json}` en `knowledge/nodes/`, proyectos locales en el workspace (`DATAMESH_PROJECTS_DIR`) o catálogos federados HTTP (`llms.txt`).
+  1. Extrae referencias de tablas: tríadas con dos puntos (`catalogo:dataset:resource`), rutas con barras (`catalogo/dataset/recurso` o `dataset/recurso`), o URLs directas (`https://.../datasets/<dataset>/<resource.ext>`).
+  2. Resuelve cada referencia contra manifiestos locales `datapackage.{yaml,yml,json}` en `knowledge/nodes/`, proyectos locales en el workspace (`DATAMESH_PROJECTS_DIR`) o catálogos federados HTTP (`llms.txt`).
   3. Soporta normalización transparente de heterogeneidad de formatos (Parquet, CSV, TSV, JSON, JSONL) y extensiones remotas (`httpfs` con normalización a `raw.githubusercontent.com`).
-  4. Registra vistas virtuales con alias canónicos y slugificados (`slugify`).
-  5. Ejecuta la consulta SQL, normaliza tipos complejos (`Decimal`, fechas, UUIDs) a primitivas serializables en JSON, y retorna columnas, filas y conteo.
-  6. Si una tabla no existe o es inalcanzable, genera un error descriptivo y explícito sin fallar con errores crípticos de DuckDB.
+  4. Si DuckDB falla al registrar una vista remota por errores SSL de CA gubernamental o IO de red, descarga automáticamente el recurso a la caché temporal local con contexto SSL no verificado (`ssl.CERT_NONE`) y recrea la vista apuntando al archivo local.
+  5. Registra vistas virtuales con alias canónicos y slugificados (`slugify`).
+  6. Ejecuta la consulta SQL, normaliza tipos complejos (`Decimal`, fechas, UUIDs) a primitivas serializables en JSON, y retorna columnas, filas y conteo.
+  7. Si una tabla no existe o es inalcanzable, genera un error descriptivo y explícito sin fallar con errores crípticos de DuckDB.
+
+## CU-07: Fachada Unificada de 5 Métodos en Bindings (`UnifiedClientFacade`)
+- **Actor:** Desarrolladores e integradores en Python (`import datamesh as dm`) y TypeScript (`import { datamesh, discover, search, get, query, sql } from '@datosbolivia/datamesh-client'`).
+- **Entrada:** Llamadas de una sola línea a cualquiera de los 5 métodos canónicos unificados:
+  1. `discover([catalog_url])`: Catálogo federado completo o inspección de un endpoint específico.
+  2. `search(keyword, [catalog_url])`: Búsqueda de productos de datos por palabra clave en título, descripción o dominio.
+  3. `get(uri_or_url)`: Recuperación y validación de manifest y descripción de un producto de datos OKF v0.2.
+  4. `query(resource_uri | QueryRequest)`: Consulta tabular simple en memoria con filtros y paginación.
+  5. `sql(sql_query, [table_mapping / options])`: Ejecución SQL ANSI/DuckDB con soporte para tríadas y URLs.
+- **Comportamiento:**
+  1. Elimina duplicidad entre bindings y el core asegurando paridad estricta de nombres, contratos y firmas.
+  2. Expone las mismas 5 herramientas estándar en los servidores MCP tanto en Go (`core-go/adapters/inbound/cli/serve.go`) como en Python (`datamesh/server.py` y `datamesh/mcp_server.py`).
 
 ## CU-07: Gestión de Almacenamiento Temporal y Caché (`ManageStorageUseCase`)
 - **Actor:** Motor analítico DuckDB, script de mantenimiento, o usuario final vía SDK (`datamesh.storage`).

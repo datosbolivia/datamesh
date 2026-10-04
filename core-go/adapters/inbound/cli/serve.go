@@ -226,21 +226,58 @@ func handleMcpRPC(
 				"tools": []map[string]interface{}{
 					{
 						"name":        "datamesh_discover_catalogs",
-						"description": "Discover federated sovereign catalogs or specific llms.txt",
+						"description": "Discovers and lists sovereign open data products across configured federated catalogs or a specified llms.txt URL.",
 						"inputSchema": map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
-								"catalog_url": map[string]interface{}{"type": "string"},
+								"catalog_url": map[string]interface{}{"type": "string", "description": "Optional catalog URL. If omitted, discovers across all configured sovereign catalogs."},
 							},
 						},
 					},
 					{
-						"name":        "datamesh_sql_query",
-						"description": "Execute full ANSI SQL with triad table names ('catalogo:dataset:resource')",
+						"name":        "datamesh_search_catalog",
+						"description": "Searches data products across sovereign catalogs by keyword matching title, description, or domain.",
 						"inputSchema": map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
-								"sql_query": map[string]interface{}{"type": "string"},
+								"keyword":     map[string]interface{}{"type": "string", "description": "Search keyword (e.g. 'elecciones', 'creditos', 'aire')."},
+								"catalog_url": map[string]interface{}{"type": "string", "description": "Optional catalog URL to scope search to."},
+							},
+							"required": []string{"keyword"},
+						},
+					},
+					{
+						"name":        "datamesh_get_dataproduct",
+						"description": "Resolves an OKF v0.2 Data Product manifest and description from a node URI or URL.",
+						"inputSchema": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"uri": map[string]interface{}{"type": "string", "description": "Data product node URI or HTTP URL."},
+							},
+							"required": []string{"uri"},
+						},
+					},
+					{
+						"name":        "datamesh_query_resource",
+						"description": "Queries a tabular CSV/TSV data product resource with column equality filters and row limits.",
+						"inputSchema": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"resource_uri": map[string]interface{}{"type": "string", "description": "Direct HTTP URL or local file path to the tabular file."},
+								"filters":      map[string]interface{}{"type": "object", "description": "Key-value map of column names and filter values."},
+								"limit":        map[string]interface{}{"type": "integer", "description": "Maximum number of rows to return."},
+							},
+							"required": []string{"resource_uri"},
+						},
+					},
+					{
+						"name":        "datamesh_sql_query",
+						"description": "Executes full ANSI SQL queries with canonical triad table names 'catalogo:dataset:resource' or direct URLs.",
+						"inputSchema": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"sql_query": map[string]interface{}{"type": "string", "description": "Full ANSI SQL query."},
+								"sql":       map[string]interface{}{"type": "string", "description": "Alternative alias for sql_query."},
 							},
 							"required": []string{"sql_query"},
 						},
@@ -320,6 +357,105 @@ func handleMcpRPC(
 				}
 			}
 			bytes, _ := json.Marshal(cat)
+			return map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]interface{}{
+					"isError": false,
+					"content": []map[string]interface{}{
+						{"type": "text", "text": string(bytes)},
+					},
+				},
+			}
+		}
+
+		if toolName == "datamesh_search_catalog" {
+			keyword, _ := args["keyword"].(string)
+			catURL, _ := args["catalog_url"].(string)
+			results, err := catalogUC.Search(ctx, catURL, keyword)
+			if err != nil {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"isError": true,
+						"content": []map[string]interface{}{
+							{"type": "text", "text": err.Error()},
+						},
+					},
+				}
+			}
+			bytes, _ := json.Marshal(results)
+			return map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]interface{}{
+					"isError": false,
+					"content": []map[string]interface{}{
+						{"type": "text", "text": string(bytes)},
+					},
+				},
+			}
+		}
+
+		if toolName == "datamesh_get_dataproduct" {
+			uri, _ := args["uri"].(string)
+			dp, err := dataProductUC.Resolve(ctx, uri)
+			if err != nil {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"isError": true,
+						"content": []map[string]interface{}{
+							{"type": "text", "text": err.Error()},
+						},
+					},
+				}
+			}
+			bytes, _ := json.Marshal(dp)
+			return map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]interface{}{
+					"isError": false,
+					"content": []map[string]interface{}{
+						{"type": "text", "text": string(bytes)},
+					},
+				},
+			}
+		}
+
+		if toolName == "datamesh_query_resource" {
+			resURI, _ := args["resource_uri"].(string)
+			limit := 0
+			if lVal, ok := args["limit"].(float64); ok {
+				limit = int(lVal)
+			}
+			filters := make(map[string]string)
+			if fMap, ok := args["filters"].(map[string]interface{}); ok {
+				for k, v := range fMap {
+					filters[k] = fmt.Sprintf("%v", v)
+				}
+			}
+			qRes, err := queryUC.Query(ctx, domain.QueryRequest{
+				ResourceURI: resURI,
+				Filters:     filters,
+				Limit:       limit,
+			})
+			if err != nil {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"isError": true,
+						"content": []map[string]interface{}{
+							{"type": "text", "text": err.Error()},
+						},
+					},
+				}
+			}
+			bytes, _ := json.Marshal(qRes)
 			return map[string]interface{}{
 				"jsonrpc": "2.0",
 				"id":      id,

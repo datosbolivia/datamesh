@@ -10,6 +10,7 @@ import (
 
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/config"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/engine"
+	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/manifests"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/resolvers"
 	"github.com/datosbolivia/datamesh-sdk/core-go/adapters/outbound/storage"
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
@@ -40,9 +41,10 @@ func main() {
 	}
 	tabularEngine := engine.NewInMemTabularQueryEngine()
 
+	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, cfg.Base.Timeout)
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
-	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage, nil)
+	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage, unifiedReader)
 
 	ctx := context.Background()
 	command := os.Args[1]

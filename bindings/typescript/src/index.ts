@@ -585,8 +585,18 @@ export class DataMeshClient {
 
   /**
    * Discovers sovereign data products across configured federated catalogs or a specified endpoint.
+   * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
    */
   async discover(url?: string): Promise<Catalog> {
+    if (typeof window !== "undefined" && (window as any).DataMesh?.discover) {
+      try {
+        const cat = await (window as any).DataMesh.discover(url || "");
+        if (cat && cat.entries) return cat;
+      } catch {
+        // Fallback to pure TS client
+      }
+    }
+
     const targets = url ? [url] : this.catalogUrls;
 
     if (!url && this.catalogCache && targets.length === this.catalogUrls.length) {
@@ -635,8 +645,18 @@ export class DataMeshClient {
 
   /**
    * Searches entries across sovereign catalogs matching title, description, or domain.
+   * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
    */
   async search(keyword: string, url?: string): Promise<CatalogEntry[]> {
+    if (typeof window !== "undefined" && (window as any).DataMesh?.search) {
+      try {
+        const entries = await (window as any).DataMesh.search(keyword, url || "");
+        if (entries && Array.isArray(entries)) return entries;
+      } catch {
+        // Fallback
+      }
+    }
+
     const cat = await this.discover(url);
     const kw = keyword.toLowerCase();
     return cat.entries.filter(
@@ -648,12 +668,103 @@ export class DataMeshClient {
   }
 
   /**
+   * Resolves an OKF v0.2 Data Product manifest, description, and resources from a node URI or URL.
+   * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
+   */
+  async get(uriOrUrl: string): Promise<DataProduct> {
+    if (typeof window !== "undefined" && ((window as any).DataMesh?.get || (window as any).DataMesh?.resolve)) {
+      try {
+        const fn = (window as any).DataMesh.get || (window as any).DataMesh.resolve;
+        const dp = await fn(uriOrUrl);
+        if (dp && dp.manifest) return dp;
+      } catch {
+        // Fallback
+      }
+    }
+
+    const trimmed = uriOrUrl.trim().replace(/^['"`]|['"`]$/g, '');
+    let targetUrl = trimmed;
+
+    // Check if it's already a direct HTTP URL to index.md or a directory
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://") && !targetUrl.startsWith("file://")) {
+      const parsed = parseCanonicalUri(trimmed);
+      const ds = parsed ? parsed.dataset : trimmed.split(":")[0];
+      const cat = await this.discover();
+      const matched = cat.entries.find((e) => {
+        const u = e.uri.toLowerCase();
+        const r = (e.resolved_url || "").toLowerCase();
+        const t = e.title.toLowerCase();
+        return u.includes(ds.toLowerCase()) || r.includes(ds.toLowerCase()) || t === ds.toLowerCase();
+      });
+      if (matched && matched.resolved_url) {
+        targetUrl = matched.resolved_url;
+      }
+    }
+
+    if (targetUrl.endsWith('/')) {
+      targetUrl += 'index.md';
+    } else if (!targetUrl.endsWith('.md') && !targetUrl.endsWith('.yaml') && !targetUrl.endsWith('.json')) {
+      targetUrl += '/index.md';
+    }
+
+    if (this.proxyUrl) {
+      targetUrl = this.formatProxiedUrl(targetUrl);
+    }
+
+    const resp = await fetch(targetUrl);
+    if (!resp.ok) {
+      throw new Error(`Failed to resolve Data Product from '${targetUrl}': HTTP ${resp.status}`);
+    }
+    const text = await resp.text();
+
+    let manifest: Manifest = {
+      type: "dataset",
+      title: trimmed,
+      dimensions: [],
+      lineage: { version: "1.0.0" }
+    };
+    let description = "";
+
+    if (text.startsWith("---")) {
+      const parts = text.split("---");
+      if (parts.length >= 3) {
+        description = parts.slice(2).join("---").trim();
+        const frontLines = parts[1].split("\n");
+        for (const line of frontLines) {
+          const l = line.trim();
+          if (l.startsWith("title:")) manifest.title = l.substring(6).trim().replace(/^['"]|['"]$/g, '');
+          else if (l.startsWith("type:")) manifest.type = l.substring(5).trim().replace(/^['"]|['"]$/g, '');
+        }
+      }
+    } else {
+      description = text;
+    }
+
+    return {
+      id: trimmed,
+      manifest,
+      description,
+      raw_content: text
+    };
+  }
+
+  /**
    * Fetches and queries a tabular resource directly from the browser/client.
    * Supports canonical triad URIs (e.g. 'dataset:resource') or direct HTTP URLs.
+   * Leverages Go Core WASM runtime (window.DataMesh) when loaded, with pure JS fallback.
    */
   async query(req: QueryRequest): Promise<QueryResult> {
     if (!req.resource_uri) {
       throw new Error("QueryRequest requires a 'resource_uri'");
+    }
+
+    if (typeof window !== "undefined" && (window as any).DataMesh?.query) {
+      try {
+        const qRes = await (window as any).DataMesh.query(req.resource_uri, JSON.stringify(req));
+        if (qRes && qRes.columns) return qRes;
+      } catch {
+        // Fallback
+      }
     }
 
     // Resolves canonical URI ('air_quality:mediciones', 'datamesh://...', or direct URL)
@@ -1067,3 +1178,15 @@ export function useDataMesh(options?: DataMeshClientOptions): DataMeshClient {
 }
 
 export const datamesh = new DataMeshClient();
+
+// Standalone 1-line unified functions matching Python dm.discover, dm.search, dm.get, dm.query, dm.sql
+export const discover = (url?: string) => datamesh.discover(url);
+export const search = (keyword: string, url?: string) => datamesh.search(keyword, url);
+export const get = (uriOrUrl: string) => datamesh.get(uriOrUrl);
+export const query = (req: QueryRequest) => datamesh.query(req);
+export const sql = (
+  sqlQuery: string,
+  sourceOrOptions?: string | { columns: string[]; rows: string[][] } | Record<string, string>,
+  tableAlias?: string
+) => datamesh.sql(sqlQuery, sourceOrOptions, tableAlias);
+

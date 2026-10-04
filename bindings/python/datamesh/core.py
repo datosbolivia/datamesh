@@ -28,6 +28,12 @@ from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
 from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
 from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
 
+def _safe_urlopen(req: Any, timeout: int = 2) -> Any:
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except TypeError:
+        return urllib.request.urlopen(req)
+
 class DataMeshRuntime:
     """Python runtime providing local fallback, ctypes bridge to Go core, and abstract SQL engines."""
 
@@ -58,6 +64,12 @@ class DataMeshRuntime:
                 self._lib.DataMeshDiscoverCatalog.restype = ctypes.c_char_p
                 self._lib.DataMeshResolveDataProduct.argtypes = [ctypes.c_char_p]
                 self._lib.DataMeshResolveDataProduct.restype = ctypes.c_char_p
+                if hasattr(self._lib, "DataMeshSearchCatalog"):
+                    self._lib.DataMeshSearchCatalog.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+                    self._lib.DataMeshSearchCatalog.restype = ctypes.c_char_p
+                if hasattr(self._lib, "DataMeshQueryResource"):
+                    self._lib.DataMeshQueryResource.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+                    self._lib.DataMeshQueryResource.restype = ctypes.c_char_p
                 if hasattr(self._lib, "DataMeshExecuteSQL"):
                     self._lib.DataMeshExecuteSQL.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
                     self._lib.DataMeshExecuteSQL.restype = ctypes.c_char_p
@@ -134,7 +146,23 @@ class DataMeshRuntime:
         return ["https://datosbolivia.github.io/llms.txt"]
 
     def discover(self, catalog_url: Optional[str] = None) -> Dict[str, Any]:
-        """Discovers a specific catalog or aggregates all configured catalogs."""
+        """Discovers a specific catalog or aggregates all configured catalogs via Go core or fallback."""
+        if self._lib and hasattr(self._lib, "DataMeshDiscoverCatalog"):
+            try:
+                import ctypes
+                c_url = catalog_url.encode("utf-8") if catalog_url else None
+                raw = self._lib.DataMeshDiscoverCatalog(c_url)
+                if raw:
+                    try:
+                        resp = json.loads(ctypes.string_at(raw).decode("utf-8"))
+                        if resp.get("success") and resp.get("data"):
+                            return resp["data"]
+                    finally:
+                        if hasattr(self._lib, "DataMeshFreeString"):
+                            self._lib.DataMeshFreeString(raw)
+            except Exception:
+                pass
+
         if catalog_url:
             urls = [catalog_url]
         else:
@@ -174,7 +202,7 @@ class DataMeshRuntime:
             return self._parse_llms_txt(content, url)
 
         req = urllib.request.Request(url, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
-        with urllib.request.urlopen(req) as resp:
+        with _safe_urlopen(req, timeout=2) as resp:
             content = resp.read().decode("utf-8")
         return self._parse_llms_txt(content, url)
 
@@ -227,13 +255,29 @@ class DataMeshRuntime:
         }
 
     def resolve(self, uri: str) -> Dict[str, Any]:
-        """Resolves node index.md and returns DataProduct metadata."""
+        """Resolves node index.md and returns DataProduct metadata via Go core or fallback."""
+        if self._lib and hasattr(self._lib, "DataMeshResolveDataProduct"):
+            try:
+                import ctypes
+                c_uri = uri.encode("utf-8")
+                raw = self._lib.DataMeshResolveDataProduct(c_uri)
+                if raw:
+                    try:
+                        resp = json.loads(ctypes.string_at(raw).decode("utf-8"))
+                        if resp.get("success") and resp.get("data"):
+                            return resp["data"]
+                    finally:
+                        if hasattr(self._lib, "DataMeshFreeString"):
+                            self._lib.DataMeshFreeString(raw)
+            except Exception:
+                pass
+
         if uri.startswith("file://"):
             with open(uri[7:], "r", encoding="utf-8") as f:
                 content = f.read()
         elif uri.startswith("http://") or uri.startswith("https://"):
             req = urllib.request.Request(uri, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
-            with urllib.request.urlopen(req) as resp:
+            with _safe_urlopen(req, timeout=2) as resp:
                 content = resp.read().decode("utf-8")
         else:
             with open(uri, "r", encoding="utf-8") as f:
@@ -270,13 +314,35 @@ class DataMeshRuntime:
         filters: Optional[Dict[str, str]] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Queries CSV or tabular resource."""
+        """Queries CSV or tabular resource via Go core or fallback."""
+        if self._lib and hasattr(self._lib, "DataMeshQueryResource"):
+            try:
+                import ctypes
+                c_uri = resource_uri.encode("utf-8")
+                opts = {}
+                if filters:
+                    opts["filters"] = filters
+                if limit:
+                    opts["limit"] = limit
+                c_opts = json.dumps(opts).encode("utf-8")
+                raw = self._lib.DataMeshQueryResource(c_uri, c_opts)
+                if raw:
+                    try:
+                        resp = json.loads(ctypes.string_at(raw).decode("utf-8"))
+                        if resp.get("success") and resp.get("data"):
+                            return resp["data"]
+                    finally:
+                        if hasattr(self._lib, "DataMeshFreeString"):
+                            self._lib.DataMeshFreeString(raw)
+            except Exception:
+                pass
+
         if resource_uri.startswith("file://"):
             with open(resource_uri[7:], "r", encoding="utf-8") as f:
                 raw_text = f.read()
         elif resource_uri.startswith("http://") or resource_uri.startswith("https://"):
             req = urllib.request.Request(resource_uri, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
-            with urllib.request.urlopen(req) as resp:
+            with _safe_urlopen(req, timeout=2) as resp:
                 raw_text = resp.read().decode("utf-8")
         else:
             with open(resource_uri, "r", encoding="utf-8") as f:

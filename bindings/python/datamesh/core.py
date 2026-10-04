@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import glob
 import io
 import json
 import os
@@ -474,6 +475,7 @@ class DataMeshRuntime:
             candidates.append(str(ws / "catalogo-datamesh" / "knowledge" / "nodes" / clean_ds))
             candidates.append(str(ws / "knowledge" / "nodes" / clean_ds))
             candidates.append(str(ws / clean_ds))
+            candidates.append(str(ws / clean_ds / "knowledge"))
 
         # 1. Local check
         for c in candidates:
@@ -577,7 +579,11 @@ class DataMeshRuntime:
                             candidate = os.path.normpath(os.path.join(base_loc, target_path))
                             if os.path.exists(candidate):
                                 return os.path.abspath(candidate)
+                            if "*" in candidate and glob.glob(candidate):
+                                return os.path.abspath(candidate)
                         if os.path.exists(target_path):
+                            return os.path.abspath(target_path)
+                        if "*" in target_path and glob.glob(target_path):
                             return os.path.abspath(target_path)
 
         # 3. Testdata and mock fallback

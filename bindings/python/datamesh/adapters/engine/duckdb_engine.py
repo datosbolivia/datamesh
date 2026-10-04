@@ -70,6 +70,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         self.conn = duckdb.connect(database=":memory:")
         try:
             self.conn.execute("INSTALL httpfs; LOAD httpfs;")
+            self.conn.execute("SET allow_asterisks_in_http_paths = true;")
         except Exception:
             pass
         self.catalog_resolver = catalog_resolver

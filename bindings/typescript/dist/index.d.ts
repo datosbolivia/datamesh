@@ -151,6 +151,15 @@ export declare function pingProxy(urlOrTemplate: string, timeoutMs?: number): Pr
  */
 export declare function normalizeResourceUrl(url: string): string;
 /**
+ * Parses a DataPackage manifest from raw JSON or YAML content.
+ * Accepts an optional custom YAML parser callback (e.g. js-yaml) or falls back to
+ * JSON parsing and simple structural scanner.
+ */
+export declare function parseDataPackageManifest(rawContent: string, options?: {
+    yamlParser?: (content: string) => any;
+    filePath?: string;
+}): DataPackage | null;
+/**
  * Lightweight scanner extracting resource definitions from datapackage.yaml/yml text.
  */
 export declare function parseSimpleYamlResources(text: string): Array<{

@@ -109,6 +109,71 @@ export function normalizeResourceUrl(url) {
     return trimmed;
 }
 /**
+ * Parses a DataPackage manifest from raw JSON or YAML content.
+ * Accepts an optional custom YAML parser callback (e.g. js-yaml) or falls back to
+ * JSON parsing and simple structural scanner.
+ */
+export function parseDataPackageManifest(rawContent, options) {
+    if (!rawContent || typeof rawContent !== 'string')
+        return null;
+    const trimmed = rawContent.trim();
+    if (!trimmed)
+        return null;
+    // 1. JSON parsing
+    if (trimmed.startsWith('{') || (options?.filePath && options.filePath.endsWith('.json'))) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object') {
+                return {
+                    name: parsed.name,
+                    title: parsed.title,
+                    description: parsed.description,
+                    resources: Array.isArray(parsed.resources) ? parsed.resources : [],
+                };
+            }
+        }
+        catch {
+            // Fall through to other parsers
+        }
+    }
+    // 2. Custom YAML parser if injected (e.g. yaml.load in Node or browser)
+    if (options?.yamlParser) {
+        try {
+            const parsed = options.yamlParser(trimmed);
+            if (parsed && typeof parsed === 'object') {
+                return {
+                    name: parsed.name,
+                    title: parsed.title,
+                    description: parsed.description,
+                    resources: Array.isArray(parsed.resources) ? parsed.resources : [],
+                };
+            }
+        }
+        catch {
+            // Fall through to simple scanner
+        }
+    }
+    // 3. Fallback: lightweight scanner
+    try {
+        const scannedResources = parseSimpleYamlResources(trimmed);
+        const titleMatch = trimmed.match(/^title:\s*(.+)$/m);
+        const nameMatch = trimmed.match(/^name:\s*(.+)$/m);
+        const descMatch = trimmed.match(/^description:\s*(.+)$/m);
+        return {
+            name: nameMatch ? nameMatch[1].trim().replace(/^['"]|['"]$/g, '') : undefined,
+            title: titleMatch ? titleMatch[1].trim().replace(/^['"]|['"]$/g, '') : undefined,
+            description: descMatch ? descMatch[1].trim().replace(/^['"]|['"]$/g, '') : undefined,
+            resources: scannedResources.map((r) => ({
+                name: r.name || '',
+                path: r.path || '',
+            })),
+        };
+    }
+    catch {
+        return null;
+    }
+}
+/**
  * Lightweight scanner extracting resource definitions from datapackage.yaml/yml text.
  */
 export function parseSimpleYamlResources(text) {

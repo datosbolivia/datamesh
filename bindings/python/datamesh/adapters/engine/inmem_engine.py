@@ -130,6 +130,19 @@ class InMemTabularQueryEngine(QueryEnginePort):
 
     def _read_data_file(self, path: str) -> Tuple[List[str], List[List[Any]]]:
         clean_p = path.replace("file://", "")
+        if "*" in clean_p:
+            import glob
+            matched_files = sorted(glob.glob(clean_p))
+            if matched_files:
+                combined_headers = []
+                combined_rows = []
+                for idx, mf in enumerate(matched_files):
+                    h, r = self._read_data_file(mf)
+                    if idx == 0:
+                        combined_headers = h
+                    combined_rows.extend(r)
+                return combined_headers, combined_rows
+
         lower = clean_p.lower()
 
         if lower.endswith(".tsv"):

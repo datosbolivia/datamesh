@@ -167,9 +167,35 @@ datamesh config
 
 ---
 
-### 1.7 `mcp-serve` (Python CLI)
+### 1.7 `publish <path> [--target TARGET] [--dest DEST]`
+Publica o empaqueta un dataset o bundle ODKF v0.2 hacia una o varias plataformas de destino (`local`, `portal`, `kaggle`).
+- **`path`**: Ruta al directorio del dataset o al archivo `datapackage.yaml`.
+- **`--target` / `-t`**: Plataforma objetivo (`local`, `portal`, `kaggle`). Puede especificarse múltiples veces. Por defecto: `local`.
+- **`--dest` / `-d`**: Directorio o destino de salida opcional.
+
+```bash
+# Publicar en directorio local de distribución
+datamesh publish ./nodes/air_quality --dest ./dist/air_quality
+
+# Publicar simultáneamente en catálogo local y Kaggle
+datamesh publish ./nodes/air_quality -t portal -t kaggle
+```
+
+---
+
+### 1.8 `align <datapackage_path>`
+Inspecciona un archivo `datapackage.yaml` o `.json` y extrae los mapeos ontológicos de columnas a conceptos de la base de conocimiento (`concept`) y diccionarios de categorías (`value_mapping`).
+
+```bash
+datamesh align ./nodes/air_quality/datapackage.yml
+```
+
+---
+
+### 1.9 `mcp-serve` (Python CLI)
 Inicia el servidor Model Context Protocol (MCP) estándar sobre entrada/salida estándar (`stdio`). Permite a agentes de IA (Claude Desktop, Cursor, Antigravity, cline, etc.) ejecutar herramientas de descubrimiento, consulta tabular y SQL analítico directamente.
 
 ```bash
 python3 -m datamesh.cli mcp-serve
 ```
+

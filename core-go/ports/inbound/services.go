@@ -29,3 +29,14 @@ type QueryServicePort interface {
 type ConfigServicePort interface {
 	GetConfig() domain.Config
 }
+
+// PublicationServicePort defines inbound operations for publishing datasets and ODKF bundles across platforms.
+type PublicationServicePort interface {
+	Publish(ctx context.Context, datasetPath string, targets []string, options map[string]interface{}) ([]domain.PublicationTargetResult, error)
+}
+
+// SemanticServicePort defines inbound operations for semantic concept alignment and mapping.
+type SemanticServicePort interface {
+	AlignSemantics(ctx context.Context, manifest *domain.PackageManifest) ([]domain.SemanticFieldMapping, error)
+	GenerateCaseExpression(ctx context.Context, mapping domain.SemanticFieldMapping, tablePrefix string) string
+}

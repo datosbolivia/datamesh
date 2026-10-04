@@ -91,6 +91,23 @@ dimensions:                            # OPCIONAL. Dimensiones para análisis OL
   - municipio
   - año
 
+# --- Cobertura Espacio-Temporal y Calidad (W3C DCAT v3 / ISO 19115 / ISO 8601) ---
+spatial:                               # OPCIONAL. Ámbito geoespacial
+  country: BO                          # ISO 3166-1 alpha-2
+  regions: [BO-L, BO-C, BO-S]          # ISO 3166-2
+  bbox: [-69.64, -22.90, -57.45, -9.67] # [minX, minY, maxX, maxY] EPSG:4326
+  granularity: municipality
+
+temporal:                              # OPCIONAL. Ámbito cronológico
+  start: 2020-01-01T00:00:00Z          # ISO 8601
+  end: 2026-12-31T23:59:59Z
+  frequency: annual                    # daily, weekly, monthly, annual, irregular
+  timezone: America/La_Paz
+
+quality:                               # OPCIONAL. Perfil y validación de calidad
+  status: verified                     # raw, curated, verified, official
+  completeness: 0.99                   # Ratio [0.0 - 1.0]
+
 # --- Interoperabilidad Sintáctica / Contratos de Ejecución (ODKF v0.2) ---
 contracts:                             # REQUERIDO para activos de datos y servicios
   - type: datapackage                  # Datos estáticos (Frictionless / Table Schema)
@@ -168,17 +185,14 @@ Un bundle es conforme a **OKF/ODKF v0.2** si:
 import datamesh
 
 # 1. Leer cualquier bundle o documento ODKF
-bundle = datamesh.read("https://github.com/institucion/datos-censo")
+bundle = datamesh.get("https://datosbolivia.github.io/raw/nodes/air_quality/index.md")
 
-# 2. Verificar integridad criptográfica
-is_valid = datamesh.verify("https://github.com/institucion/datos-censo")
+# 2. Publicar bundle hacia múltiples plataformas simultáneamente
+results = datamesh.publish("./nodes/air_quality", targets=["local", "portal", "kaggle"])
 
-# 3. Publicar estáticamente hacia Quarto o GitHub
-datamesh.publish("https://github.com/institucion/datos-censo", to="./mi_sitio_quarto")
+# 3. Extraer mapeo semántico para normalizar columnas y resolver joins
+mappings = datamesh.align_semantics(datapackage_dict)
 
-# 4. Consulta federada multi-nodo en DuckDB
-df = datamesh.query("SELECT departamento, COUNT(*) FROM censo_hogares GROUP BY 1")
-
-# 5. Resolver contrato sintáctico
-contract = datamesh.resolve_contract("openapi", "http://api.gob.bo/v3/api-docs")
-````
+# 4. Consulta federada multi-nodo en DuckDB con tríadas soberanas
+df = datamesh.sql("SELECT lugar_nombre, AVG(valor_ica) FROM 'air_quality:Compilación de datos de calidad del aire de Bolivia' GROUP BY 1")
+```

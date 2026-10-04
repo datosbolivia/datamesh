@@ -46,6 +46,22 @@ export interface DataProduct {
   raw_content?: string;
 }
 
+export interface ValidationIssue {
+  code: string;
+  severity: "ERROR" | "WARNING" | "INFO";
+  message: string;
+  path?: string;
+  line?: number;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  target: string;
+  total_errors: number;
+  total_warnings: number;
+  issues: ValidationIssue[];
+}
+
 export interface QueryRequest {
   resource_uri?: string;
   filters?: Record<string, string>;
@@ -1168,6 +1184,25 @@ export class DataMeshClient {
       entries,
     };
   }
+
+  async validate(target: string): Promise<ValidationReport> {
+    if (typeof window !== "undefined" && (window as any).DataMesh?.validate) {
+      try {
+        return await (window as any).DataMesh.validate(target);
+      } catch (e) {
+        console.warn("WASM validate failed, falling back to JS", e);
+      }
+    }
+    const clean = target.trim().replace(/^["']|["']$/g, "");
+    const isTriad = /^[a-zA-Z0-9_\-\.]+[:/][a-zA-Z0-9_\-\. ]+([:/][a-zA-Z0-9_\-\. ]+)?$/.test(clean);
+    return {
+      valid: isTriad,
+      target,
+      total_errors: isTriad ? 0 : 1,
+      total_warnings: 0,
+      issues: isTriad ? [] : [{ code: "RULE-08-TRIAD-SYNTAX", severity: "ERROR", message: `Invalid syntax for triad '${target}'` }],
+    };
+  }
 }
 
 /**
@@ -1179,7 +1214,7 @@ export function useDataMesh(options?: DataMeshClientOptions): DataMeshClient {
 
 export const datamesh = new DataMeshClient();
 
-// Standalone 1-line unified functions matching Python dm.discover, dm.search, dm.get, dm.query, dm.sql
+// Standalone 1-line unified functions matching Python dm.discover, dm.search, dm.get, dm.query, dm.sql, dm.validate
 export const discover = (url?: string) => datamesh.discover(url);
 export const search = (keyword: string, url?: string) => datamesh.search(keyword, url);
 export const get = (uriOrUrl: string) => datamesh.get(uriOrUrl);
@@ -1189,4 +1224,6 @@ export const sql = (
   sourceOrOptions?: string | { columns: string[]; rows: string[][] } | Record<string, string>,
   tableAlias?: string
 ) => datamesh.sql(sqlQuery, sourceOrOptions, tableAlias);
+export const validate = (target: string) => datamesh.validate(target);
+
 

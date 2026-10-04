@@ -5,8 +5,8 @@ project:
 website:
   title: "DataMesh SDK"
   description: "SDK Hexagonal y Soberano para el Formato de Conocimiento Abierto (OKF/ODKF v0.2)"
-  site-url: "https://datosbolivia.github.io/datamesh-sdk/"
-  repo-url: "https://github.com/datosbolivia/datamesh-sdk"
+  site-url: "https://datosbolivia.github.io/datamesh/"
+  repo-url: "https://github.com/datosbolivia/datamesh"
   repo-actions: [issue]
   navbar:
     title: "DataMesh SDK"

@@ -61,3 +61,6 @@ Descarga y filtra un recurso CSV en memoria con soporte streaming.
 
 ### `sql(sqlQuery: string, tableMapping?: Record<string, string>): Promise<QueryResult>`
 Ejecuta sentencias SQL analíticas mediante DuckDB WebAssembly o delegación a motor Go.
+
+### `validate(target: string): Promise<ValidationReport>`
+Valida la sintaxis de un concepto OKF/ODKF, un directorio bundle, o una tríada canónica delegando a Go WebAssembly o fallback nativo.

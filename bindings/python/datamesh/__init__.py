@@ -44,6 +44,10 @@ def sql(
     """
     return _runtime.sql(query_str, table_mapping=table_mapping, engine=engine)
 
+def validate(target: str) -> Dict[str, Any]:
+    """Validate OKF/ODKF concept document, bundle directory, or canonical triad."""
+    return _runtime.validate(target)
+
 storage = _runtime.storage
 config = _runtime.config_adapter
 
@@ -69,6 +73,7 @@ __all__ = [
     "get",
     "query",
     "sql",
+    "validate",
     "storage",
     "config",
     "run_server",

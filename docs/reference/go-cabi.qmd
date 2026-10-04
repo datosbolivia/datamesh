@@ -48,5 +48,10 @@ Ejecuta ANSI SQL con DuckDB embebido en Go sobre tríadas canónicas y retorna c
 
 ---
 
+### `DataMeshValidate(target *C.char) *C.char`
+Valida un documento de concepto OKF/ODKF, un directorio bundle, o la sintaxis de una tríada canónica, retornando un reporte `ValidationReport` en formato JSON.
+
+---
+
 ### `DataMeshFreeString(ptr *C.char)`
 Libera la memoria de cualquier cadena de texto retornada por las funciones de DataMesh. **Debe ser invocada siempre** tras procesar una respuesta para evitar memory leaks.

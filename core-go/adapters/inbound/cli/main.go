@@ -45,6 +45,7 @@ func main() {
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
 	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage, unifiedReader)
+	validateUC := usecases.NewValidateUseCase(cfg.Base.Timeout)
 
 	ctx := context.Background()
 	command := os.Args[1]
@@ -149,6 +150,23 @@ func main() {
 		out, _ := json.MarshalIndent(res, "", "  ")
 		fmt.Println(string(out))
 
+	case "validate":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "Error: missing target to validate (file, directory bundle, URL, or triad)")
+			os.Exit(1)
+		}
+		target := os.Args[2]
+		report, err := validateUC.Validate(ctx, target)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Validation error: %v\n", err)
+			os.Exit(1)
+		}
+		out, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Println(string(out))
+		if !report.Valid {
+			os.Exit(2)
+		}
+
 	case "config":
 		out, _ := json.MarshalIndent(cfg, "", "  ")
 		fmt.Println(string(out))
@@ -190,6 +208,7 @@ func printUsage() {
 	fmt.Println("  datamesh catalog [url]                       Discover federated sovereign catalogs")
 	fmt.Println("  datamesh search <keyword> [url]              Search catalog entries across catalogs")
 	fmt.Println("  datamesh get <url_or_path>                   Resolve and validate OKF v0.2 Data Product")
+	fmt.Println("  datamesh validate <url_or_path_or_triad>     Validate OKF/ODKF concept, bundle, or triad")
 	fmt.Println("  datamesh sql \"<SQL_QUERY>\"                   Execute full ANSI/DuckDB SQL with triad URIs")
 	fmt.Println("  datamesh query <uri> [--filter k=v] [--limit N] Query tabular resource")
 	fmt.Println("  datamesh serve [--port 8000] [--host 0.0.0.0] Launch HTTP REST, CORS proxy, and MCP server")

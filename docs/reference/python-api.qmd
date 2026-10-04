@@ -57,3 +57,13 @@ Ejecuta ANSI SQL sobre tríadas canónicas (`catalogo:dataset:recurso` o `catalo
   - `table_mapping` *(opcional)*: Mapeo manual de nombres de tabla a rutas físicas de archivos.
   - `engine` *(opcional)*: Identificador del motor (`"duckdb"`, `"inmem"` o `"go"`). Por defecto `"duckdb"`.
 - **Retorno**: Diccionario con `columns`, `rows` (con valores normalizados seguros para JSON), y `row_count`.
+
+---
+
+### `datamesh.validate(target: str) -> Dict[str, Any]`
+Valida un documento de concepto OKF/ODKF, un directorio bundle, o la sintaxis de una tríada canónica.
+
+- **Parámetros**:
+  - `target` *(str)*: Ruta local hacia un archivo `.md`, directorio bundle, URL HTTP, o tríada canónica.
+- **Retorno**: Diccionario `ValidationReport` con `valid` *(bool)*, `total_errors` *(int)*, `total_warnings` *(int)*, y lista de `issues`.
+

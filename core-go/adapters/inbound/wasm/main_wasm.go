@@ -32,6 +32,7 @@ func main() {
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, nil, cfg)
 	queryUC := usecases.NewQueryDataProductUseCase(inmemEngine, nil, unifiedReader)
+	validateUC := usecases.NewValidateUseCase(15 * time.Second)
 
 	dataMeshObj := js.Global().Get("Object").New()
 
@@ -177,6 +178,33 @@ func main() {
 					return
 				}
 				bytes, _ := json.Marshal(res)
+				parsed := js.Global().Get("JSON").Call("parse", string(bytes))
+				resolve.Invoke(parsed)
+			}()
+			return nil
+		})
+
+		return js.Global().Get("Promise").New(handler)
+	}))
+
+	// Promise-based validate
+	dataMeshObj.Set("validate", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		target := ""
+		if len(args) > 0 && !args[0].IsNull() && !args[0].IsUndefined() {
+			target = args[0].String()
+		}
+
+		handler := js.FuncOf(func(pThis js.Value, pArgs []js.Value) interface{} {
+			resolve := pArgs[0]
+			reject := pArgs[1]
+
+			go func() {
+				report, err := validateUC.Validate(context.Background(), target)
+				if err != nil {
+					reject.Invoke(js.ValueOf(err.Error()))
+					return
+				}
+				bytes, _ := json.Marshal(report)
 				parsed := js.Global().Get("JSON").Call("parse", string(bytes))
 				resolve.Invoke(parsed)
 			}()

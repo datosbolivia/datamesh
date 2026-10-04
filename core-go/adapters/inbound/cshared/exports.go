@@ -27,6 +27,7 @@ var (
 	catalogUC     *usecases.DiscoverCatalogUseCase
 	dataProductUC *usecases.ResolveDataProductUseCase
 	queryUC       *usecases.QueryDataProductUseCase
+	validateUC    *usecases.ValidateUseCase
 	inmemEngine   *engine.InMemTabularQueryEngine
 )
 
@@ -77,6 +78,7 @@ func initRuntime(configJSON string) error {
 	dataProductUC = usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
 	inmemEngine = engine.NewInMemTabularQueryEngine()
 	queryUC = usecases.NewQueryDataProductUseCase(inmemEngine, fileStorage, unifiedReader)
+	validateUC = usecases.NewValidateUseCase(cfg.Base.Timeout)
 	return nil
 }
 
@@ -176,6 +178,17 @@ func DataMeshExecuteSQL(sqlQuery *C.char, optionsJSON *C.char) *C.char {
 
 	res, err := queryUC.ExecuteSQLWithOptions(context.Background(), queryStr, opts)
 	return makeJSONResponse(res, err)
+}
+
+//export DataMeshValidate
+func DataMeshValidate(target *C.char) *C.char {
+	ensureInit()
+	if target == nil {
+		return makeJSONResponse(nil, errors.New("empty validation target"))
+	}
+	targetStr := C.GoString(target)
+	report, err := validateUC.Validate(context.Background(), targetStr)
+	return makeJSONResponse(report, err)
 }
 
 //export DataMeshFreeString

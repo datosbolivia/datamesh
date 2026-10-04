@@ -53,3 +53,13 @@ Ejecuta ANSI SQL sobre tríadas canónicas mediante el paquete `duckdb` de R o d
   - `sql_query`: Cadena SQL a ejecutar.
   - `table_mapping`: Lista nombrada mapeando tríadas a rutas de archivo locales.
 - **Valor Retornado**: `data.frame` con los resultados tipados.
+
+---
+
+### `datamesh_validate(target)` / `dm_validate(...)`
+Valida un documento OKF/ODKF, un directorio bundle, o la sintaxis de una tríada canónica.
+
+- **Parámetros**:
+  - `target`: Ruta hacia archivo `.md`, directorio bundle, URL, o tríada.
+- **Valor Retornado**: Lista con campos `valid`, `target`, `total_errors`, `total_warnings`, y `issues`.
+

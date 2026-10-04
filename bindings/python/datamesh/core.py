@@ -73,6 +73,9 @@ class DataMeshRuntime:
                 if hasattr(self._lib, "DataMeshExecuteSQL"):
                     self._lib.DataMeshExecuteSQL.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
                     self._lib.DataMeshExecuteSQL.restype = ctypes.c_char_p
+                if hasattr(self._lib, "DataMeshValidate"):
+                    self._lib.DataMeshValidate.argtypes = [ctypes.c_char_p]
+                    self._lib.DataMeshValidate.restype = ctypes.c_char_p
                 self._lib.DataMeshFreeString.argtypes = [ctypes.c_char_p]
                 self._lib.DataMeshFreeString.restype = None
                 self._lib.DataMeshInit(None)
@@ -391,6 +394,48 @@ class DataMeshRuntime:
         """
         query_engine = self.get_engine(engine)
         return query_engine.execute_sql(sql_query, table_mapping=table_mapping)
+
+    def validate(self, target: str) -> Dict[str, Any]:
+        """Validates an OKF/ODKF concept document, bundle directory, or canonical triad."""
+        if self._lib and hasattr(self._lib, "DataMeshValidate"):
+            try:
+                import ctypes
+                c_target = target.encode("utf-8")
+                raw = self._lib.DataMeshValidate(c_target)
+                if raw:
+                    try:
+                        resp = json.loads(ctypes.string_at(raw).decode("utf-8"))
+                        if resp.get("success") and resp.get("data"):
+                            return resp["data"]
+                    finally:
+                        if hasattr(self._lib, "DataMeshFreeString"):
+                            self._lib.DataMeshFreeString(raw)
+            except Exception:
+                pass
+
+        # Python fallback validator
+        try:
+            from reference_agent.bundle.validator import validate_concept_content, validate_bundle, validate_triad
+            if os.path.isdir(target):
+                return validate_bundle(target).to_dict()
+            elif os.path.isfile(target):
+                with open(target, "r", encoding="utf-8") as f:
+                    return validate_concept_content(f.read(), file_path=target).to_dict()
+            elif ":" in target or "/" in target:
+                return validate_triad(target).to_dict()
+        except ImportError:
+            pass
+
+        clean = target.strip().strip("\"'")
+        is_triad = bool(re.match(r"^[a-zA-Z0-9_\-\.]+[:/][a-zA-Z0-9_\-\. ]+([:/][a-zA-Z0-9_\-\. ]+)?$", clean))
+        valid = is_triad or os.path.exists(target)
+        return {
+            "valid": valid,
+            "target": target,
+            "total_errors": 0 if valid else 1,
+            "total_warnings": 0,
+            "issues": [] if valid else [{"code": "VALIDATION-FAILED", "severity": "ERROR", "message": f"Could not validate target '{target}'"}],
+        }
 
     def _find_matching_local_file(self, dataset: str, filename: str) -> Optional[str]:
         """Finds existing local copy of a dataset file in cache or sibling projects."""

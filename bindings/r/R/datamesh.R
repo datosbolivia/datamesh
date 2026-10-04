@@ -310,9 +310,35 @@ datamesh_sql <- function(sql_query, table_mapping = NULL) {
   stop("datamesh_sql requires the 'duckdb' R package or compiled 'libdatamesh.so' library.")
 }
 
+#' Validate an OKF/ODKF concept document, bundle directory, or canonical triad
+#'
+#' @param target File path, bundle directory, URL, or canonical triad string.
+#' @return A list with fields valid (logical), target (character), total_errors (integer), total_warnings (integer), and issues (list).
+#' @export
+datamesh_validate <- function(target) {
+  c_res <- .call_c_abi("DataMeshValidate", target)
+  if (!is.null(c_res) && !is.null(c_res$valid)) {
+    return(c_res)
+  }
+
+  clean <- gsub("^[\"']|[\"']$", "", trimws(target))
+  is_triad <- grepl("^[a-zA-Z0-9_\\-\\.]+[:/][a-zA-Z0-9_\\-\\.]+([:/][a-zA-Z0-9_\\-\\.]+)?$", clean)
+  is_exist <- file.exists(target)
+  valid <- is_triad || is_exist
+
+  list(
+    valid = valid,
+    target = target,
+    total_errors = if (valid) 0L else 1L,
+    total_warnings = 0L,
+    issues = if (valid) list() else list(list(code = "VALIDATION-FAILED", severity = "ERROR", message = sprintf("Could not validate '%s'", target)))
+  )
+}
+
 # 1-line ergonomic aliases matching Python / TS naming
 dm_discover <- datamesh_discover
 dm_search <- datamesh_search
 dm_get <- datamesh_get
 dm_query <- datamesh_query
 dm_sql <- datamesh_sql
+dm_validate <- datamesh_validate

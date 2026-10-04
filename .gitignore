@@ -231,4 +231,8 @@ public/
 *.code-workspace
 docs/proyecto_grado/*
 
+# Quarto website build artifacts
+docs/_site/
+.quarto/
+
 .env

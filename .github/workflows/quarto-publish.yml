@@ -1,0 +1,49 @@
+name: Publicar Documentación con Quarto en GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/quarto-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout del Repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: pre-release
+
+      - name: Renderizar Sitio de Documentación Quarto
+        run: |
+          quarto render docs
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Cargar Artefacto de Páginas
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+      - name: Desplegar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

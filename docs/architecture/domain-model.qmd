@@ -1,0 +1,40 @@
+---
+title: "Modelo de Dominio (DDD)"
+subtitle: "Diseño Estratégico, Bounded Contexts y Lenguaje Ubicuo"
+---
+
+El SDK de DataMesh está modelado alrededor de los conceptos del negocio de datos abiertos y federación soberana bajo la metodología **Domain-Driven Design (DDD)**.
+
+Para consultar la especificación exhaustiva y formal de los Agregados, Value Objects, Eventos de Dominio y Capas Anticorrupción (ACL), consulte el documento normativo:
+
+👉 [**Especificación Canónica del Modelo de Dominio (MODELO_DE_DOMINIO.md)**](../reference/MODELO_DE_DOMINIO.md)
+
+---
+
+## 1. Lenguaje Ubicuo en el Núcleo
+
+El vocabulario central está unificado entre la especificación OKF v0.2, el núcleo en Go (`core-go/domain/`) y los bindings en Python y TypeScript:
+
+| Concepto Ubicuo | Descripción | Representación |
+| :--- | :--- | :--- |
+| **DataProduct** | Agregado raíz que encapsula metadatos, contratos, calidad y linaje. | `domain.DataProduct` |
+| **ResourceTriad** | Objeto de valor canónico `[catalogo:]dataset:recurso`. | `domain.ResourceTriad` |
+| **Catalog** | Agregado de productos de datos indexados y federados. | `domain.Catalog` |
+| **Contract** | Reglas sintácticas Frictionless / SDMX DSD ejecutables. | `domain.Contract` |
+| **QualityProfile**| Declaración formal de completitud y aserciones de calidad. | `domain.QualityProfile` |
+
+---
+
+## 2. Mapa de Contextos (Context Map)
+
+```{mermaid}
+flowchart LR
+    Discovery["Contexto de Descubrimiento"] -->|OHS/PL| Analytical["Contexto Analítico (SQL)"]
+    Product["Contexto de Producto de Datos"] -->|Shared Kernel: Triad| Analytical
+    Harvesting["Contexto Harvester (CKAN)"] -->|Anti-Corruption Layer| Product
+    Security["Contexto de Seguridad (Keycloak)"] -->|Conformist| Discovery
+```
+
+1. **Shared Kernel**: El Value Object `ResourceTriad` es compartido por el contexto de productos y el analítico.
+2. **Anti-Corruption Layer (ACL)**: El `CKANClientAdapter` y `HarvestCKANUseCase` aíslan el dominio de los formatos propietarios de CKAN.
+3. **Open Host Service (OHS)**: El protocolo de descubrimiento `llms.txt` y `/.well-known/datamesh.json` expone contratos estandarizados.

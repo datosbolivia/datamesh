@@ -16,11 +16,15 @@ import (
 )
 
 // Regex patterns to parse llms.txt entries
-// Example: - [Title](/raw/nodes/...): Description. (Dominio: Finanzas. Recursos: r1, r2)
+// Example standard: - [Title](/raw/nodes/...): Description. (Dominio: Finanzas. Recursos: r1, r2)
+// Example hierarchical: ### [REQ-01] Title \n * [REQ_01_A] Title (Tríada: `...`): /raw/path
 var (
-	entryRegex  = regexp.MustCompile(`^-\s*\[(.*?)\]\((.*?)\)(?::\s*(.*))?$`)
-	domainRegex = regexp.MustCompile(`\(Dominio:\s*([^)]*?)(?:\.|\)|Recursos:)`)
-	recRegex    = regexp.MustCompile(`Recursos:\s*([^)]+)\)`)
+	entryRegex      = regexp.MustCompile(`^-\s*\[(.*?)\]\((.*?)\)(?::\s*(.*))?$`)
+	domainRegex     = regexp.MustCompile(`\(Dominio:\s*([^)]*?)(?:\.|\)|Recursos:)`)
+	recRegex        = regexp.MustCompile(`Recursos:\s*([^)]+)\)`)
+	reqHeaderRegex  = regexp.MustCompile(`^###\s*\[(.*?)\]\s*(.*?)(?:\s*\((?:Institución|Agencia):\s*([^)]+)\))?$`)
+	triadRegex      = regexp.MustCompile(`Tríada:\s*` + "`" + `([^` + "`" + `]+)` + "`")
+	bulletItemRegex = regexp.MustCompile(`^\s*[*+-]\s*\[(.*?)\]\s*(.*)`)
 )
 
 // LLMSTxtCatalogResolver resolves federated catalogs formatted as llms.txt.
@@ -87,6 +91,15 @@ func (r *LLMSTxtCatalogResolver) parseLLMSTxt(content, sourceURL string) (*domai
 
 	parsedBase, _ := url.Parse(sourceURL)
 
+	type currentReqInfo struct {
+		id          string
+		title       string
+		institution string
+		domain      string
+		specURI     string
+	}
+	var currentReq *currentReqInfo
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -103,7 +116,78 @@ func (r *LLMSTxtCatalogResolver) parseLLMSTxt(content, sourceURL string) (*domai
 			continue
 		}
 
-		// Check for dataset items
+		// 1. Check for Requirement / Section Header: ### [REQ-01] Title (Institución: ...)
+		if rm := reqHeaderRegex.FindStringSubmatch(line); len(rm) > 2 {
+			inst := ""
+			if len(rm) > 3 {
+				inst = strings.TrimSpace(rm[3])
+			}
+			currentReq = &currentReqInfo{
+				id:          strings.TrimSpace(rm[1]),
+				title:       strings.TrimSpace(rm[2]),
+				institution: inst,
+			}
+			continue
+		}
+
+		// If within a requirement block, inspect metadata and child components
+		if currentReq != nil {
+			if strings.HasPrefix(line, "- Dominio Temático:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					currentReq.domain = strings.TrimSpace(parts[1])
+				}
+				continue
+			}
+			if strings.HasPrefix(line, "- Especificación Técnica:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					currentReq.specURI = strings.TrimSpace(parts[1])
+				}
+				continue
+			}
+
+			// Check hierarchical bullet: * [REQ_01_A] Title (Tríada: `...`, ...): /raw/path.md
+			if (strings.HasPrefix(line, "* [") || strings.HasPrefix(line, "- [")) && strings.Contains(line, ":") {
+				lastColon := strings.LastIndex(line, ":")
+				compURI := strings.TrimSpace(line[lastColon+1:])
+				if strings.HasPrefix(compURI, "/") || strings.HasPrefix(compURI, "http://") || strings.HasPrefix(compURI, "https://") || strings.HasSuffix(compURI, ".md") {
+					prefix := strings.TrimSpace(line[:lastColon])
+					if bm := bulletItemRegex.FindStringSubmatch(prefix); len(bm) > 2 {
+						compID := strings.TrimSpace(bm[1])
+						rest := strings.TrimSpace(bm[2])
+
+						titleClean := rest
+						metaClean := ""
+						if idx := strings.Index(rest, "(Tríada:"); idx != -1 {
+							titleClean = strings.TrimSpace(rest[:idx])
+							metaClean = strings.TrimSpace(rest[idx+1:])
+							metaClean = strings.TrimSuffix(metaClean, ")")
+						} else if idx := strings.Index(rest, "(Dominio:"); idx != -1 {
+							titleClean = strings.TrimSpace(rest[:idx])
+							metaClean = strings.TrimSpace(rest[idx+1:])
+							metaClean = strings.TrimSuffix(metaClean, ")")
+						}
+
+						resolvedURL := resolveURL(parsedBase, compURI)
+						fullTitle := fmt.Sprintf("[%s] %s", currentReq.id, titleClean)
+						desc := fmt.Sprintf("%s (%s). %s", titleClean, currentReq.title, metaClean)
+
+						catalog.Entries = append(catalog.Entries, domain.CatalogEntry{
+							Title:       fullTitle,
+							URI:         compURI,
+							ResolvedURL: resolvedURL,
+							Description: strings.TrimSpace(desc),
+							Domain:      currentReq.domain,
+							Resources:   []string{strings.ToLower(compID)},
+						})
+						continue
+					}
+				}
+			}
+		}
+
+		// 2. Standard Flat llms.txt entry: - [Title](rawURI): desc
 		if matches := entryRegex.FindStringSubmatch(line); len(matches) > 2 {
 			title := strings.TrimSpace(matches[1])
 			rawURI := strings.TrimSpace(matches[2])

@@ -8,7 +8,7 @@ import (
 
 var (
 	ErrEmptyTitle       = errors.New("data product title cannot be empty")
-	ErrInvalidType      = errors.New("data product type must be 'dataset', 'model', or 'composite'")
+	ErrInvalidType      = errors.New("data product type must be 'dataset', 'model', 'composite', 'component', or 'requirement'")
 	ErrMissingDimension = errors.New("data product must specify at least one dimension")
 )
 
@@ -134,7 +134,7 @@ func (dp *DataProduct) Validate() error {
 
 	validType := false
 	switch dp.Manifest.Type {
-	case "dataset", "model", "composite":
+	case "dataset", "model", "composite", "component", "requirement":
 		validType = true
 	}
 	if !validType {

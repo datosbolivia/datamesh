@@ -165,6 +165,8 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 					m.Type = v
 				} else if k == "title" {
 					m.Title = v
+				} else if k == "domain" || k == "dominio" {
+					m.Dimensions = append(m.Dimensions, v)
 				}
 			}
 		}
@@ -172,6 +174,10 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 
 	if currentContract.Type != "" || currentContract.Path != "" {
 		m.Contracts = append(m.Contracts, currentContract)
+	}
+
+	if len(m.Dimensions) == 0 {
+		m.Dimensions = []string{"core"}
 	}
 
 	return m

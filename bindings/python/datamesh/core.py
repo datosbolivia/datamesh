@@ -242,8 +242,14 @@ class DataMeshRuntime:
         domain_pattern = re.compile(r"\(Dominio:\s*([^)]*?)(?:\.|\)|Recursos:)")
         rec_pattern = re.compile(r"Recursos:\s*([^)]+)\)")
         
+        req_header_pattern = re.compile(r"^###\s*\[(.*?)\]\s*(.*?)(?:\s*\((?:Institución|Agencia):\s*([^)]+)\))?$")
+        triad_pattern = re.compile(r"Tríada:\s*`([^`]+)`")
+        bullet_item_pattern = re.compile(r"^\s*[*+-]\s*\[(.*?)\]\s*(.*)")
+        raw_spec_pattern = re.compile(r"^-\s*Especificación Técnica:\s*(\S+)")
+        
         title = ""
         description = ""
+        current_req = None
 
         for line in content.splitlines():
             line_str = line.strip()
@@ -256,6 +262,70 @@ class DataMeshRuntime:
                 description = line_str[2:].strip()
                 continue
 
+            # 1. Section Header: ### [REQ-01] Title (Institución: ...)
+            rm = req_header_pattern.match(line_str)
+            if rm:
+                current_req = {
+                    "id": rm.group(1).strip(),
+                    "title": rm.group(2).strip(),
+                    "institution": rm.group(3) or "",
+                    "domain": "",
+                    "spec_uri": "",
+                }
+                continue
+
+            if current_req:
+                if line_str.startswith("- Dominio Temático:"):
+                    current_req["domain"] = line_str.split(":", 1)[1].strip()
+                    continue
+                sm = raw_spec_pattern.match(line_str)
+                if sm:
+                    current_req["spec_uri"] = sm.group(1).strip()
+                    continue
+
+                # Hierarchical bullet: * [REQ_01_A] Title (Tríada: `...`, ...): /raw/path.md
+                if (line_str.startswith("* [") or line_str.startswith("- [")) and ":" in line_str:
+                    last_colon = line_str.rfind(":")
+                    comp_uri = line_str[last_colon + 1:].strip()
+                    if comp_uri.startswith("/") or comp_uri.startswith("http://") or comp_uri.startswith("https://") or comp_uri.endswith(".md"):
+                        prefix = line_str[:last_colon].strip()
+                        bm = bullet_item_pattern.match(prefix)
+                        if bm:
+                            comp_id = bm.group(1).strip()
+                            rest = bm.group(2).strip()
+                            tm = triad_pattern.search(rest)
+                            triad = tm.group(1) if tm else ""
+
+                            if "(Tríada:" in rest:
+                                title_clean, meta_clean = rest.split("(Tríada:", 1)
+                                title_clean = title_clean.strip()
+                                meta_clean = "Tríada:" + meta_clean.rstrip(")")
+                            elif "(Dominio:" in rest:
+                                title_clean, meta_clean = rest.split("(Dominio:", 1)
+                                title_clean = title_clean.strip()
+                                meta_clean = "Dominio:" + meta_clean.rstrip(")")
+                            else:
+                                title_clean = rest
+                                meta_clean = ""
+
+                            resolved = urllib.parse.urljoin(source_url, comp_uri)
+                            req_id = current_req["id"]
+                            full_title = f"[{req_id}] {title_clean}"
+                            req_t = current_req.get("title", "")
+                            desc = f"{title_clean} ({req_t}). {meta_clean}".strip()
+                            entries.append({
+                                "title": full_title,
+                                "uri": comp_uri,
+                                "resolved_url": resolved,
+                                "description": desc,
+                                "domain": current_req.get("domain", ""),
+                                "triad": triad,
+                                "resources": [comp_id.lower()],
+                                "catalog_source": source_url,
+                            })
+                            continue
+
+            # 2. Standard Flat llms.txt entry
             m = entry_pattern.match(line_str)
             if m:
                 item_title, raw_uri, desc = m.group(1), m.group(2), m.group(3) or ""
@@ -263,8 +333,8 @@ class DataMeshRuntime:
                 dm = domain_pattern.search(desc)
                 domain = dm.group(1).strip() if dm else ""
                 
-                rm = rec_pattern.search(desc)
-                recs = [r.strip() for r in rm.group(1).split(",")] if rm else []
+                rm_match = rec_pattern.search(desc)
+                recs = [r.strip() for r in rm_match.group(1).split(",")] if rm_match else []
                 clean_desc = desc.split("(Dominio:")[0].strip()
                 
                 entries.append({
@@ -321,16 +391,34 @@ class DataMeshRuntime:
         body = parts[2].strip()
 
         manifest: Dict[str, Any] = {"dimensions": [], "contracts": []}
-        for line in frontmatter.splitlines():
-            line_str = line.strip()
-            if not line_str or line_str.startswith("#"):
-                continue
-            if line_str.startswith("title:"):
-                manifest["title"] = line_str.split(":", 1)[1].strip().strip("\"'")
-            elif line_str.startswith("type:"):
-                manifest["type"] = line_str.split(":", 1)[1].strip().strip("\"'")
-            elif line_str.startswith("- ") and "dimensions" in manifest:
-                manifest["dimensions"].append(line_str[2:].strip().strip("\"'"))
+        try:
+            import yaml
+            parsed_yaml = yaml.safe_load(frontmatter)
+            if isinstance(parsed_yaml, dict):
+                manifest.update(parsed_yaml)
+                if "dimensions" not in manifest or not manifest["dimensions"]:
+                    dom = parsed_yaml.get("domain") or parsed_yaml.get("dominio")
+                    manifest["dimensions"] = [dom] if dom else ["core"]
+                if "contracts" not in manifest:
+                    manifest["contracts"] = []
+                if "title" not in manifest and "id" in parsed_yaml:
+                    manifest["title"] = str(parsed_yaml["id"])
+        except Exception:
+            for line in frontmatter.splitlines():
+                line_str = line.strip()
+                if not line_str or line_str.startswith("#"):
+                    continue
+                if line_str.startswith("title:"):
+                    manifest["title"] = line_str.split(":", 1)[1].strip().strip("\"'")
+                elif line_str.startswith("type:"):
+                    manifest["type"] = line_str.split(":", 1)[1].strip().strip("\"'")
+                elif line_str.startswith("id:") and "title" not in manifest:
+                    manifest["title"] = line_str.split(":", 1)[1].strip().strip("\"'")
+                elif line_str.startswith("- ") and "dimensions" in manifest:
+                    manifest["dimensions"].append(line_str[2:].strip().strip("\"'"))
+
+            if not manifest["dimensions"]:
+                manifest["dimensions"] = ["core"]
 
         return {
             "id": uri,

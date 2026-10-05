@@ -134,4 +134,28 @@
   2. Genera expresiones SQL estándar (`CASE WHEN raw = 'val' THEN 'concept:...' ELSE raw END`).
   3. Permite que DuckDB ejecute joins y agregaciones sobre columnas heterogéneas (ej. `"LP"`, `"02"`, `"La Paz"`) unificándolas bajo el mismo concepto canónico sin alterar los archivos de microdatos crudos.
 
+## CU-13: Ingesta y Reconstrucción de Catálogos CKAN a OKF v0.2 (`HarvestCKANUseCase`)
+- **Actor:** Administrador de catálogo, script de recolección (harvester), Agente IA o CLI (`datamesh harvest-ckan`, `dm.harvest_ckan()`).
+- **Entrada:** `ckan_url` (URL del portal CKAN o endpoint de la Action API v3), `query`, `limit`, `offset`, credenciales de autenticación (`token`, `client_id`, `client_secret`), y directorio de salida opcional (`output_dir`).
+- **Comportamiento:**
+  1. Consulta la API de CKAN (`/api/3/action/package_search`, `/package_show`) con soporte de paginación e inyección de encabezados de autenticación (`AuthProviderPort`).
+  2. Para cada dataset descubierto, extrae:
+     - Recursos tabulares y binarios, sondeando esquemas de columnas en DataStore (`datastore_search`) cuando se encuentre activo.
+     - Cobertura espacial (GeoJSON o BBox extraído de los campos `extras`: `spatial`, `spatial-coverage`).
+     - Cobertura temporal (`temporal_start`, `temporal_end`, `frequency`).
+     - Metadatos institucionales y etiquetas de clasificación.
+  3. Reconstruye el paquete de datos OKF Frictionless (`datapackage.yaml` o `datapackage.json`).
+  4. Genera el documento de conocimiento `index.md` con frontmatter estructurado OKF v0.2 y diccionario de recursos.
+  5. Escribe los bundles en el directorio local de destino si fue especificado y retorna el resumen de ejecución `CKANHarvestResult`.
+
+## CU-14: Descubrimiento Federado mediante Well-Known y Autenticación Unificada (`DiscoverWellKnownUseCase`)
+- **Actor:** Cliente DataMesh, Agente IA o CLI (`datamesh discover`, `dm.discover_endpoint()`).
+- **Entrada:** `target_url` (URL de un portal o dominio soberano, ej. `https://datos.gob.bo`).
+- **Comportamiento:**
+  1. Sondea la presencia del documento normativo `/.well-known/datamesh.json` o `/.well-known/okf.json`.
+  2. Si el endpoint está disponible, parsea la configuración del catálogo, tipo de backend (`ckan`, `okf`, `dcat`), capacidades y requerimientos de autenticación (`keycloak`, `oauth2`, `api_key`, `none`).
+  3. Si no existe well-known publicado, ejecuta un sondeo heurístico activo contra el endpoint de estado de CKAN (`/api/3/action/status_show`), deduciendo automáticamente las capacidades del portal.
+  4. Inicializa transparentemente el proveedor de autenticación adecuado (`KeycloakAuthAdapter` para client credentials con token cache, `APIKeyAuthAdapter` para tokens de encabezado, o `NoAuthAdapter` para acceso público).
+
+
 

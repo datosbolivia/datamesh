@@ -40,3 +40,11 @@ type SemanticServicePort interface {
 	AlignSemantics(ctx context.Context, manifest *domain.PackageManifest) ([]domain.SemanticFieldMapping, error)
 	GenerateCaseExpression(ctx context.Context, mapping domain.SemanticFieldMapping, tablePrefix string) string
 }
+
+// HarvesterServicePort defines inbound operations for well-known discovery and CKAN catalog harvesting.
+type HarvesterServicePort interface {
+	DiscoverWellKnown(ctx context.Context, targetURL string) (*domain.WellKnownDiscovery, error)
+	HarvestCKAN(ctx context.Context, ckanBaseURL string, options map[string]interface{}) (*domain.CKANHarvestResult, error)
+	ReconstructOKF(ctx context.Context, pkg *domain.CKANPackage) (*domain.PackageManifest, error)
+}
+

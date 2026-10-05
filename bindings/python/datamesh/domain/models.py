@@ -314,3 +314,139 @@ class PublicationTargetResult:
     message: Optional[str] = None
     error: Optional[str] = None
 
+
+@dataclass(frozen=True)
+class KeycloakAuth:
+    """Keycloak / OpenID Connect endpoint specifications."""
+    realm_url: str
+    token_endpoint: str
+    authorization_endpoint: Optional[str] = None
+    client_id: Optional[str] = None
+    scopes_supported: tuple[str, ...] = ()
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> KeycloakAuth:
+        return cls(
+            realm_url=data.get("realm_url", ""),
+            token_endpoint=data.get("token_endpoint", ""),
+            authorization_endpoint=data.get("authorization_endpoint"),
+            client_id=data.get("client_id"),
+            scopes_supported=tuple(data.get("scopes_supported", ())),
+        )
+
+
+@dataclass(frozen=True)
+class APIKeyAuth:
+    """API Key / Token header configuration."""
+    header_name: str = "X-CKAN-API-Key"
+    prefix: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> APIKeyAuth:
+        return cls(
+            header_name=data.get("header_name", "X-CKAN-API-Key"),
+            prefix=data.get("prefix", ""),
+        )
+
+
+@dataclass(frozen=True)
+class AuthConfiguration:
+    """Authentication configuration for catalog discovery."""
+    auth_type: str = "none"                # none | api_key | bearer | basic | oauth2 | keycloak
+    required: bool = False
+    keycloak: Optional[KeycloakAuth] = None
+    api_key: Optional[APIKeyAuth] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> AuthConfiguration:
+        kc = KeycloakAuth.from_dict(data["keycloak"]) if data.get("keycloak") else None
+        ak = APIKeyAuth.from_dict(data["api_key"]) if data.get("api_key") else None
+        return cls(
+            auth_type=data.get("type", "none"),
+            required=bool(data.get("required", False)),
+            keycloak=kc,
+            api_key=ak,
+        )
+
+
+@dataclass(frozen=True)
+class CatalogMetadata:
+    """Catalog metadata announced in well-known discovery."""
+    name: str
+    title: str
+    catalog_url: str
+    catalog_type: str = "ckan"             # ckan | okf | dcat | git
+    description: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    version: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> CatalogMetadata:
+        return cls(
+            name=data.get("name", ""),
+            title=data.get("title", ""),
+            catalog_url=data.get("catalog_url", ""),
+            catalog_type=data.get("type", "ckan"),
+            description=data.get("description"),
+            api_endpoint=data.get("api_endpoint"),
+            version=data.get("version"),
+        )
+
+
+@dataclass(frozen=True)
+class WellKnownDiscovery:
+    """Normalized /.well-known/datamesh.json document."""
+    schema_version: str
+    catalog: CatalogMetadata
+    auth: AuthConfiguration
+    capabilities: Dict[str, bool] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> WellKnownDiscovery:
+        return cls(
+            schema_version=data.get("schema_version", "0.2.0"),
+            catalog=CatalogMetadata.from_dict(data.get("catalog", {})),
+            auth=AuthConfiguration.from_dict(data.get("auth", {})),
+            capabilities=dict(data.get("capabilities", {})),
+        )
+
+
+@dataclass(frozen=True)
+class CKANResource:
+    """Resource in a CKAN dataset package."""
+    id: str
+    name: str
+    url: str
+    format: str = "csv"
+    description: Optional[str] = None
+    mimetype: Optional[str] = None
+    size: Optional[int] = None
+    datastore_active: bool = False
+    fields: tuple[Dict[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class CKANPackage:
+    """Dataset package retrieved from CKAN Action API v3."""
+    id: str
+    name: str
+    title: str
+    notes: Optional[str] = None
+    url: Optional[str] = None
+    version: Optional[str] = None
+    organization_title: Optional[str] = None
+    tags: tuple[str, ...] = ()
+    extras: Dict[str, Any] = field(default_factory=dict)
+    resources: tuple[CKANResource, ...] = ()
+
+
+@dataclass(frozen=True)
+class CKANHarvestResult:
+    """Summary of harvested CKAN packages and OKF artifacts."""
+    catalog_url: str
+    total_discovered: int
+    harvested_packages: tuple[Dict[str, Any], ...] = ()
+    output_directory: Optional[str] = None
+    execution_time_ms: int = 0
+
+

@@ -128,6 +128,42 @@ TOOLS = [
             },
             "required": ["uri"]
         }
+    },
+    {
+        "name": "datamesh_discover_endpoint",
+        "description": "Discovers catalog capabilities and authentication requirements via /.well-known/datamesh.json or active probing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Target catalog URL or domain (e.g. 'https://datos.gob.bo')."
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "datamesh_harvest_ckan",
+        "description": "Harvests open data packages from a CKAN instance and reconstructs OKF v0.2 knowledge bundles.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "CKAN portal or API URL."
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Optional search filter query."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max packages to harvest (default: 10)."
+                }
+            },
+            "required": ["url"]
+        }
     }
 ]
 
@@ -325,6 +361,39 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                 # 2. Fallback to dm.query
                 res = dm.query(resource_uri, limit=limit)
                 return make_tool_result(msg_id, res)
+
+            elif tool_name == "datamesh_discover_endpoint":
+                url = args.get("url", "")
+                disc = dm.discover_endpoint(url)
+                if not disc:
+                    return make_tool_error(msg_id, f"Could not discover endpoint at {url}")
+                return make_tool_result(msg_id, {
+                    "schema_version": disc.schema_version,
+                    "catalog": {
+                        "name": disc.catalog.name,
+                        "title": disc.catalog.title,
+                        "type": disc.catalog.catalog_type,
+                        "catalog_url": disc.catalog.catalog_url,
+                        "api_endpoint": disc.catalog.api_endpoint,
+                    },
+                    "auth": {
+                        "type": disc.auth.auth_type,
+                        "required": disc.auth.required,
+                    },
+                    "capabilities": disc.capabilities,
+                })
+
+            elif tool_name == "datamesh_harvest_ckan":
+                url = args.get("url", "")
+                query = args.get("query", "")
+                limit = int(args.get("limit", 10))
+                harvest_res = dm.harvest_ckan(url, query=query, limit=limit)
+                return make_tool_result(msg_id, {
+                    "catalog_url": harvest_res.catalog_url,
+                    "total_discovered": harvest_res.total_discovered,
+                    "harvested_count": len(harvest_res.harvested_packages),
+                    "packages": [p["name"] for p in harvest_res.harvested_packages],
+                })
 
             else:
                 return {

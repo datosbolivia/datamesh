@@ -153,15 +153,66 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 
 ### Principios Rectores:
 1. **Autoridad de Dominio en Go Core**: Ningún binding redefine reglas de negocio ni heurísticas de validación de esquemas OKF v0.2. Las tríadas canónicas (`cat:ds:res`), sintaxis de rutas con barras (`cat/ds/res`) y URLs de datasets (`https://.../datasets/ds/res.ext`) son procesadas uniformemente.
-2. **Fachada Unificada de 5 Métodos**:
+2. **Fachada Unificada**:
    - `discover(catalog_url?)`
+   - `discover_endpoint(target_url)`
    - `search(keyword, catalog_url?)`
    - `get(uri_or_url)`
    - `query(resource_uri, filters?, limit?)`
    - `sql(sql_query, options?)`
-3. **Paridad de Herramientas MCP**: Tanto el servidor MCP de Go (`datamesh serve`) como el de Python (`datamesh.mcp_server`) exponen las mismas 5 herramientas con idénticos contratos de entrada y salida JSON-RPC 2.0.
+   - `publish(dataset_path, targets?, options?)`
+   - `align_semantics(datapackage_or_schema)`
+   - `harvest_ckan(ckan_url, ...)`
+3. **Paridad de Herramientas MCP**: Servidores MCP exponen herramientas canónicas (`datamesh_discover_catalogs`, `datamesh_search_catalog`, `datamesh_get_dataproduct`, `datamesh_query_resource`, `datamesh_sql_query`, `datamesh_discover_endpoint`, `datamesh_harvest_ckan`) con idénticos contratos JSON-RPC 2.0.
 4. **Resiliencia de Infraestructura en Adaptadores de Borde**:
    - Fallos de certificados SSL de portales de gobierno son absorbidos a nivel de adaptador (`DuckDBQueryEngine` -> `HttpAdapter` con `ssl.CERT_NONE` hacia temporal cache) sin contaminar los casos de uso ni la capa de dominio.
+
+## 7. Ingesta de Catálogos CKAN, Autenticación (Keycloak/OAuth2/APIKey) y Descubrimiento Well-Known
+
+```text
++-----------------------------------------------------------------------------------------------+
+|                                      INGESTA & HARVESTING                                     |
+|  [CLI: harvest-ckan, discover]      [dm.harvest_ckan()]       [dm.discover_endpoint()]        |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                        INBOUND PORTS                                          |
+|  - HarvesterServicePort (DiscoverWellKnown, HarvestCKAN, ReconstructOKF)                      |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                          USE CASES                                            |
+|  - DiscoverWellKnownUseCase (Sondeo /.well-known/datamesh.json y fallback CKAN status_show)   |
+|  - HarvestCKANUseCase (Ingesta Action API v3, reconstrucción datapackage.yaml e index.md)    |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                     DOMAIN VALUE OBJECTS                                      |
+|  - WellKnownDiscovery (SchemaVersion, CatalogMetadata, AuthConfiguration, Capabilities)       |
+|  - CKANPackage, CKANResource, CKANDataStoreField, CKANHarvestResult                          |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                        OUTBOUND PORTS                                         |
+|  - WellKnownResolverPort (FetchWellKnown)                                                     |
+|  - CKANClientPort (SearchPackages, GetPackage, GetDataStoreSchema)                            |
+|  - AuthProviderPort (GetAuthHeaders, GetAuthType)                                             |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                     OUTBOUND ADAPTERS                                         |
+|  - WellKnownResolverAdapter (HTTP / JSON resolver con fallback heurístico)                    |
+|  - CKANClientAdapter (Action API v3 client)                                                   |
+|  - KeycloakAuthAdapter (OAuth2 Client Credentials con JWT in-memory cache)                    |
+|  - APIKeyAuthAdapter / BearerTokenAuthAdapter (Static token headers)                          |
++-----------------------------------------------------------------------------------------------+
+```
+
 
 
 

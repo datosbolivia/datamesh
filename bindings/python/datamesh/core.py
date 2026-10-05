@@ -34,6 +34,13 @@ from datamesh.adapters.publishers.kaggle_publisher import KagglePublisherAdapter
 from datamesh.adapters.publishers.portal_publisher import PortalPublisherAdapter
 from datamesh.usecases.publish_dataset import PublishDatasetUseCase
 from datamesh.usecases.semantic_alignment import SemanticAlignmentUseCase
+from datamesh.domain.models import WellKnownDiscovery, CKANHarvestResult
+from datamesh.ports.harvester import AuthProviderPort
+from datamesh.adapters.auth import NoAuthAdapter, APIKeyAuthAdapter, BearerTokenAuthAdapter, KeycloakAuthAdapter
+from datamesh.adapters.catalog.well_known import WellKnownResolverAdapter
+from datamesh.adapters.catalog.ckan_client import CKANClientAdapter
+from datamesh.usecases.discover_well_known import DiscoverWellKnownUseCase
+from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
 
 def _safe_urlopen(req: Any, timeout: int = 2) -> Any:
     try:
@@ -113,6 +120,11 @@ class DataMeshRuntime:
         ]
         self._publish_usecase = PublishDatasetUseCase(publishers=self._publishers)
         self._semantic_aligner = SemanticAlignmentUseCase()
+
+        self._well_known_resolver = WellKnownResolverAdapter()
+        self._discover_usecase = DiscoverWellKnownUseCase(self._well_known_resolver)
+        self._ckan_client = CKANClientAdapter()
+        self._harvest_ckan_usecase = HarvestCKANUseCase(self._ckan_client)
 
     @property
     def storage(self) -> StoragePort:
@@ -479,6 +491,47 @@ class DataMeshRuntime:
         """
         mappings = self._semantic_aligner.extract_mappings(datapackage_or_schema)
         return [m.to_dict() for m in mappings]
+
+    def discover_endpoint(self, target_url: str) -> Optional[WellKnownDiscovery]:
+        """
+        Discovers catalog metadata, capabilities, and auth specifications from /.well-known/datamesh.json or active probing.
+        """
+        return self._discover_usecase.execute(target_url)
+
+    def harvest_ckan(
+        self,
+        ckan_url: str,
+        query: str = "",
+        limit: int = 100,
+        offset: int = 0,
+        token: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        scope: Optional[str] = None,
+        output_dir: Optional[str | Path] = None,
+        probe_datastore_schema: bool = True,
+    ) -> CKANHarvestResult:
+        """
+        Harvests datasets from a CKAN catalog and reconstructs standardized OKF v0.2 knowledge packages.
+        """
+        discovery = self.discover_endpoint(ckan_url)
+        api_endpoint = discovery.catalog.api_endpoint if (discovery and discovery.catalog.api_endpoint) else ckan_url
+        auth_provider = self._discover_usecase.create_auth_provider(
+            discovery=discovery,
+            token=token,
+            client_id=client_id,
+            client_secret=client_secret,
+            scope=scope,
+        )
+        return self._harvest_ckan_usecase.execute(
+            base_url=api_endpoint,
+            query=query,
+            limit=limit,
+            offset=offset,
+            auth_provider=auth_provider,
+            output_dir=output_dir,
+            probe_datastore_schema=probe_datastore_schema,
+        )
 
     def _find_matching_local_file(self, dataset: str, filename: str) -> Optional[str]:
         """Finds existing local copy of a dataset file in cache or sibling projects."""

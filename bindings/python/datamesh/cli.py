@@ -48,6 +48,22 @@ def main():
     align_parser = subparsers.add_parser("align", help="Extract semantic field mappings from a DataPackage")
     align_parser.add_argument("path", help="Path to datapackage.yaml or JSON")
 
+    # discover
+    disc_parser = subparsers.add_parser("discover", help="Discover catalog metadata and auth specs via /.well-known/datamesh.json or active probing")
+    disc_parser.add_argument("url", help="Target catalog URL or domain (e.g. 'datos.gob.bo')")
+
+    # harvest-ckan
+    harvest_parser = subparsers.add_parser("harvest-ckan", help="Harvest datasets from a CKAN portal and reconstruct OKF v0.2 knowledge packages")
+    harvest_parser.add_argument("url", help="CKAN portal or API URL")
+    harvest_parser.add_argument("--query", "-q", default="", help="Search filter query")
+    harvest_parser.add_argument("--limit", "-l", type=int, default=100, help="Max packages to harvest")
+    harvest_parser.add_argument("--offset", type=int, default=0, help="Pagination offset")
+    harvest_parser.add_argument("--out-dir", "-o", default=None, help="Directory to output reconstructed OKF bundles")
+    harvest_parser.add_argument("--token", help="API token or Bearer key")
+    harvest_parser.add_argument("--client-id", help="OAuth2 / Keycloak Client ID")
+    harvest_parser.add_argument("--client-secret", help="OAuth2 / Keycloak Client Secret")
+    harvest_parser.add_argument("--scope", help="OAuth2 scope")
+
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
 
@@ -99,6 +115,63 @@ def main():
         parsed = yaml.safe_load(content) if p.suffix in (".yaml", ".yml") else json.loads(content)
         res = dm.align_semantics(parsed)
         print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+
+    elif args.command == "discover":
+        disc = dm.discover_endpoint(args.url)
+        if disc:
+            out = {
+                "schema_version": disc.schema_version,
+                "catalog": {
+                    "name": disc.catalog.name,
+                    "title": disc.catalog.title,
+                    "catalog_url": disc.catalog.catalog_url,
+                    "type": disc.catalog.catalog_type,
+                    "api_endpoint": disc.catalog.api_endpoint,
+                    "description": disc.catalog.description,
+                    "version": disc.catalog.version,
+                },
+                "auth": {
+                    "type": disc.auth.auth_type,
+                    "required": disc.auth.required,
+                    "keycloak": {
+                        "realm_url": disc.auth.keycloak.realm_url,
+                        "token_endpoint": disc.auth.keycloak.token_endpoint,
+                        "client_id": disc.auth.keycloak.client_id,
+                        "scopes_supported": list(disc.auth.keycloak.scopes_supported),
+                    } if disc.auth.keycloak else None,
+                    "api_key": {
+                        "header_name": disc.auth.api_key.header_name,
+                        "prefix": disc.auth.api_key.prefix,
+                    } if disc.auth.api_key else None,
+                },
+                "capabilities": disc.capabilities,
+            }
+            print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+        else:
+            print(json.dumps({"error": f"No catalog or well-known endpoint discovered at {args.url}"}))
+            sys.exit(1)
+
+    elif args.command == "harvest-ckan":
+        res = dm.harvest_ckan(
+            ckan_url=args.url,
+            query=args.query,
+            limit=args.limit,
+            offset=args.offset,
+            token=args.token,
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            scope=args.scope,
+            output_dir=args.out_dir,
+        )
+        out = {
+            "catalog_url": res.catalog_url,
+            "total_discovered": res.total_discovered,
+            "harvested_count": len(res.harvested_packages),
+            "output_directory": res.output_directory,
+            "execution_time_ms": res.execution_time_ms,
+            "packages": [p["name"] for p in res.harvested_packages],
+        }
+        print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
 
     elif args.command == "mcp-serve":
         from datamesh.mcp_server import run_mcp_server

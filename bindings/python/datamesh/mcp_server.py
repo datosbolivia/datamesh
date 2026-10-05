@@ -338,13 +338,32 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                 resource_uri = args.get("resource_uri") or args.get("uri") or ""
                 limit = args.get("limit")
                 
-                # 1. First attempt resolver_usecase to locate local or cached file (Parquet/CSV)
+                # 1. First attempt resolver_usecase to locate local or cached file (Parquet/CSV/Zip)
                 try:
                     resolved = dm._runtime.resolver_usecase.resolve(resource_uri)
                     if resolved and resolved.local_path and os.path.exists(resolved.local_path):
                         import duckdb
                         local_p = str(resolved.local_path)
-                        read_clause = f"read_parquet('{local_p}')" if local_p.endswith(".parquet") else f"read_csv_auto('{local_p}')"
+                        fmt = (resolved.format or "").lower()
+
+                        if local_p.lower().endswith(".zip") or fmt == "zip":
+                            from datamesh.adapters.storage.zip_extractor import extract_zip_tabular_resource
+                            target_hint = None
+                            if resolved.descriptor:
+                                target_hint = resolved.descriptor.resource or resolved.descriptor.raw_reference
+                            if not target_hint:
+                                target_hint = os.path.basename(resource_uri)
+                            extracted_p, z_fmt = extract_zip_tabular_resource(
+                                local_p,
+                                target_hint=target_hint,
+                                preview_limit=int(limit) if limit else 50,
+                            )
+                            if extracted_p:
+                                local_p = extracted_p
+                                if z_fmt:
+                                    fmt = z_fmt
+
+                        read_clause = f"read_parquet('{local_p}')" if local_p.endswith(".parquet") or fmt == "parquet" else f"read_csv_auto('{local_p}')"
                         limit_clause = f" LIMIT {int(limit)}" if limit else ""
                         df = duckdb.query(f"SELECT * FROM {read_clause}{limit_clause}").to_df()
                         cols = list(df.columns)
@@ -353,7 +372,7 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                             "columns": cols,
                             "rows": rows,
                             "row_count": len(rows),
-                            "format": resolved.format or "tabular",
+                            "format": fmt or "tabular",
                         })
                 except Exception as res_err:
                     sys.stderr.write(f"[mcp read_resource] Resolver conversion failed: {res_err}\n")

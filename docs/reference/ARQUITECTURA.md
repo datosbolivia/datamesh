@@ -92,7 +92,8 @@ datamesh/
 │   └── engine.py            # QueryEnginePort (abstracción agnóstica de motor de consultas)
 ├── adapters/                # Implementaciones tecnológicas
 │   ├── storage/
-│   │   └── local_storage.py # LocalStorageManager (~/datamesh/cache/, escrituras atómicas, metadata.json)
+│   │   ├── local_storage.py # LocalStorageManager (~/datamesh/cache/, escrituras atómicas, metadata.json)
+│   │   └── zip_extractor.py # extract_zip_tabular_resource (desempaquetado selectivo de microdatos tabulares en ZIP)
 │   ├── config/
 │   │   └── file_config.py   # FileConfigAdapter (~/datamesh/config.yaml)
 │   ├── resolvers/           # Adaptadores multiproveedor
@@ -101,13 +102,14 @@ datamesh/
 │   │   ├── kaggle.py        # KaggleAdapter (API oficial Kaggle ~/.kaggle/kaggle.json)
 │   │   └── http.py          # HttpAdapter (endpoints web y Google Sheets)
 │   └── engine/
-│       ├── duckdb_engine.py # DuckDBQueryEngine (motor OLAP columnar sobre caché local)
+│       ├── duckdb_engine.py # DuckDBQueryEngine (motor OLAP columnar sobre caché local y zips extraídos)
 │       ├── inmem_engine.py  # InMemTabularQueryEngine (motor en memoria puro sin binarios nativos)
 │       └── go_engine.py     # GoCoreQueryEngine (delegación C-ABI hacia libdatamesh.so)
 ├── usecases/                # Orquestación de aplicación
-│   └── resolve_resource.py  # ResolveAndCacheResourceUseCase
+│   └── resolve_resource.py  # ResolveAndCacheResourceUseCase (soporte jerárquico de recursos en zip)
 ├── core.py                  # Composition Root (instancia adaptadores y cablea dependencias)
 ├── cli.py                   # Inbound Adapter: CLI
+├── server.py                # Inbound Adapter: Sovereign HTTP Server (REST + Proxy + MCP)
 └── mcp_server.py            # Inbound Adapter: Protocolo MCP JSON-RPC
 ```
 

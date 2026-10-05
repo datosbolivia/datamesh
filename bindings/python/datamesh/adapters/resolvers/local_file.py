@@ -23,6 +23,8 @@ class LocalFileAdapter(ResourceAdapterPort):
         return "local"
 
     def can_handle(self, uri_or_path: str, context: Optional[Dict[str, Any]] = None) -> bool:
+        if uri_or_path.startswith(("http://", "https://", "kaggle://")):
+            return False
         clean = uri_or_path.replace("file://", "")
         if os.path.exists(clean):
             return True
@@ -134,9 +136,8 @@ class LocalFileAdapter(ResourceAdapterPort):
 
                     # If project name matches dataset, prioritize searching all subfolders
                     if (ds_clean and ds_clean in proj_low) or (ds_clean_under and ds_clean_under in proj_low):
-                        for root_dir, _, files in os.walk(proj_dir):
-                            if "/.git" in root_dir or "/node_modules" in root_dir or "/.cache" in root_dir:
-                                continue
+                        for root_dir, dirs, files in os.walk(proj_dir):
+                            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "__pycache__", "build", ".cache", ".git")]
                             sorted_files = sorted(files, key=lambda f: (0 if f.endswith(".parquet") else 1))
                             for f in sorted_files:
                                 if f.endswith((".parquet", ".csv", ".json", ".tsv")):
@@ -147,13 +148,14 @@ class LocalFileAdapter(ResourceAdapterPort):
                     # Standard data & test directories
                     for sub in ["data/consolidated", "data", "dist/data", "knowledge/nodes", "test", "tests"]:
                         target_dir = os.path.join(proj_dir, sub)
-                    if os.path.exists(target_dir):
-                        for root_dir, _, files in os.walk(target_dir):
-                            sorted_files = sorted(files, key=lambda f: (0 if f.endswith(".parquet") else 1))
-                            for f in sorted_files:
-                                if f.endswith((".parquet", ".csv", ".json", ".tsv")):
-                                    f_low = f.lower()
-                                    if any(kw in f_low for kw in keywords if len(kw) > 4):
-                                        return os.path.join(root_dir, f)
+                        if os.path.exists(target_dir):
+                            for root_dir, dirs, files in os.walk(target_dir):
+                                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "__pycache__", "build", ".cache", ".git")]
+                                sorted_files = sorted(files, key=lambda f: (0 if f.endswith(".parquet") else 1))
+                                for f in sorted_files:
+                                    if f.endswith((".parquet", ".csv", ".json", ".tsv")):
+                                        f_low = f.lower()
+                                        if any(kw in f_low for kw in keywords if len(kw) > 4):
+                                            return os.path.join(root_dir, f)
 
         return None

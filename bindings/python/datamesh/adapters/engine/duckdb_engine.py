@@ -266,6 +266,13 @@ class DuckDBQueryEngine(QueryEnginePort):
             clean_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/blob/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', clean_path)
 
         lower = clean_path.lower()
+        if lower.endswith(".zip"):
+            from datamesh.adapters.storage.zip_extractor import extract_zip_tabular_resource
+            extracted_path, _ = extract_zip_tabular_resource(clean_path)
+            if extracted_path:
+                clean_path = extracted_path
+                lower = clean_path.lower()
+
         if lower.endswith(".parquet") or lower.endswith(".pq"):
             return f"read_parquet('{clean_path}')"
         elif lower.endswith(".json") or lower.endswith(".jsonl"):
@@ -339,7 +346,8 @@ class DuckDBQueryEngine(QueryEnginePort):
 
         for root in search_roots:
             if os.path.exists(root):
-                for dirpath, _, filenames in os.walk(root):
+                for dirpath, dirnames, filenames in os.walk(root):
+                    dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "dist", "__pycache__", "build", ".cache", ".git")]
                     for f in filenames:
                         full_p = os.path.join(dirpath, f)
                         if os.path.isfile(full_p) and full_p.endswith((".parquet", ".csv", ".json", ".tsv")):

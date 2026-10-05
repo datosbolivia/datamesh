@@ -236,3 +236,4 @@ docs/_site/
 .quarto/
 
 .env
+graphify-out/

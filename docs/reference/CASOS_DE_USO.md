@@ -157,5 +157,17 @@
   3. Si no existe well-known publicado, ejecuta un sondeo heurístico activo contra el endpoint de estado de CKAN (`/api/3/action/status_show`), deduciendo automáticamente las capacidades del portal.
   4. Inicializa transparentemente el proveedor de autenticación adecuado (`KeycloakAuthAdapter` para client credentials con token cache, `APIKeyAuthAdapter` para tokens de encabezado, o `NoAuthAdapter` para acceso público).
 
+## CU-15: Extracción y Consulta de Recursos Tabulares en Contenedores ZIP (`ExtractAndQueryZipResourceUseCase`)
+- **Actor:** Servidor Sovereign (`datamesh serve`), Agente MCP (herramientas `read_resource`, `datamesh_sql_query`), o motor DuckDB (`dm.sql`).
+- **Entrada:** `zip_path` o URI canónica apuntando a un archivo `.zip` o a un recurso anidado dentro de un contenedor zip declarado en `datapackage.yaml` (`mediatype: zip`).
+- **Comportamiento:**
+  1. Detecta archivos `.zip` locales o en caché y abre el archivo con `zipfile.ZipFile`.
+  2. Si existe un manifiesto interno `datapackage.json` o `datapackage.yaml` dentro del zip, identifica los recursos tabulares declarados (ej. `path: "municipio/persona-municipio-*.csv"` o `preresultados.csv`).
+  3. Si no existe manifiesto interno, inspecciona los miembros con extensiones tabulares (`.parquet`, `.csv`, `.tsv`) o patrones compartidos.
+  4. Extrae selectivamente los archivos a la caché temporal (`~/.datamesh/cache/unpacked/<hash>/`). Para previsualizaciones con límite (`read_resource`), extrae un lote de muestra en milisegundos sin descomprimir el archivo completo innecesariamente; para consultas SQL analíticas completas, extrae y almacena en caché.
+  5. Proporciona la ruta o patrón glob extraído a DuckDB (`read_csv_auto` o `read_parquet`), permitiendo consultas analíticas de alto rendimiento sin errores de detección de dialecto de CSV sobre bytes binarios de compresión.
+  6. En el SDK de TypeScript (`@datosbolivia/datamesh-client`) y el portal web (`catalogo-datamesh`), la función unificada `normalizeManifestResources` desempaqueta automáticamente los recursos anidados bajo objetos contenedor (`mediatype: zip`, `resources: [...]`), asignando nombres canónicos, esquemas de campos detallados, formatos y metadatos de contenedor (`container_path`, `container_mediatype`). Esto expone tablas internas de primer nivel en el explorador interactivo y breadcrumbs del catálogo sin valores `undefined`.
+
+
 
 

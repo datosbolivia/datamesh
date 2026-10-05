@@ -187,17 +187,16 @@ class KaggleAdapter(ResourceAdapterPort):
                 continue
             for proj in os.listdir(workspace_dir):
                 proj_low = proj.lower()
-                if ds_clean and (ds_clean in proj_low or "air" in proj_low):
+                if ds_clean and (ds_clean in proj_low or ds_clean.replace("-", "_") in proj_low):
                     p_path = os.path.join(workspace_dir, proj)
                     if os.path.isdir(p_path):
-                        for root_dir, _, files in os.walk(p_path):
-                            if "/.git" in root_dir or "/node_modules" in root_dir:
-                                continue
+                        for root_dir, dirs, files in os.walk(p_path):
+                            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "__pycache__", "build", ".cache", ".git")]
                             for n in names_to_try:
                                 if n in files:
                                     return os.path.join(root_dir, n)
                             for f in sorted(files, key=lambda x: (0 if x.endswith(".parquet") else 1)):
                                 if f.endswith((".parquet", ".csv")):
-                                    if "consolidated" in f or (ds_clean and ds_clean in f.lower()):
+                                    if (ds_clean and ds_clean in f.lower()) or (filename and Path(f).stem.lower() == Path(filename).stem.lower()):
                                         return os.path.join(root_dir, f)
         return None

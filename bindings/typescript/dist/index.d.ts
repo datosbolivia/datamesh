@@ -66,6 +66,9 @@ export interface DataResource {
     };
     policy?: string;
     description?: string;
+    container_path?: string;
+    container_mediatype?: string;
+    resources?: DataResource[];
 }
 export interface DataPackage {
     name?: string;
@@ -198,6 +201,10 @@ export declare function pingProxy(urlOrTemplate: string, timeoutMs?: number): Pr
  * Normalizes remote URLs (e.g. GitHub blob/raw links to raw.githubusercontent.com for CORS compatibility).
  */
 export declare function normalizeResourceUrl(url: string): string;
+/**
+ * Normalizes manifest resources by unpacking nested resources from container archives (e.g. ZIP files).
+ */
+export declare function normalizeManifestResources(rawResources: any[]): DataResource[];
 /**
  * Parses a DataPackage manifest from raw JSON or YAML content.
  * Accepts an optional custom YAML parser callback (e.g. js-yaml) or falls back to

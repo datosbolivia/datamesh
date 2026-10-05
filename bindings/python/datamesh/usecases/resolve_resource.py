@@ -182,25 +182,41 @@ class ResolveAndCacheResourceUseCase:
         manifest, base_loc = pkg_data
         res_slug = slugify(resource)
 
-        for r in manifest.get("resources", []):
-            r_name = str(r.get("name", ""))
-            if (
-                r_name == resource
-                or r_name.lower() == resource.lower()
-                or slugify(r_name) == res_slug
-                or (res_slug and res_slug in slugify(r_name))
-            ):
-                target_path = r.get("path")
-                if not target_path:
-                    continue
-                if target_path.startswith(("http://", "https://", "ftp://")):
-                    return target_path
-                else:
-                    if base_loc and not base_loc.startswith(("http://", "https://")):
-                        candidate = os.path.normpath(os.path.join(base_loc, target_path))
-                        if os.path.exists(candidate):
-                            return os.path.abspath(candidate)
-                    if os.path.exists(target_path):
-                        return os.path.abspath(target_path)
+        def _search_res(r_list: List[Dict[str, Any]], parent_zip: Optional[str] = None) -> Optional[str]:
+            for r in r_list:
+                is_zip = r.get("mediatype") == "zip" or r.get("format") == "zip" or str(r.get("path", "")).endswith(".zip")
+                curr_zip = r.get("path") if is_zip else parent_zip
 
-        return None
+                r_name = str(r.get("name", ""))
+                r_title = str(r.get("title", ""))
+                r_path = str(r.get("path", ""))
+                if (
+                    r_name == resource
+                    or r_name.lower() == resource.lower()
+                    or slugify(r_name) == res_slug
+                    or (res_slug and res_slug in slugify(r_name))
+                    or (r_title and (r_title == resource or slugify(r_title) == res_slug or (res_slug and res_slug in slugify(r_title))))
+                ):
+                    target_path = r_path or curr_zip
+                    if not target_path:
+                        continue
+                    if target_path.startswith(("http://", "https://", "ftp://")):
+                        return target_path
+                    else:
+                        if base_loc and not base_loc.startswith(("http://", "https://")):
+                            candidate = os.path.normpath(os.path.join(base_loc, target_path))
+                            if os.path.exists(candidate):
+                                return os.path.abspath(candidate)
+                        if os.path.exists(target_path):
+                            return os.path.abspath(target_path)
+                        if curr_zip:
+                            return curr_zip
+
+                nested = r.get("resources", [])
+                if isinstance(nested, list) and nested:
+                    found = _search_res(nested, parent_zip=curr_zip)
+                    if found:
+                        return found
+            return None
+
+        return _search_res(manifest.get("resources", []))

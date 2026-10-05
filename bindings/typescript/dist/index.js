@@ -109,6 +109,79 @@ export function normalizeResourceUrl(url) {
     return trimmed;
 }
 /**
+ * Normalizes manifest resources by unpacking nested resources from container archives (e.g. ZIP files).
+ */
+export function normalizeManifestResources(rawResources) {
+    if (!Array.isArray(rawResources))
+        return [];
+    const normalized = [];
+    for (const r of rawResources) {
+        if (!r || typeof r !== 'object')
+            continue;
+        const hasNested = Array.isArray(r.resources) && r.resources.length > 0;
+        if (hasNested) {
+            for (const inner of r.resources) {
+                if (!inner || typeof inner !== 'object')
+                    continue;
+                const innerPath = inner.path || '';
+                const innerFormat = (inner.format ||
+                    (innerPath.endsWith('.csv') ? 'csv' :
+                        innerPath.endsWith('.parquet') ? 'parquet' :
+                            innerPath.endsWith('.json') ? 'json' :
+                                (r.format && r.format !== 'zip' ? r.format : 'csv'))).toLowerCase();
+                const innerName = inner.name ||
+                    (innerPath ? innerPath.split('/').pop()?.split('\\').pop() : '') ||
+                    r.name ||
+                    'recurso';
+                normalized.push({
+                    name: innerName,
+                    path: inner.path || r.path || '',
+                    container_path: r.path || undefined,
+                    container_mediatype: r.mediatype || 'zip',
+                    format: innerFormat,
+                    mediatype: inner.mediatype || (innerFormat === 'csv' ? 'text/csv' : undefined),
+                    schema: inner.schema || undefined,
+                    policy: inner.policy || r.policy || 'allow_all',
+                    description: inner.description || r.description || undefined,
+                });
+            }
+            // If the container itself has a name and explicit schema with fields, keep it too
+            if (r.name && r.schema?.fields?.length && !normalized.some(nr => nr.name === r.name)) {
+                normalized.unshift({
+                    name: r.name,
+                    path: r.path || '',
+                    format: r.format || 'zip',
+                    mediatype: r.mediatype || 'application/zip',
+                    schema: r.schema,
+                    policy: r.policy || 'allow_all',
+                    description: r.description,
+                });
+            }
+        }
+        else {
+            const rPath = r.path || '';
+            const rFormat = (r.format ||
+                (rPath.endsWith('.csv') ? 'csv' :
+                    rPath.endsWith('.parquet') ? 'parquet' :
+                        rPath.endsWith('.json') ? 'json' :
+                            rPath.endsWith('.zip') ? 'zip' : 'csv')).toLowerCase();
+            const rName = r.name ||
+                (rPath ? rPath.split('/').pop()?.split('\\').pop() : '') ||
+                'recurso';
+            normalized.push({
+                name: rName,
+                path: rPath,
+                format: rFormat,
+                mediatype: r.mediatype,
+                schema: r.schema,
+                policy: r.policy || 'allow_all',
+                description: r.description,
+            });
+        }
+    }
+    return normalized;
+}
+/**
  * Parses a DataPackage manifest from raw JSON or YAML content.
  * Accepts an optional custom YAML parser callback (e.g. js-yaml) or falls back to
  * JSON parsing and simple structural scanner.
@@ -131,7 +204,7 @@ export function parseDataPackageManifest(rawContent, options) {
                     spatial: parsed.spatial,
                     temporal: parsed.temporal,
                     quality: parsed.quality,
-                    resources: Array.isArray(parsed.resources) ? parsed.resources : [],
+                    resources: normalizeManifestResources(parsed.resources),
                 };
             }
         }
@@ -151,7 +224,7 @@ export function parseDataPackageManifest(rawContent, options) {
                     spatial: parsed.spatial,
                     temporal: parsed.temporal,
                     quality: parsed.quality,
-                    resources: Array.isArray(parsed.resources) ? parsed.resources : [],
+                    resources: normalizeManifestResources(parsed.resources),
                 };
             }
         }

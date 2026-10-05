@@ -455,15 +455,56 @@ class DataMeshRuntime:
             except Exception:
                 pass
 
-        if resource_uri.startswith("file://"):
-            with open(resource_uri[7:], "r", encoding="utf-8") as f:
+        target_path = resource_uri
+        if not os.path.exists(target_path) and not target_path.startswith(("http://", "https://", "file://")):
+            try:
+                resolved = self.resolver_usecase.resolve(resource_uri)
+                if resolved and resolved.local_path and os.path.exists(resolved.local_path):
+                    target_path = str(resolved.local_path)
+                    fmt = (resolved.format or "").lower()
+                    if target_path.lower().endswith(".zip") or fmt == "zip":
+                        from datamesh.adapters.storage.zip_extractor import extract_zip_tabular_resource
+                        target_hint = None
+                        if resolved.descriptor:
+                            target_hint = resolved.descriptor.resource or resolved.descriptor.raw_reference
+                        if not target_hint:
+                            target_hint = os.path.basename(resource_uri)
+                        extracted_p, _ = extract_zip_tabular_resource(target_path, target_hint=target_hint, preview_limit=limit)
+                        if extracted_p:
+                            target_path = extracted_p
+            except Exception:
+                pass
+
+        # Prefer DuckDB if available for fast execution, wildcard/glob, and parquet support
+        if not target_path.startswith(("http://", "https://")):
+            try:
+                import duckdb
+                local_clean = target_path[7:] if target_path.startswith("file://") else target_path
+                read_clause = f"read_parquet('{local_clean}')" if local_clean.endswith(".parquet") else f"read_csv_auto('{local_clean}')"
+                where_clauses = []
+                if filters:
+                    for k, v in filters.items():
+                        safe_k = k.replace("'", "''")
+                        safe_v = str(v).replace("'", "''")
+                        where_clauses.append(f"\"{safe_k}\" = '{safe_v}'")
+                where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                limit_sql = f" LIMIT {int(limit)}" if limit else ""
+                df = duckdb.query(f"SELECT * FROM {read_clause}{where_sql}{limit_sql}").to_df()
+                cols = list(df.columns)
+                rows = df.astype(str).values.tolist()
+                return {"columns": cols, "rows": rows, "row_count": len(rows)}
+            except Exception:
+                pass
+
+        if target_path.startswith("file://"):
+            with open(target_path[7:], "r", encoding="utf-8") as f:
                 raw_text = f.read()
-        elif resource_uri.startswith("http://") or resource_uri.startswith("https://"):
-            req = urllib.request.Request(resource_uri, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
+        elif target_path.startswith("http://") or target_path.startswith("https://"):
+            req = urllib.request.Request(target_path, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
             with _safe_urlopen(req, timeout=2) as resp:
                 raw_text = resp.read().decode("utf-8")
         else:
-            with open(resource_uri, "r", encoding="utf-8") as f:
+            with open(target_path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
 
         reader = csv.reader(io.StringIO(raw_text))
@@ -729,45 +770,64 @@ class DataMeshRuntime:
         if pkg_data:
             manifest, base_loc = pkg_data
             res_slug = slugify(resource)
-            for r in manifest.get("resources", []):
-                r_name = str(r.get("name", ""))
-                if (
-                    r_name == resource
-                    or r_name.lower() == resource.lower()
-                    or slugify(r_name) == res_slug
-                    or (res_slug and res_slug in slugify(r_name))
-                ):
-                    target_path = r.get("path")
-                    if not target_path:
-                        continue
-                    if target_path.startswith(("http://", "https://", "ftp://")):
-                        # Check local copy first for performance & offline resilience
-                        base_fname = os.path.basename(urllib.parse.urlparse(target_path).path)
-                        local_match = self._find_matching_local_file(dataset, base_fname)
-                        if local_match:
-                            return local_match
+            def _search_res(r_list: List[Dict[str, Any]], parent_zip: Optional[str] = None) -> Optional[str]:
+                for r in r_list:
+                    is_zip = r.get("mediatype") == "zip" or r.get("format") == "zip" or str(r.get("path", "")).endswith(".zip")
+                    curr_zip = r.get("path") if is_zip else parent_zip
 
-                        # Normalize GitHub URLs to avoid redirects
-                        if "github.com/" in target_path and "/raw/" in target_path:
-                            target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/raw/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
-                        elif "github.com/" in target_path and "/blob/" in target_path:
-                            target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/blob/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
-                        return target_path
-                    else:
-                        if base_loc and base_loc.startswith(("http://", "https://")):
-                            # Remote node with relative path (e.g. ../data_abastecimiento/*.csv)
-                            base_url_dir = base_loc if base_loc.endswith("/") else f"{base_loc}/"
-                            return urllib.parse.urljoin(base_url_dir, target_path)
-                        elif base_loc and not base_loc.startswith(("http://", "https://")):
-                            candidate = os.path.normpath(os.path.join(base_loc, target_path))
-                            if os.path.exists(candidate):
-                                return os.path.abspath(candidate)
-                            if "*" in candidate and glob.glob(candidate):
-                                return os.path.abspath(candidate)
-                        if os.path.exists(target_path):
-                            return os.path.abspath(target_path)
-                        if "*" in target_path and glob.glob(target_path):
-                            return os.path.abspath(target_path)
+                    r_name = str(r.get("name", ""))
+                    r_title = str(r.get("title", ""))
+                    r_path = str(r.get("path", ""))
+                    if (
+                        r_name == resource
+                        or r_name.lower() == resource.lower()
+                        or slugify(r_name) == res_slug
+                        or (res_slug and res_slug in slugify(r_name))
+                        or (r_title and (r_title == resource or slugify(r_title) == res_slug or (res_slug and res_slug in slugify(r_title))))
+                    ):
+                        target_path = r_path or curr_zip
+                        if not target_path:
+                            continue
+                        if target_path.startswith(("http://", "https://", "ftp://")):
+                            # Check local copy first for performance & offline resilience
+                            base_fname = os.path.basename(urllib.parse.urlparse(target_path).path)
+                            local_match = self._find_matching_local_file(dataset, base_fname)
+                            if local_match:
+                                return local_match
+
+                            # Normalize GitHub URLs to avoid redirects
+                            if "github.com/" in target_path and "/raw/" in target_path:
+                                target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/raw/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
+                            elif "github.com/" in target_path and "/blob/" in target_path:
+                                target_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/blob/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', target_path)
+                            return target_path
+                        else:
+                            if base_loc and base_loc.startswith(("http://", "https://")):
+                                base_url_dir = base_loc if base_loc.endswith("/") else f"{base_loc}/"
+                                return urllib.parse.urljoin(base_url_dir, target_path)
+                            elif base_loc and not base_loc.startswith(("http://", "https://")):
+                                candidate = os.path.normpath(os.path.join(base_loc, target_path))
+                                if os.path.exists(candidate):
+                                    return os.path.abspath(candidate)
+                                if "*" in candidate and glob.glob(candidate):
+                                    return os.path.abspath(candidate)
+                            if os.path.exists(target_path):
+                                return os.path.abspath(target_path)
+                            if "*" in target_path and glob.glob(target_path):
+                                return os.path.abspath(target_path)
+                            if curr_zip:
+                                return curr_zip
+
+                    nested = r.get("resources", [])
+                    if isinstance(nested, list) and nested:
+                        found = _search_res(nested, parent_zip=curr_zip)
+                        if found:
+                            return found
+                return None
+
+            res_path = _search_res(manifest.get("resources", []))
+            if res_path:
+                return res_path
 
         # 3. Testdata and mock fallback
         possible_paths = [

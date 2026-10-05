@@ -64,9 +64,10 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 resolved = dm._runtime.resolver_usecase.resolve(target_url)
                 if resolved and resolved.local_path and os.path.exists(resolved.local_path):
                     local_p = str(resolved.local_path)
-                    # If target requested .csv but resolved is .parquet, convert on the fly if needed or stream
+                    # If target requested .csv but resolved is .parquet or .zip, convert on the fly if needed or stream
                     wants_csv = target_url.lower().endswith(".csv")
                     is_parquet = local_p.lower().endswith(".parquet")
+                    is_zip = local_p.lower().endswith(".zip")
                     
                     if wants_csv and is_parquet:
                         import duckdb
@@ -77,6 +78,18 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                         self.end_headers()
                         self.wfile.write(csv_data)
                         return
+                    elif wants_csv and is_zip:
+                        from datamesh.adapters.storage.zip_extractor import extract_zip_tabular_resource
+                        extracted_p, _ = extract_zip_tabular_resource(local_p)
+                        if extracted_p:
+                            import duckdb
+                            csv_data = duckdb.query(f"SELECT * FROM read_csv_auto('{extracted_p}')").to_df().to_csv(index=False).encode("utf-8")
+                            self.send_response(200)
+                            self.send_header("Content-Type", "text/csv; charset=utf-8")
+                            self._send_cors_headers()
+                            self.end_headers()
+                            self.wfile.write(csv_data)
+                            return
                     else:
                         content_type = "application/octet-stream"
                         if local_p.endswith(".parquet"):
@@ -85,6 +98,8 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                             content_type = "text/csv; charset=utf-8"
                         elif local_p.endswith(".json"):
                             content_type = "application/json"
+                        elif local_p.endswith(".zip"):
+                            content_type = "application/zip"
                         
                         with open(local_p, "rb") as f:
                             file_bytes = f.read()

@@ -90,6 +90,54 @@ def harvest_ckan(
         probe_datastore_schema=probe_datastore_schema,
     )
 
+def create_datapackage(
+    name: str,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    resources: Optional[List[Dict[str, Any]]] = None,
+    files: Optional[List[str | Path]] = None,
+    output_file: Optional[str | Path] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> DataPackageBuildResult:
+    """Create an OKF v0.2 datapackage.yaml manifest from described files or schemas."""
+    return _runtime.create_datapackage(
+        name=name,
+        title=title,
+        description=description,
+        resources=resources,
+        files=files,
+        output_file=output_file,
+        metadata=metadata,
+    )
+
+def link_concept(
+    datapackage_path_or_dict: Union[str, Path, Dict[str, Any]],
+    resource_name: Union[str, int],
+    column_name: str,
+    concept_ref: Optional[str] = None,
+    value_mappings: Optional[Dict[str, Union[str, Dict[str, str]]]] = None,
+    save_to_path: Optional[Union[str, Path]] = None,
+) -> Dict[str, Any]:
+    """Link a column and/or its categorical values in a DataPackage to knowledge concepts."""
+    return _runtime.link_concept(
+        datapackage_path_or_dict=datapackage_path_or_dict,
+        resource_name=resource_name,
+        column_name=column_name,
+        concept_ref=concept_ref,
+        value_mappings=value_mappings,
+        save_to_path=save_to_path,
+    )
+
+def explain_categories(
+    datapackage_path_or_dict: Union[str, Path, Dict[str, Any]],
+    output_concepts_dir: Union[str, Path],
+) -> List[KnowledgeConceptDoc]:
+    """Generate OKF v0.2 SKOS concept markdown files (concepts/*.md) for categorical fields."""
+    return _runtime.explain_categories(
+        datapackage_path_or_dict=datapackage_path_or_dict,
+        output_concepts_dir=output_concepts_dir,
+    )
+
 storage = _runtime.storage
 config = _runtime.config_adapter
 

@@ -450,3 +450,80 @@ class CKANHarvestResult:
     execution_time_ms: int = 0
 
 
+@dataclass(frozen=True)
+class CategoryConceptMapping:
+    """Mapping of a specific categorical column value to an OKF / SKOS concept."""
+    value: str
+    label: str
+    concept: Optional[str] = None
+    description: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class KnowledgeConceptDoc:
+    """OKF / ODKF v0.2 Knowledge concept document with SKOS metadata."""
+    id: str
+    title: str
+    pref_label: str
+    description: Optional[str] = None
+    alt_labels: tuple[str, ...] = ()
+    exact_match: Optional[str] = None  # Wikidata URI or ontology URI
+    broader: Optional[str] = None
+    related: tuple[str, ...] = ()
+    body_markdown: str = ""
+    categories: tuple[CategoryConceptMapping, ...] = ()
+
+    def to_markdown(self) -> str:
+        """Render OKF v0.2 SKOS markdown file with YAML frontmatter."""
+        lines = [
+            "---",
+            "type: concept",
+            f"title: \"{self.title}\"",
+            "skos:",
+            f"  prefLabel: \"{self.pref_label}\"",
+        ]
+        if self.alt_labels:
+            alt_list = ", ".join(f'"{al}"' for al in self.alt_labels)
+            lines.append(f"  altLabel: [{alt_list}]")
+        if self.exact_match:
+            lines.append(f"  exactMatch: \"{self.exact_match}\"")
+        if self.broader:
+            lines.append(f"  broader: \"{self.broader}\"")
+        if self.related:
+            rel_list = ", ".join(f'"{r}"' for r in self.related)
+            lines.append(f"  related: [{rel_list}]")
+        lines.append("---")
+        lines.append("")
+        lines.append(f"# {self.title}")
+        lines.append("")
+        if self.description:
+            lines.append(f"{self.description}")
+            lines.append("")
+        if self.body_markdown:
+            lines.append(self.body_markdown)
+            lines.append("")
+        if self.categories:
+            lines.append("## Categorías y Valores")
+            lines.append("")
+            lines.append("| Código / Valor | Etiqueta / Significado | Concepto Vinculado | Descripción |")
+            lines.append("| :--- | :--- | :--- | :--- |")
+            for c in self.categories:
+                c_link = f"[{c.concept}]({c.concept})" if c.concept else "—"
+                desc = c.description or "—"
+                lines.append(f"| `{c.value}` | **{c.label}** | {c_link} | {desc} |")
+            lines.append("")
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class DataPackageBuildResult:
+    """Result of creating or updating a DataPackage manifest and associated concepts."""
+    name: str
+    title: str
+    datapackage: Dict[str, Any]
+    yaml_content: str
+    output_path: Optional[str] = None
+    generated_concepts: tuple[KnowledgeConceptDoc, ...] = ()
+
+
+

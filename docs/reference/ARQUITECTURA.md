@@ -163,8 +163,11 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
    - `query(resource_uri, filters?, limit?)`
    - `sql(sql_query, options?)`
    - `publish(dataset_path, targets?, options?)`
-   - `align_semantics(datapackage_or_schema)`
-   - `harvest_ckan(ckan_url, ...)`
+    - `align_semantics(datapackage_or_schema)`
+    - `harvest_ckan(ckan_url, ...)`
+    - `create_datapackage(name, title?, files?, resources?, output_file?)`
+    - `link_concept(datapackage, resource, column, concept_ref?, value_mappings?)`
+    - `explain_categories(datapackage, output_concepts_dir)`
 3. **Paridad de Herramientas MCP**: Servidores MCP exponen herramientas canónicas (`datamesh_discover_catalogs`, `datamesh_search_catalog`, `datamesh_get_dataproduct`, `datamesh_query_resource`, `datamesh_sql_query`, `datamesh_discover_endpoint`, `datamesh_harvest_ckan`) con idénticos contratos JSON-RPC 2.0.
 4. **Resiliencia de Infraestructura en Adaptadores de Borde**:
    - Fallos de certificados SSL de portales de gobierno son absorbidos a nivel de adaptador (`DuckDBQueryEngine` -> `HttpAdapter` con `ssl.CERT_NONE` hacia temporal cache) sin contaminar los casos de uso ni la capa de dominio.
@@ -214,6 +217,29 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 |  - APIKeyAuthAdapter / BearerTokenAuthAdapter (Static token headers)                          |
 +-----------------------------------------------------------------------------------------------+
 ```
+
+## 8. Construcción de Manifiestos e Interoperabilidad Semántica (`CreateDataPackage` & `LinkKnowledgeConcepts`)
+
+```text
++-----------------------------------------------------------------------------------------------+
+|                                   MANIFIESTOS Y SEMÁNTICA                                     |
+|  [CLI: package-create, link, explain]    [dm.create_datapackage()]   [dm.explain_categories()] |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                          USE CASES                                            |
+|  - CreateDataPackageUseCase: Inferencia DuckDB/CSV/Parquet de esquemas e inspección de ZIPs. |
+|  - LinkKnowledgeConceptsUseCase: Enlace de columnas y categorías a conceptos SKOS / OKF v0.2. |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                     DOMAIN VALUE OBJECTS                                      |
+|  - KnowledgeConceptDoc, CategoryConceptMapping, DataPackageBuildResult                        |
++-----------------------------------------------------------------------------------------------+
+```
+
 
 
 

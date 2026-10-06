@@ -64,6 +64,27 @@ def main():
     harvest_parser.add_argument("--client-secret", help="OAuth2 / Keycloak Client Secret")
     harvest_parser.add_argument("--scope", help="OAuth2 scope")
 
+    # package-create
+    pkg_create_parser = subparsers.add_parser("package-create", help="Create datapackage.yaml manifest from files or schemas")
+    pkg_create_parser.add_argument("name", help="Package slug/name")
+    pkg_create_parser.add_argument("--file", "-f", action="append", dest="files", help="File or archive to include (CSV, Parquet, ZIP)")
+    pkg_create_parser.add_argument("--title", help="Package title")
+    pkg_create_parser.add_argument("--desc", help="Package description")
+    pkg_create_parser.add_argument("--out", "-o", help="Output file path (default: datapackage.yaml)")
+
+    # package-link
+    pkg_link_parser = subparsers.add_parser("package-link", help="Link column or categories to knowledge concepts in datapackage.yaml")
+    pkg_link_parser.add_argument("path", help="Path to datapackage.yaml")
+    pkg_link_parser.add_argument("--resource", "-r", required=True, help="Resource name or index")
+    pkg_link_parser.add_argument("--column", "-c", required=True, help="Column name to link")
+    pkg_link_parser.add_argument("--concept", help="Target concept path or URI (e.g. 'concepts/genero.md')")
+    pkg_link_parser.add_argument("--map", "-m", action="append", dest="mappings", help="Category mapping formatted as 'VAL=Label' or 'VAL=Label:concept_path'")
+
+    # package-explain
+    pkg_exp_parser = subparsers.add_parser("package-explain", help="Generate OKF SKOS concept docs for categorical variables")
+    pkg_exp_parser.add_argument("path", help="Path to datapackage.yaml")
+    pkg_exp_parser.add_argument("--out-dir", "-o", default="concepts", help="Directory to output concept files (default: concepts)")
+
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
 
@@ -172,6 +193,61 @@ def main():
             "packages": [p["name"] for p in res.harvested_packages],
         }
         print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+
+    elif args.command == "package-create":
+        res = dm.create_datapackage(
+            name=args.name,
+            title=args.title,
+            description=args.desc,
+            files=args.files,
+            output_file=args.out or "datapackage.yaml",
+        )
+        out = {
+            "name": res.name,
+            "title": res.title,
+            "output_path": res.output_path,
+            "resource_count": len(res.datapackage.get("resources", [])),
+        }
+        print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+
+    elif args.command == "package-link":
+        mapping_dict = {}
+        if args.mappings:
+            for m in args.mappings:
+                if "=" in m:
+                    k, rest = m.split("=", 1)
+                    if ":" in rest:
+                        lbl, c_ref = rest.split(":", 1)
+                        mapping_dict[k.strip()] = {"label": lbl.strip(), "concept": c_ref.strip()}
+                    else:
+                        mapping_dict[k.strip()] = rest.strip()
+        res_pkg = dm.link_concept(
+            datapackage_path_or_dict=args.path,
+            resource_name=args.resource,
+            column_name=args.column,
+            concept_ref=args.concept,
+            value_mappings=mapping_dict if mapping_dict else None,
+            save_to_path=args.path,
+        )
+        print(json.dumps({
+            "status": "updated",
+            "path": args.path,
+            "resource": args.resource,
+            "column": args.column,
+            "concept": args.concept,
+        }, indent=2, ensure_ascii=False))
+
+    elif args.command == "package-explain":
+        docs = dm.explain_categories(
+            datapackage_path_or_dict=args.path,
+            output_concepts_dir=args.out_dir,
+        )
+        print(json.dumps({
+            "status": "success",
+            "output_directory": args.out_dir,
+            "generated_concepts": [d.id for d in docs],
+            "total": len(docs),
+        }, indent=2, ensure_ascii=False))
 
     elif args.command == "mcp-serve":
         from datamesh.mcp_server import run_mcp_server

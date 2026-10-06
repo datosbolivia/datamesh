@@ -168,6 +168,23 @@
   5. Proporciona la ruta o patrón glob extraído a DuckDB (`read_csv_auto` o `read_parquet`), permitiendo consultas analíticas de alto rendimiento sin errores de detección de dialecto de CSV sobre bytes binarios de compresión.
   6. En el SDK de TypeScript (`@datosbolivia/datamesh-client`) y el portal web (`catalogo-datamesh`), la función unificada `normalizeManifestResources` desempaqueta automáticamente los recursos anidados bajo objetos contenedor (`mediatype: zip`, `resources: [...]`), asignando nombres canónicos, esquemas de campos detallados, formatos y metadatos de contenedor (`container_path`, `container_mediatype`). Esto expone tablas internas de primer nivel en el explorador interactivo y breadcrumbs del catálogo sin valores `undefined`.
 
+## CU-16: Creación e Inferencia de Manifiestos DataPackage (`CreateDataPackageUseCase`)
+- **Actor:** Desarrollador, creador de catálogos soberanos, Agente IA o CLI (`datamesh package-create`, `dm.create_datapackage()`).
+- **Entrada:** `name`, `title`, `description`, lista de archivos `files` (CSV, TSV, Parquet, ZIP) o recursos explícitos `resources`, y ruta de destino opcional `output_file`.
+- **Comportamiento:**
+  1. Para archivos CSV/TSV y Parquet, infiere automáticamente el esquema de columnas y tipos de datos Frictionless (`string`, `integer`, `number`, `boolean`, `datetime`) utilizando DuckDB o sniffer CSV estándar.
+  2. Para archivos `.zip`, examina la estructura interna de archivos y miembros tabulares, construyendo la descripción del contenedor (`mediatype: zip`, `resources: [...]`).
+  3. Estructura el manifiesto conforme a OKF / ODKF v0.2 y lo serializa como YAML legible (`datapackage.yaml`).
+
+## CU-17: Vinculación Ontológica de Columnas y Explicación de Categorías (`LinkKnowledgeConceptsUseCase`)
+- **Actor:** Curador de datos, Agente IA o CLI (`datamesh package-link`, `datamesh package-explain`, `dm.link_concept()`, `dm.explain_categories()`).
+- **Entrada:** `datapackage_path_or_dict`, nombre del recurso, nombre de la columna, referencia de concepto (`concept_ref`), mapeo de categorías (`value_mappings`), o directorio de conceptos de salida.
+- **Comportamiento:**
+  1. Vincula columnas a documentos de conocimiento SKOS (`field.concept: "concepts/sexo.md"` o URIs externas como Wikidata).
+  2. Registra etiquetas descriptivas y conceptos asociados por cada valor categórico (`field.valueLabels`, `field.value_mapping`).
+  3. Genera automáticamente artefactos de conocimiento OKF v0.2 (`concepts/<variable>.md`) con frontmatter SKOS (`prefLabel`, `altLabel`, `exactMatch`, `broader`) y tabla de explicaciones de categorías para enriquecer el catálogo y la comprensión de LLMs y agentes.
+
+
 
 
 

@@ -8,7 +8,8 @@ import os
 import re
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 try:
     import yaml
 except ImportError:
@@ -34,13 +35,15 @@ from datamesh.adapters.publishers.kaggle_publisher import KagglePublisherAdapter
 from datamesh.adapters.publishers.portal_publisher import PortalPublisherAdapter
 from datamesh.usecases.publish_dataset import PublishDatasetUseCase
 from datamesh.usecases.semantic_alignment import SemanticAlignmentUseCase
-from datamesh.domain.models import WellKnownDiscovery, CKANHarvestResult
+from datamesh.domain.models import WellKnownDiscovery, CKANHarvestResult, KnowledgeConceptDoc, CategoryConceptMapping, DataPackageBuildResult
 from datamesh.ports.harvester import AuthProviderPort
 from datamesh.adapters.auth import NoAuthAdapter, APIKeyAuthAdapter, BearerTokenAuthAdapter, KeycloakAuthAdapter
 from datamesh.adapters.catalog.well_known import WellKnownResolverAdapter
 from datamesh.adapters.catalog.ckan_client import CKANClientAdapter
 from datamesh.usecases.discover_well_known import DiscoverWellKnownUseCase
 from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
+from datamesh.usecases.create_datapackage import CreateDataPackageUseCase
+from datamesh.usecases.link_knowledge_concepts import LinkKnowledgeConceptsUseCase
 
 def _safe_urlopen(req: Any, timeout: int = 2) -> Any:
     try:
@@ -660,6 +663,107 @@ class DataMeshRuntime:
             auth_provider=auth_provider,
             output_dir=output_dir,
             probe_datastore_schema=probe_datastore_schema,
+        )
+
+    def create_datapackage(
+        self,
+        name: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        resources: Optional[List[Dict[str, Any]]] = None,
+        files: Optional[List[str | Path]] = None,
+        output_file: Optional[str | Path] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> DataPackageBuildResult:
+        """
+        Creates an OKF / ODKF v0.2 datapackage.yaml manifest from described files,
+        ZIP archives, or explicit schemas, inferring types via DuckDB or CSV sniffers.
+        """
+        return CreateDataPackageUseCase.build_datapackage(
+            name=name,
+            title=title,
+            description=description,
+            resources=resources,
+            files=files,
+            output_file=output_file,
+            metadata=metadata,
+        )
+
+    def link_concept(
+        self,
+        datapackage_path_or_dict: Union[str, Path, Dict[str, Any]],
+        resource_name: Union[str, int],
+        column_name: str,
+        concept_ref: Optional[str] = None,
+        value_mappings: Optional[Dict[str, Union[str, Dict[str, str]]]] = None,
+        save_to_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Links a column and/or its categorical values in a DataPackage to knowledge concepts.
+        """
+        pkg_data: Dict[str, Any]
+        source_path = None
+        if isinstance(datapackage_path_or_dict, (str, Path)):
+            source_path = Path(datapackage_path_or_dict)
+            with open(source_path, "r", encoding="utf-8") as f:
+                if yaml is not None and (source_path.suffix in (".yaml", ".yml")):
+                    pkg_data = yaml.safe_load(f) or {}
+                else:
+                    pkg_data = json.load(f)
+        else:
+            pkg_data = dict(datapackage_path_or_dict)
+
+        if concept_ref:
+            pkg_data = LinkKnowledgeConceptsUseCase.link_column_concept(
+                datapackage_data=pkg_data,
+                resource_name_or_index=resource_name,
+                column_name=column_name,
+                concept_ref=concept_ref,
+            )
+
+        if value_mappings:
+            pkg_data = LinkKnowledgeConceptsUseCase.link_categories(
+                datapackage_data=pkg_data,
+                resource_name_or_index=resource_name,
+                column_name=column_name,
+                value_mappings=value_mappings,
+            )
+
+        target_save = save_to_path or source_path
+        if target_save:
+            t_path = Path(target_save)
+            t_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(t_path, "w", encoding="utf-8") as f:
+                if yaml is not None and t_path.suffix in (".yaml", ".yml"):
+                    yaml.dump(pkg_data, f, sort_keys=False, allow_unicode=True)
+                else:
+                    json.dump(pkg_data, f, indent=2, ensure_ascii=False)
+
+        return pkg_data
+
+    def explain_categories(
+        self,
+        datapackage_path_or_dict: Union[str, Path, Dict[str, Any]],
+        output_concepts_dir: Union[str, Path],
+    ) -> List[KnowledgeConceptDoc]:
+        """
+        Generates OKF v0.2 SKOS concept markdown files (concepts/*.md) for all categorical
+        variables and values described in the DataPackage manifest.
+        """
+        pkg_data: Dict[str, Any]
+        if isinstance(datapackage_path_or_dict, (str, Path)):
+            p = Path(datapackage_path_or_dict)
+            with open(p, "r", encoding="utf-8") as f:
+                if yaml is not None and (p.suffix in (".yaml", ".yml")):
+                    pkg_data = yaml.safe_load(f) or {}
+                else:
+                    pkg_data = json.load(f)
+        else:
+            pkg_data = dict(datapackage_path_or_dict)
+
+        return LinkKnowledgeConceptsUseCase.generate_concepts_from_field_categories(
+            datapackage_data=pkg_data,
+            output_concepts_dir=output_concepts_dir,
         )
 
     def _find_matching_local_file(self, dataset: str, filename: str) -> Optional[str]:

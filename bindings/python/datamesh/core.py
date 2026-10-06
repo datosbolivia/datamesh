@@ -510,6 +510,60 @@ class DataMeshRuntime:
             with open(target_path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
 
+        # Detect JSONL / JSON / CSV
+        target_lower = target_path.lower()
+        is_jsonl = target_lower.endswith(".jsonl") or (raw_text.lstrip().startswith("{") and "\n" in raw_text.strip())
+        is_json_arr = target_lower.endswith(".json") or (raw_text.lstrip().startswith("[") and raw_text.rstrip().endswith("]"))
+
+        if is_jsonl or is_json_arr:
+            objects = []
+            if is_json_arr:
+                try:
+                    loaded = json.loads(raw_text)
+                    if isinstance(loaded, list):
+                        objects = [item for item in loaded if isinstance(item, dict)]
+                except Exception:
+                    pass
+            if not objects:
+                for line in raw_text.splitlines():
+                    s_line = line.strip()
+                    if not s_line:
+                        continue
+                    try:
+                        obj = json.loads(s_line)
+                        if isinstance(obj, dict):
+                            objects.append(obj)
+                    except Exception:
+                        continue
+
+            if objects:
+                col_keys = []
+                for obj in objects:
+                    for k in obj.keys():
+                        if k not in col_keys:
+                            col_keys.append(k)
+
+                matched_rows = []
+                for obj in objects:
+                    matches = True
+                    if filters:
+                        for k, v in filters.items():
+                            val = obj.get(k)
+                            if val is None or str(val).strip().lower() != str(v).strip().lower():
+                                matches = False
+                                break
+                    if matches:
+                        row = [json.dumps(obj[c], ensure_ascii=False) if isinstance(obj.get(c), (dict, list)) else ("" if obj.get(c) is None else str(obj.get(c))) for c in col_keys]
+                        matched_rows.append(row)
+                        if limit and len(matched_rows) >= limit:
+                            break
+
+                return {
+                    "columns": col_keys,
+                    "rows": matched_rows,
+                    "row_count": len(matched_rows),
+                }
+
         reader = csv.reader(io.StringIO(raw_text))
         headers = next(reader, None)
         if not headers:

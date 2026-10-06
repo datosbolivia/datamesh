@@ -363,7 +363,14 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                                 if z_fmt:
                                     fmt = z_fmt
 
-                        read_clause = f"read_parquet('{local_p}')" if local_p.endswith(".parquet") or fmt == "parquet" else f"read_csv_auto('{local_p}')"
+                        lower_p = local_p.lower()
+                        if lower_p.endswith(".parquet") or fmt == "parquet":
+                            read_clause = f"read_parquet('{local_p}')"
+                        elif lower_p.endswith(".json") or lower_p.endswith(".jsonl") or fmt in ("json", "jsonl"):
+                            read_clause = f"read_json_auto('{local_p}')"
+                        else:
+                            read_clause = f"read_csv_auto('{local_p}')"
+
                         limit_clause = f" LIMIT {int(limit)}" if limit else ""
                         df = duckdb.query(f"SELECT * FROM {read_clause}{limit_clause}").to_df()
                         cols = list(df.columns)

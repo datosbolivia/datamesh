@@ -80,16 +80,17 @@
 
 ## CU-08: Descarga y Resolución Adaptativa Multiproveedor (`ResolveAndCacheResourceUseCase`)
 - **Actor:** Adaptador `DuckDBQueryEngine` o consumidor del SDK.
-- **Entrada:** URI del recurso, URL remota o referencia de tríada `dataset:resource`.
+- **Entrada:** URI del recurso, URL remota o referencia de tríada `[catalog:]dataset:resource`.
 - **Comportamiento:**
-  1. Verifica si el recurso ya reside en la caché temporal `~/datamesh/cache`. Si existe, lo retorna de inmediato sin consultar la red.
-  2. Si no está en caché, consulta los adaptadores de servicio en orden de precedencia:
+  1. Normaliza los segmentos de la tríada a minúsculas reemplazando espacios en blanco por guiones (`-`) para legibilidad web/URI uniforme (`cat:dataset-name:resource-name`).
+  2. Verifica si el recurso ya reside en la caché temporal `~/datamesh/cache`. Si existe, lo retorna de inmediato sin consultar la red.
+  3. Si no está en caché, consulta los adaptadores de servicio en orden de precedencia:
      - `LocalFileAdapter`: Archivos directos del filesystem o repositorios locales en el workspace del usuario.
      - `GitHubAdapter`: Descarga y normaliza URLs a `raw.githubusercontent.com`.
      - `KaggleAdapter`: Descarga mediante API oficial de Kaggle (`~/.kaggle/kaggle.json`) o recupera copias locales consolidadas.
      - `HttpAdapter`: Streaming directo de endpoints web y exportaciones tabulares (Google Sheets).
-  3. Almacena el recurso en `~/datamesh/cache/` con su formato inferido.
-  4. Retorna el objeto `ResolvedResource` con la ruta física local para su escaneo directo por DuckDB.
+  4. Almacena el recurso en `~/datamesh/cache/` con su formato inferido.
+  5. Retorna el objeto `ResolvedResource` con la ruta física local para su escaneo directo por DuckDB.
 
 ## CU-09: Selección y Ejecución Polimórfica de Motor de Consultas (`ExecuteQueryEngineUseCase`)
 - **Actor:** Usuario final vía SDK (`datamesh.sql(..., engine=...)`), CLI (`datamesh sql --engine ...`), o Agente IA.
@@ -183,6 +184,17 @@
   1. Vincula columnas a documentos de conocimiento SKOS (`field.concept: "concepts/sexo.md"` o URIs externas como Wikidata).
   2. Registra etiquetas descriptivas y conceptos asociados por cada valor categórico (`field.valueLabels`, `field.value_mapping`).
   3. Genera automáticamente artefactos de conocimiento OKF v0.2 (`concepts/<variable>.md`) con frontmatter SKOS (`prefLabel`, `altLabel`, `exactMatch`, `broader`) y tabla de explicaciones de categorías para enriquecer el catálogo y la comprensión de LLMs y agentes.
+
+## CU-18: Rastreo y Grafo de Proveniencia de Datos (`DatasetLineageUseCase`)
+- **Actor:** Analista de datos, auditor de calidad, Agente IA o CLI (`datamesh lineage`, `dm.lineage()`, `dm.get_lineage()`).
+- **Entrada:** `target` opcional (identificador de dataset, archivo de manifiesto o tríada canónica), directorio de búsqueda `search_dirs`, y URL de catálogo federado opcional.
+- **Comportamiento:**
+  1. Escanea los manifiestos locales (`datapackage.yaml`, `datapackage.json`) y nodos OKF (`index.md`) extrayendo metadatos de linaje (`lineage`, `sources`, `transformations`, `was_derived_from`).
+  2. Construye el grafo dirigido acíclico (`LineageGraph`) conectando las fuentes de datos aguas arriba (*upstream*) y los productos de datos derivados aguas abajo (*downstream*).
+  3. Para un dataset objetivo específico, calcula de manera transitiva todos sus ancestros generadores y todos los datasets que han sido producidos como resultado directo o indirecto de él.
+  4. Extrae las transformaciones intermedias (herramientas ETL, scripts, consultas SQL) con sus hashes criptográficos de integridad SHA-256 (conforme a OKF PE3 y PE5).
+  5. Renderiza la topología del grafo en diagramas de flujo Mermaid (`flowchart LR`), diagramas jerárquicos de terminal ASCII o diccionarios JSON estructurados.
+
 
 
 

@@ -221,21 +221,38 @@ class DuckDBQueryEngine(QueryEnginePort):
                 res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
                 aliases.extend([res, slugify(res)])
 
+        from datamesh.domain.models import normalize_triad_segment
+
         # 2. Colon-separated format ('cat:ds:res' or 'ds:res')
         if ":" in table_ref:
             parts = table_ref.split(":")
             if len(parts) == 3:
+                cat_n = normalize_triad_segment(parts[0])
+                ds_n = normalize_triad_segment(parts[1])
+                res_n = normalize_triad_segment(parts[2])
+                aliases.append(f"{cat_n}:{ds_n}:{res_n}")
                 aliases.append(f"{parts[1]}:{parts[2]}")
+                aliases.append(f"{ds_n}:{res_n}")
                 aliases.append(f"{parts[0]}/{parts[1]}/{parts[2]}")
+                aliases.append(f"{cat_n}/{ds_n}/{res_n}")
                 aliases.append(f"{parts[1]}/{parts[2]}")
+                aliases.append(f"{ds_n}/{res_n}")
                 aliases.append(parts[1])
                 aliases.append(parts[2])
+                aliases.append(ds_n)
+                aliases.append(res_n)
                 aliases.append(slugify(f"{parts[1]}_{parts[2]}"))
                 aliases.append(slugify(parts[2]))
             elif len(parts) == 2:
+                ds_n = normalize_triad_segment(parts[0])
+                res_n = normalize_triad_segment(parts[1])
+                aliases.append(f"{ds_n}:{res_n}")
                 aliases.append(f"{parts[0]}/{parts[1]}")
+                aliases.append(f"{ds_n}/{res_n}")
                 aliases.append(parts[0])
                 aliases.append(parts[1])
+                aliases.append(ds_n)
+                aliases.append(res_n)
                 aliases.append(slugify(f"{parts[0]}_{parts[1]}"))
                 aliases.append(slugify(parts[1]))
 
@@ -243,20 +260,32 @@ class DuckDBQueryEngine(QueryEnginePort):
         if "/" in table_ref and not table_ref.startswith(("http://", "https://", "file://")):
             parts = [p.strip() for p in table_ref.split("/") if p.strip()]
             if len(parts) == 3:
+                cat_n = normalize_triad_segment(parts[0])
+                ds_n = normalize_triad_segment(parts[1])
+                res_n = normalize_triad_segment(parts[2])
                 aliases.append(f"{parts[0]}:{parts[1]}:{parts[2]}")
+                aliases.append(f"{cat_n}:{ds_n}:{res_n}")
                 aliases.append(f"{parts[1]}:{parts[2]}")
+                aliases.append(f"{ds_n}:{res_n}")
                 aliases.append(parts[1])
                 aliases.append(parts[2])
+                aliases.append(ds_n)
+                aliases.append(res_n)
                 aliases.append(slugify(f"{parts[1]}_{parts[2]}"))
                 aliases.append(slugify(parts[2]))
             elif len(parts) == 2:
+                ds_n = normalize_triad_segment(parts[0])
+                res_n = normalize_triad_segment(parts[1])
                 aliases.append(f"{parts[0]}:{parts[1]}")
+                aliases.append(f"{ds_n}:{res_n}")
                 aliases.append(parts[0])
                 aliases.append(parts[1])
+                aliases.append(ds_n)
+                aliases.append(res_n)
                 aliases.append(slugify(f"{parts[0]}_{parts[1]}"))
                 aliases.append(slugify(parts[1]))
 
-        return list(dict.fromkeys(aliases))
+        return list(dict.fromkeys(filter(None, aliases)))
 
     def _get_read_expression(self, path: str) -> str:
         clean_path = path.replace("file://", "")

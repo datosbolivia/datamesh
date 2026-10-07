@@ -14,6 +14,20 @@ var (
 	quotedSlashRegex      = regexp.MustCompile(`["']([^"'\s]+/[^"'\s]+)["']`)
 )
 
+var (
+	whitespaceRegex = regexp.MustCompile(`\s+`)
+)
+
+// NormalizeTriadSegment cleans and standardizes a triad component to lowercase with hyphens replacing whitespace.
+func NormalizeTriadSegment(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
+	}
+	replaced := whitespaceRegex.ReplaceAllString(trimmed, "-")
+	return strings.ToLower(replaced)
+}
+
 // ResourceTriad represents the canonical address '[catalog:]dataset:resource' in the federated DataMesh.
 type ResourceTriad struct {
 	Catalog  string `json:"catalog,omitempty"`
@@ -21,24 +35,30 @@ type ResourceTriad struct {
 	Resource string `json:"resource"`
 }
 
-// String returns the canonical triad string representation.
+// String returns the canonical triad string representation in normalized format.
 func (t ResourceTriad) String() string {
-	if t.Catalog != "" {
-		return fmt.Sprintf("%s:%s:%s", t.Catalog, t.Dataset, t.Resource)
+	cat := NormalizeTriadSegment(t.Catalog)
+	ds := NormalizeTriadSegment(t.Dataset)
+	res := NormalizeTriadSegment(t.Resource)
+	if cat != "" {
+		return fmt.Sprintf("%s:%s:%s", cat, ds, res)
 	}
-	return fmt.Sprintf("%s:%s", t.Dataset, t.Resource)
+	return fmt.Sprintf("%s:%s", ds, res)
 }
 
-// FullURI returns the URI representation with datamesh:// scheme.
+// FullURI returns the URI representation with datamesh:// scheme in normalized format.
 func (t ResourceTriad) FullURI() string {
-	if t.Catalog != "" {
-		return fmt.Sprintf("datamesh://%s/%s/%s", t.Catalog, t.Dataset, t.Resource)
+	cat := NormalizeTriadSegment(t.Catalog)
+	ds := NormalizeTriadSegment(t.Dataset)
+	res := NormalizeTriadSegment(t.Resource)
+	if cat != "" {
+		return fmt.Sprintf("datamesh://%s/%s/%s", cat, ds, res)
 	}
-	return fmt.Sprintf("datamesh://%s/%s", t.Dataset, t.Resource)
+	return fmt.Sprintf("datamesh://%s/%s", ds, res)
 }
 
 // ParseTriad parses a string in 'catalogo:dataset:resource', 'dataset:resource',
-// or 'datamesh://[catalogo/]dataset/resource' format into a ResourceTriad.
+// or 'datamesh://[catalogo/]dataset/resource' format into a normalized ResourceTriad.
 func ParseTriad(raw string) (*ResourceTriad, error) {
 	trimmed := strings.Trim(strings.TrimSpace(raw), "\"'`")
 	if trimmed == "" {
@@ -50,15 +70,25 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 		clean := strings.TrimPrefix(trimmed, "datamesh://")
 		parts := strings.Split(clean, "/")
 		if len(parts) == 3 {
+			ds := NormalizeTriadSegment(parts[1])
+			res := NormalizeTriadSegment(parts[2])
+			if ds == "" || res == "" {
+				return nil, ErrInvalidTriadFormat
+			}
 			return &ResourceTriad{
-				Catalog:  strings.TrimSpace(parts[0]),
-				Dataset:  strings.TrimSpace(parts[1]),
-				Resource: strings.TrimSpace(parts[2]),
+				Catalog:  NormalizeTriadSegment(parts[0]),
+				Dataset:  ds,
+				Resource: res,
 			}, nil
 		} else if len(parts) == 2 {
+			ds := NormalizeTriadSegment(parts[0])
+			res := NormalizeTriadSegment(parts[1])
+			if ds == "" || res == "" {
+				return nil, ErrInvalidTriadFormat
+			}
 			return &ResourceTriad{
-				Dataset:  strings.TrimSpace(parts[0]),
-				Resource: strings.TrimSpace(parts[1]),
+				Dataset:  ds,
+				Resource: res,
 			}, nil
 		}
 		return nil, ErrInvalidTriadFormat
@@ -70,16 +100,17 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 		cleanURL = strings.TrimRight(cleanURL, "/")
 		parts := strings.Split(cleanURL, "/")
 		if len(parts) >= 2 {
-			ds := strings.TrimSpace(parts[len(parts)-2])
+			ds := NormalizeTriadSegment(parts[len(parts)-2])
 			resRaw := strings.TrimSpace(parts[len(parts)-1])
 			res := resRaw
 			if dotIdx := strings.LastIndex(resRaw, "."); dotIdx > 0 {
 				res = resRaw[:dotIdx]
 			}
-			if ds != "" && res != "" {
+			resNorm := NormalizeTriadSegment(res)
+			if ds != "" && resNorm != "" {
 				return &ResourceTriad{
 					Dataset:  ds,
-					Resource: res,
+					Resource: resNorm,
 				}, nil
 			}
 		}
@@ -89,9 +120,9 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 	if strings.Contains(trimmed, ":") {
 		parts := strings.Split(trimmed, ":")
 		if len(parts) == 3 {
-			cat := strings.TrimSpace(parts[0])
-			ds := strings.TrimSpace(parts[1])
-			res := strings.TrimSpace(parts[2])
+			cat := NormalizeTriadSegment(parts[0])
+			ds := NormalizeTriadSegment(parts[1])
+			res := NormalizeTriadSegment(parts[2])
 			if ds == "" || res == "" {
 				return nil, ErrInvalidTriadFormat
 			}
@@ -101,8 +132,8 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 				Resource: res,
 			}, nil
 		} else if len(parts) == 2 {
-			ds := strings.TrimSpace(parts[0])
-			res := strings.TrimSpace(parts[1])
+			ds := NormalizeTriadSegment(parts[0])
+			res := NormalizeTriadSegment(parts[1])
 			if ds == "" || res == "" {
 				return nil, ErrInvalidTriadFormat
 			}
@@ -122,15 +153,25 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 			}
 		}
 		if len(parts) == 3 {
+			ds := NormalizeTriadSegment(parts[1])
+			res := NormalizeTriadSegment(parts[2])
+			if ds == "" || res == "" {
+				return nil, ErrInvalidTriadFormat
+			}
 			return &ResourceTriad{
-				Catalog:  parts[0],
-				Dataset:  parts[1],
-				Resource: parts[2],
+				Catalog:  NormalizeTriadSegment(parts[0]),
+				Dataset:  ds,
+				Resource: res,
 			}, nil
 		} else if len(parts) == 2 {
+			ds := NormalizeTriadSegment(parts[0])
+			res := NormalizeTriadSegment(parts[1])
+			if ds == "" || res == "" {
+				return nil, ErrInvalidTriadFormat
+			}
 			return &ResourceTriad{
-				Dataset:  parts[0],
-				Resource: parts[1],
+				Dataset:  ds,
+				Resource: res,
 			}, nil
 		}
 	}

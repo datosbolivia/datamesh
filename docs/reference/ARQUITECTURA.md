@@ -165,10 +165,13 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
    - `publish(dataset_path, targets?, options?)`
     - `align_semantics(datapackage_or_schema)`
     - `harvest_ckan(ckan_url, ...)`
-    - `create_datapackage(name, title?, files?, resources?, output_file?)`
+    - `create_datapackage(name, title?, files?, resources?, output_file?, sources?, transformations?, lineage?)`
     - `link_concept(datapackage, resource, column, concept_ref?, value_mappings?)`
     - `explain_categories(datapackage, output_concepts_dir)`
-3. **Paridad de Herramientas MCP**: Servidores MCP exponen herramientas canónicas (`datamesh_discover_catalogs`, `datamesh_search_catalog`, `datamesh_get_dataproduct`, `datamesh_query_resource`, `datamesh_sql_query`, `datamesh_discover_endpoint`, `datamesh_harvest_ckan`) con idénticos contratos JSON-RPC 2.0.
+    - `lineage(target?, search_dirs?, catalog_url?)`
+    - `get_lineage(dataset_id_or_path, search_dirs?, catalog_url?)`
+3. **Paridad de Herramientas MCP**: Servidores MCP exponen herramientas canónicas (`datamesh_discover_catalogs`, `datamesh_search_catalog`, `datamesh_get_dataproduct`, `datamesh_query_resource`, `datamesh_sql_query`, `datamesh_discover_endpoint`, `datamesh_harvest_ckan`, `datamesh_get_lineage`) con idénticos contratos JSON-RPC 2.0.
+
 4. **Resiliencia de Infraestructura en Adaptadores de Borde**:
    - Fallos de certificados SSL de portales de gobierno son absorbidos a nivel de adaptador (`DuckDBQueryEngine` -> `HttpAdapter` con `ssl.CERT_NONE` hacia temporal cache) sin contaminar los casos de uso ni la capa de dominio.
 
@@ -239,6 +242,32 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 |  - KnowledgeConceptDoc, CategoryConceptMapping, DataPackageBuildResult                        |
 +-----------------------------------------------------------------------------------------------+
 ```
+
+## 9. Trazabilidad Criptográfica, Grafo de Proveniencia y Linaje (`DatasetLineageUseCase`)
+
+```text
++-----------------------------------------------------------------------------------------------+
+|                                    PROVENIENCIA Y LINAJE                                      |
+|  [CLI: datamesh lineage]       [dm.lineage()]       [dm.get_lineage()]       [MCP Tool]       |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                          USE CASES                                            |
+|  - DatasetLineageUseCase: Escaneo de manifiestos, construcción de grafo DAG,                |
+|    resolución recursiva upstream/downstream y generación Mermaid / ASCII / JSON.              |
++-----------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|                                     DOMAIN VALUE OBJECTS                                      |
+|  - LineageSource (Name, Dataset, Resource, URL, Hash)                                         |
+|  - LineageTransformation (Tool, Type, Hash, Description, Query)                               |
+|  - LineageInfo (DatasetID, Version, Sources, Transformations, WasDerivedFrom)                 |
+|  - LineageNode, LineageEdge, LineageGraph (Upstream, Downstream, to_mermaid, to_ascii)         |
++-----------------------------------------------------------------------------------------------+
+```
+
 
 
 

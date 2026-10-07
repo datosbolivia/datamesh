@@ -98,6 +98,9 @@ def create_datapackage(
     files: Optional[List[str | Path]] = None,
     output_file: Optional[str | Path] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    sources: Optional[List[Union[str, Dict[str, Any]]]] = None,
+    transformations: Optional[List[Dict[str, Any]]] = None,
+    lineage: Optional[Dict[str, Any]] = None,
 ) -> DataPackageBuildResult:
     """Create an OKF v0.2 datapackage.yaml manifest from described files or schemas."""
     return _runtime.create_datapackage(
@@ -108,7 +111,39 @@ def create_datapackage(
         files=files,
         output_file=output_file,
         metadata=metadata,
+        sources=sources,
+        transformations=transformations,
+        lineage=lineage,
     )
+
+def lineage(
+    target: Optional[str] = None,
+    search_dirs: Optional[List[Union[str, Path]]] = None,
+    catalog_url: Optional[str] = None,
+) -> LineageGraph:
+    """Build or query the DAG lineage graph of sovereign datasets and their derivations."""
+    return _runtime.lineage(target=target, search_dirs=search_dirs, catalog_url=catalog_url)
+
+def get_lineage(
+    dataset_id_or_path: str,
+    search_dirs: Optional[List[Union[str, Path]]] = None,
+    catalog_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get detailed upstream and downstream provenance for a specific dataset."""
+    return _runtime.get_lineage(dataset_id_or_path=dataset_id_or_path, search_dirs=search_dirs, catalog_url=catalog_url)
+
+# Aliases with _ prefix directly exposing core functionality
+_discover = discover
+_search = search
+_get = get
+_query = query
+_sql = sql
+_validate = validate
+_publish = publish
+_lineage = lineage
+_get_lineage = get_lineage
+
+
 
 def link_concept(
     datapackage_path_or_dict: Union[str, Path, Dict[str, Any]],
@@ -159,6 +194,12 @@ from datamesh.domain.models import (
     CKANPackage,
     CKANResource,
     CKANHarvestResult,
+    LineageSource,
+    LineageTransformation,
+    LineageInfo,
+    LineageNode,
+    LineageEdge,
+    LineageGraph,
 )
 from datamesh.ports.storage import StoragePort
 from datamesh.ports.resolver import ResourceAdapterPort, ConfigPort
@@ -180,6 +221,7 @@ from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
 from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
 from datamesh.usecases.discover_well_known import DiscoverWellKnownUseCase
 from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
+from datamesh.usecases.dataset_lineage import DatasetLineageUseCase
 from datamesh.server import run_server
 
 __all__ = [
@@ -193,6 +235,8 @@ __all__ = [
     "publish",
     "align_semantics",
     "harvest_ckan",
+    "lineage",
+    "get_lineage",
     "storage",
     "config",
     "run_server",
@@ -214,6 +258,12 @@ __all__ = [
     "CKANPackage",
     "CKANResource",
     "CKANHarvestResult",
+    "LineageSource",
+    "LineageTransformation",
+    "LineageInfo",
+    "LineageNode",
+    "LineageEdge",
+    "LineageGraph",
     "StoragePort",
     "ResourceAdapterPort",
     "ConfigPort",
@@ -240,4 +290,6 @@ __all__ = [
     "ResolveAndCacheResourceUseCase",
     "DiscoverWellKnownUseCase",
     "HarvestCKANUseCase",
+    "DatasetLineageUseCase",
 ]
+

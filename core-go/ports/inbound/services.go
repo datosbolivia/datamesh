@@ -48,3 +48,10 @@ type HarvesterServicePort interface {
 	ReconstructOKF(ctx context.Context, pkg *domain.CKANPackage) (*domain.PackageManifest, error)
 }
 
+// LineageServicePort defines inbound operations for dataset provenance and derivation DAG analysis.
+type LineageServicePort interface {
+	BuildGraph(ctx context.Context, searchDirs []string, catalogURL string) (*domain.LineageGraph, error)
+	GetLineage(ctx context.Context, datasetIDOrPath string, searchDirs []string, catalogURL string) (map[string]interface{}, error)
+}
+
+

@@ -28,6 +28,7 @@ var (
 	dataProductUC *usecases.ResolveDataProductUseCase
 	queryUC       *usecases.QueryDataProductUseCase
 	validateUC    *usecases.ValidateUseCase
+	lineageUC     *usecases.LineageUseCase
 	inmemEngine   *engine.InMemTabularQueryEngine
 )
 
@@ -79,6 +80,7 @@ func initRuntime(configJSON string) error {
 	inmemEngine = engine.NewInMemTabularQueryEngine()
 	queryUC = usecases.NewQueryDataProductUseCase(inmemEngine, fileStorage, unifiedReader)
 	validateUC = usecases.NewValidateUseCase(cfg.Base.Timeout)
+	lineageUC = usecases.NewLineageUseCase(cfg.Base.StoragePath, ".")
 	return nil
 }
 
@@ -189,6 +191,46 @@ func DataMeshValidate(target *C.char) *C.char {
 	targetStr := C.GoString(target)
 	report, err := validateUC.Validate(context.Background(), targetStr)
 	return makeJSONResponse(report, err)
+}
+
+//export DataMeshGetLineage
+func DataMeshGetLineage(target *C.char, optionsJSON *C.char) *C.char {
+	ensureInit()
+	if target == nil {
+		return makeJSONResponse(nil, errors.New("empty target dataset"))
+	}
+	targetStr := C.GoString(target)
+	var opts struct {
+		SearchDirs []string `json:"search_dirs"`
+		CatalogURL string   `json:"catalog_url"`
+	}
+	if optionsJSON != nil {
+		optsStr := C.GoString(optionsJSON)
+		if strings.TrimSpace(optsStr) != "" {
+			_ = json.Unmarshal([]byte(optsStr), &opts)
+		}
+	}
+
+	res, err := lineageUC.GetLineage(context.Background(), targetStr, opts.SearchDirs, opts.CatalogURL)
+	return makeJSONResponse(res, err)
+}
+
+//export DataMeshLineageGraph
+func DataMeshLineageGraph(optionsJSON *C.char) *C.char {
+	ensureInit()
+	var opts struct {
+		SearchDirs []string `json:"search_dirs"`
+		CatalogURL string   `json:"catalog_url"`
+	}
+	if optionsJSON != nil {
+		optsStr := C.GoString(optionsJSON)
+		if strings.TrimSpace(optsStr) != "" {
+			_ = json.Unmarshal([]byte(optsStr), &opts)
+		}
+	}
+
+	graph, err := lineageUC.BuildGraph(context.Background(), opts.SearchDirs, opts.CatalogURL)
+	return makeJSONResponse(graph, err)
 }
 
 //export DataMeshFreeString

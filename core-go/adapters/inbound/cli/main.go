@@ -46,6 +46,7 @@ func main() {
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
 	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage, unifiedReader)
 	validateUC := usecases.NewValidateUseCase(cfg.Base.Timeout)
+	lineageUC := usecases.NewLineageUseCase(cfg.Base.StoragePath, ".")
 
 	ctx := context.Background()
 	command := os.Args[1]
@@ -167,6 +168,48 @@ func main() {
 			os.Exit(2)
 		}
 
+	case "lineage":
+		target := ""
+		format := "ascii"
+		for i := 2; i < len(os.Args); i++ {
+			if (os.Args[i] == "--format" || os.Args[i] == "-f") && i+1 < len(os.Args) {
+				format = os.Args[i+1]
+				i++
+			} else if !strings.HasPrefix(os.Args[i], "-") && target == "" {
+				target = os.Args[i]
+			}
+		}
+
+		if target != "" {
+			res, err := lineageUC.GetLineage(ctx, target, []string{cfg.Base.StoragePath, "."}, "")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Lineage error: %v\n", err)
+				os.Exit(1)
+			}
+			if format == "mermaid" {
+				fmt.Println(res["mermaid"])
+			} else if format == "json" {
+				out, _ := json.MarshalIndent(res, "", "  ")
+				fmt.Println(string(out))
+			} else {
+				fmt.Println(res["ascii"])
+			}
+		} else {
+			graph, err := lineageUC.BuildGraph(ctx, []string{cfg.Base.StoragePath, "."}, "")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Lineage graph error: %v\n", err)
+				os.Exit(1)
+			}
+			if format == "mermaid" {
+				fmt.Println(graph.ToMermaid(""))
+			} else if format == "json" {
+				out, _ := json.MarshalIndent(graph, "", "  ")
+				fmt.Println(string(out))
+			} else {
+				fmt.Println(graph.ToASCII(""))
+			}
+		}
+
 	case "config":
 		out, _ := json.MarshalIndent(cfg, "", "  ")
 		fmt.Println(string(out))
@@ -211,6 +254,8 @@ func printUsage() {
 	fmt.Println("  datamesh validate <url_or_path_or_triad>     Validate OKF/ODKF concept, bundle, or triad")
 	fmt.Println("  datamesh sql \"<SQL_QUERY>\"                   Execute full ANSI/DuckDB SQL with triad URIs")
 	fmt.Println("  datamesh query <uri> [--filter k=v] [--limit N] Query tabular resource")
+	fmt.Println("  datamesh lineage [target] [--format FORMAT]  Inspect dataset provenance and derivation DAG")
 	fmt.Println("  datamesh serve [--port 8000] [--host 0.0.0.0] Launch HTTP REST, CORS proxy, and MCP server")
 	fmt.Println("  datamesh config                              Print active merged configuration")
 }
+

@@ -35,7 +35,19 @@ from datamesh.adapters.publishers.kaggle_publisher import KagglePublisherAdapter
 from datamesh.adapters.publishers.portal_publisher import PortalPublisherAdapter
 from datamesh.usecases.publish_dataset import PublishDatasetUseCase
 from datamesh.usecases.semantic_alignment import SemanticAlignmentUseCase
-from datamesh.domain.models import WellKnownDiscovery, CKANHarvestResult, KnowledgeConceptDoc, CategoryConceptMapping, DataPackageBuildResult
+from datamesh.domain.models import (
+    WellKnownDiscovery,
+    CKANHarvestResult,
+    KnowledgeConceptDoc,
+    CategoryConceptMapping,
+    DataPackageBuildResult,
+    LineageSource,
+    LineageTransformation,
+    LineageInfo,
+    LineageNode,
+    LineageEdge,
+    LineageGraph,
+)
 from datamesh.ports.harvester import AuthProviderPort
 from datamesh.adapters.auth import NoAuthAdapter, APIKeyAuthAdapter, BearerTokenAuthAdapter, KeycloakAuthAdapter
 from datamesh.adapters.catalog.well_known import WellKnownResolverAdapter
@@ -44,6 +56,8 @@ from datamesh.usecases.discover_well_known import DiscoverWellKnownUseCase
 from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
 from datamesh.usecases.create_datapackage import CreateDataPackageUseCase
 from datamesh.usecases.link_knowledge_concepts import LinkKnowledgeConceptsUseCase
+from datamesh.usecases.dataset_lineage import DatasetLineageUseCase
+
 
 def _safe_urlopen(req: Any, timeout: int = 2) -> Any:
     try:
@@ -93,6 +107,12 @@ class DataMeshRuntime:
                 if hasattr(self._lib, "DataMeshValidate"):
                     self._lib.DataMeshValidate.argtypes = [ctypes.c_char_p]
                     self._lib.DataMeshValidate.restype = ctypes.c_char_p
+                if hasattr(self._lib, "DataMeshGetLineage"):
+                    self._lib.DataMeshGetLineage.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+                    self._lib.DataMeshGetLineage.restype = ctypes.c_char_p
+                if hasattr(self._lib, "DataMeshLineageGraph"):
+                    self._lib.DataMeshLineageGraph.argtypes = [ctypes.c_char_p]
+                    self._lib.DataMeshLineageGraph.restype = ctypes.c_char_p
                 self._lib.DataMeshFreeString.argtypes = [ctypes.c_char_p]
                 self._lib.DataMeshFreeString.restype = None
                 self._lib.DataMeshInit(None)
@@ -128,6 +148,12 @@ class DataMeshRuntime:
         self._discover_usecase = DiscoverWellKnownUseCase(self._well_known_resolver)
         self._ckan_client = CKANClientAdapter()
         self._harvest_ckan_usecase = HarvestCKANUseCase(self._ckan_client)
+        self._lineage_usecase = DatasetLineageUseCase(catalog_discovery_fn=self.discover)
+
+    @property
+    def lineage_usecase(self) -> DatasetLineageUseCase:
+        """Dataset provenance, dependency extraction, and lineage DAG graph orchestration."""
+        return self._lineage_usecase
 
     @property
     def storage(self) -> StoragePort:
@@ -728,6 +754,9 @@ class DataMeshRuntime:
         files: Optional[List[str | Path]] = None,
         output_file: Optional[str | Path] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        sources: Optional[List[Union[str, Dict[str, Any]]]] = None,
+        transformations: Optional[List[Dict[str, Any]]] = None,
+        lineage: Optional[Dict[str, Any]] = None,
     ) -> DataPackageBuildResult:
         """
         Creates an OKF / ODKF v0.2 datapackage.yaml manifest from described files,
@@ -741,7 +770,117 @@ class DataMeshRuntime:
             files=files,
             output_file=output_file,
             metadata=metadata,
+            sources=sources,
+            transformations=transformations,
+            lineage=lineage,
         )
+
+    def _go_get_lineage(
+        self,
+        target: str,
+        search_dirs: Optional[List[Union[str, Path]]] = None,
+        catalog_url: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Delegates dataset lineage query to Go core via C-ABI."""
+        if self._lib and hasattr(self._lib, "DataMeshGetLineage"):
+            try:
+                import ctypes
+                c_target = target.encode("utf-8")
+                opts: Dict[str, Any] = {}
+                if search_dirs:
+                    opts["search_dirs"] = [str(d) for d in search_dirs]
+                if catalog_url:
+                    opts["catalog_url"] = catalog_url
+                c_opts = json.dumps(opts).encode("utf-8")
+                raw = self._lib.DataMeshGetLineage(c_target, c_opts)
+                if raw:
+                    try:
+                        resp = json.loads(ctypes.string_at(raw).decode("utf-8"))
+                        if resp.get("success") and resp.get("data"):
+                            return resp["data"]
+                    finally:
+                        if hasattr(self._lib, "DataMeshFreeString"):
+                            self._lib.DataMeshFreeString(raw)
+            except Exception:
+                pass
+        return None
+
+    def _go_lineage_graph(
+        self,
+        search_dirs: Optional[List[Union[str, Path]]] = None,
+        catalog_url: Optional[str] = None,
+    ) -> Optional[LineageGraph]:
+        """Delegates lineage DAG graph building to Go core via C-ABI."""
+        if self._lib and hasattr(self._lib, "DataMeshLineageGraph"):
+            try:
+                import ctypes
+                opts: Dict[str, Any] = {}
+                if search_dirs:
+                    opts["search_dirs"] = [str(d) for d in search_dirs]
+                if catalog_url:
+                    opts["catalog_url"] = catalog_url
+                c_opts = json.dumps(opts).encode("utf-8")
+                raw = self._lib.DataMeshLineageGraph(c_opts)
+                if raw:
+                    try:
+                        resp = json.loads(ctypes.string_at(raw).decode("utf-8"))
+                        if resp.get("success") and resp.get("data"):
+                            d = resp["data"]
+                            nodes = {
+                                k: LineageNode(id=n["id"], title=n["title"], type=n.get("type", "dataset"))
+                                for k, n in (d.get("nodes") or {}).items()
+                            }
+                            edges = tuple(
+                                LineageEdge(source=e["source"], target=e["target"], label=e.get("label"))
+                                for e in (d.get("edges") or [])
+                            )
+                            return LineageGraph(nodes=nodes, edges=edges)
+                    finally:
+                        if hasattr(self._lib, "DataMeshFreeString"):
+                            self._lib.DataMeshFreeString(raw)
+            except Exception:
+                pass
+        return None
+
+    def lineage(
+        self,
+        target: Optional[str] = None,
+        search_dirs: Optional[List[Union[str, Path]]] = None,
+        catalog_url: Optional[str] = None,
+    ) -> LineageGraph:
+        """
+        Builds a DAG lineage graph of datasets and their derivations across catalogs and local workspace.
+        Prefers Go core C-ABI when available, with pure Python fallback.
+        """
+        go_graph = self._go_lineage_graph(search_dirs=search_dirs, catalog_url=catalog_url)
+        if go_graph is not None:
+            return go_graph
+        return self._lineage_usecase.build_graph(
+            search_dirs=search_dirs,
+            catalog_url=catalog_url,
+        )
+
+    def get_lineage(
+        self,
+        dataset_id_or_path: str,
+        search_dirs: Optional[List[Union[str, Path]]] = None,
+        catalog_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Inspects lineage and derivation dependencies for a specific dataset,
+        returning upstream sources/parents and downstream derived datasets/children.
+        Prefers Go core C-ABI when available, with pure Python fallback.
+        """
+        go_res = self._go_get_lineage(dataset_id_or_path, search_dirs=search_dirs, catalog_url=catalog_url)
+        if go_res is not None:
+            return go_res
+        return self._lineage_usecase.get_lineage(
+            dataset_id_or_path=dataset_id_or_path,
+            search_dirs=search_dirs,
+            catalog_url=catalog_url,
+        )
+
+
 
     def link_concept(
         self,

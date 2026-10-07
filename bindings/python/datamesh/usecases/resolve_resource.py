@@ -115,24 +115,32 @@ class ResolveAndCacheResourceUseCase:
 
     def _find_node_datapackage(self, dataset: str) -> Optional[Tuple[Dict[str, Any], Optional[str]]]:
         clean_ds = dataset.strip()
+        ds_variants = list(dict.fromkeys([
+            clean_ds,
+            clean_ds.replace(" ", "-").lower(),
+            clean_ds.replace("-", "_").lower(),
+            clean_ds.replace("_", "-").lower(),
+            slugify(clean_ds),
+        ]))
         candidates = []
-        for env_k in ["DATAMESH_KNOWLEDGE_DIR", "DATAMESH_NODES_DIR", "DATAMESH_CATALOG_DIR"]:
-            env_val = os.environ.get(env_k)
-            if env_val:
-                candidates.append(os.path.join(env_val, clean_ds))
-                candidates.append(os.path.join(env_val, "nodes", clean_ds))
+        for v in ds_variants:
+            for env_k in ["DATAMESH_KNOWLEDGE_DIR", "DATAMESH_NODES_DIR", "DATAMESH_CATALOG_DIR"]:
+                env_val = os.environ.get(env_k)
+                if env_val:
+                    candidates.append(os.path.join(env_val, v))
+                    candidates.append(os.path.join(env_val, "nodes", v))
 
-        from datamesh.constants import get_workspace_search_dirs
-        candidates.extend([
-            f"knowledge/nodes/{clean_ds}",
-            f"../catalogo-datamesh/knowledge/nodes/{clean_ds}",
-            f"../../catalogo-datamesh/knowledge/nodes/{clean_ds}",
-            str(self.storage.config.home_dir / "knowledge" / "nodes" / clean_ds),
-            str(self.storage.config.cache_dir / "nodes" / clean_ds),
-        ])
-        for ws in get_workspace_search_dirs():
-            candidates.append(str(ws / "catalogo-datamesh" / "knowledge" / "nodes" / clean_ds))
-            candidates.append(str(ws / "knowledge" / "nodes" / clean_ds))
+            from datamesh.constants import get_workspace_search_dirs
+            candidates.extend([
+                f"knowledge/nodes/{v}",
+                f"../catalogo-datamesh/knowledge/nodes/{v}",
+                f"../../catalogo-datamesh/knowledge/nodes/{v}",
+                str(self.storage.config.home_dir / "knowledge" / "nodes" / v),
+                str(self.storage.config.cache_dir / "nodes" / v),
+            ])
+            for ws in get_workspace_search_dirs():
+                candidates.append(str(ws / "catalogo-datamesh" / "knowledge" / "nodes" / v))
+                candidates.append(str(ws / "knowledge" / "nodes" / v))
 
         for c in candidates:
             if os.path.isdir(c):

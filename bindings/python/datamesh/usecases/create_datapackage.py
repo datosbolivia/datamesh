@@ -175,6 +175,9 @@ class CreateDataPackageUseCase:
         files: Optional[List[Union[str, Path]]] = None,
         output_file: Optional[Union[str, Path]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        sources: Optional[List[Union[str, Dict[str, Any]]]] = None,
+        transformations: Optional[List[Dict[str, Any]]] = None,
+        lineage: Optional[Dict[str, Any]] = None,
     ) -> DataPackageBuildResult:
         """
         Builds a full Frictionless / OKF v0.2 DataPackage dictionary and optionally writes it to YAML.
@@ -185,6 +188,16 @@ class CreateDataPackageUseCase:
             "title": pkg_title,
             "description": description or f"Data Product package for {pkg_title}",
         }
+
+        # Build lineage block if provided
+        final_lineage = dict(lineage) if lineage else {}
+        if sources:
+            final_lineage["sources"] = sources
+            datapackage["sources"] = sources
+        if transformations:
+            final_lineage["transformations"] = transformations
+        if final_lineage:
+            datapackage["lineage"] = final_lineage
 
         # Merge additional metadata (spatial, temporal, quality, etc.)
         if metadata:

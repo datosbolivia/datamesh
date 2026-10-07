@@ -72,6 +72,8 @@ def main():
     pkg_create_parser.add_argument("--desc", help="Package description")
     pkg_create_parser.add_argument("--out", "-o", help="Output file path (default: datapackage.yaml)")
 
+    pkg_create_parser.add_argument("--source", "-s", action="append", dest="sources", help="Upstream source or parent dataset ID")
+
     # package-link
     pkg_link_parser = subparsers.add_parser("package-link", help="Link column or categories to knowledge concepts in datapackage.yaml")
     pkg_link_parser.add_argument("path", help="Path to datapackage.yaml")
@@ -85,6 +87,13 @@ def main():
     pkg_exp_parser.add_argument("path", help="Path to datapackage.yaml")
     pkg_exp_parser.add_argument("--out-dir", "-o", default="concepts", help="Directory to output concept files (default: concepts)")
 
+    # lineage
+    lineage_parser = subparsers.add_parser("lineage", help="Inspect provenance and derivation DAG graph of datasets")
+    lineage_parser.add_argument("target", nargs="?", default=None, help="Dataset ID, triad, or file path (optional)")
+    lineage_parser.add_argument("--dir", "-d", dest="dir", default=None, help="Directory to scan for dataset manifests")
+    lineage_parser.add_argument("--format", "-f", choices=["ascii", "mermaid", "json"], default="ascii", help="Output format (default: ascii)")
+    lineage_parser.add_argument("--catalog", "-c", default=None, help="Catalog URL (optional)")
+
     # mcp-serve
     subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
 
@@ -92,6 +101,7 @@ def main():
     serve_parser = subparsers.add_parser("serve", help="Run full HTTP REST, CORS proxy, and MCP server")
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     serve_parser.add_argument("--port", "-p", type=int, default=8000, help="Bind port (default: 8000)")
+
 
     args = parser.parse_args()
 
@@ -201,6 +211,7 @@ def main():
             description=args.desc,
             files=args.files,
             output_file=args.out or "datapackage.yaml",
+            sources=args.sources,
         )
         out = {
             "name": res.name,
@@ -249,9 +260,29 @@ def main():
             "total": len(docs),
         }, indent=2, ensure_ascii=False))
 
+    elif args.command == "lineage":
+        search_dirs = [args.dir] if args.dir else None
+        if args.target:
+            res = dm.get_lineage(args.target, search_dirs=search_dirs, catalog_url=args.catalog)
+            if args.format == "mermaid":
+                print(res["mermaid"])
+            elif args.format == "ascii":
+                print(res["ascii"])
+            else:
+                print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+        else:
+            g = dm.lineage(catalog_url=args.catalog, search_dirs=search_dirs)
+            if args.format == "mermaid":
+                print(g.to_mermaid())
+            elif args.format == "ascii":
+                print(g.to_ascii())
+            else:
+                print(json.dumps(g.to_dict(), indent=2, ensure_ascii=False, default=str))
+
     elif args.command == "mcp-serve":
         from datamesh.mcp_server import run_mcp_server
         run_mcp_server()
+
 
     elif args.command == "serve":
         from datamesh.server import run_server

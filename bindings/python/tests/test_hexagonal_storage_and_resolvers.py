@@ -168,3 +168,32 @@ def test_global_storage_instance():
     assert dm.storage is not None
     assert isinstance(dm.storage, StoragePort)
     assert dm.storage.get_cache_dir().exists()
+
+def test_canonical_uri_normalization():
+    # Triad normalization: lowercase and spaces replaced with '-'
+    from datamesh.domain.models import CanonicalURI, normalize_triad_segment
+
+    assert normalize_triad_segment("Air Quality") == "air-quality"
+    assert normalize_triad_segment("  Compilación de datos  ") == "compilación-de-datos"
+
+    uri1 = CanonicalURI.parse("Air Quality:Bolivia Sensor Data:Daily Measurements")
+    assert uri1 is not None
+    assert uri1.catalog == "air-quality"
+    assert uri1.dataset == "bolivia-sensor-data"
+    assert uri1.resource == "daily-measurements"
+    assert uri1.triad == "air-quality:bolivia-sensor-data:daily-measurements"
+    assert uri1.full_uri == "datamesh://air-quality/bolivia-sensor-data/daily-measurements"
+
+    uri2 = CanonicalURI.parse("dataset name:resource name")
+    assert uri2 is not None
+    assert uri2.catalog is None
+    assert uri2.dataset == "dataset-name"
+    assert uri2.resource == "resource-name"
+    assert uri2.triad == "dataset-name:resource-name"
+
+    uri3 = CanonicalURI.parse("datamesh://My Catalog/My Dataset/My Resource")
+    assert uri3 is not None
+    assert uri3.catalog == "my-catalog"
+    assert uri3.dataset == "my-dataset"
+    assert uri3.resource == "my-resource"
+    assert uri3.triad == "my-catalog:my-dataset:my-resource"

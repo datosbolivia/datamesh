@@ -164,6 +164,23 @@ TOOLS = [
             },
             "required": ["url"]
         }
+    },
+    {
+        "name": "datamesh_get_lineage",
+        "description": "Inspects dataset provenance, upstream dependencies, and downstream derived datasets in the lineage DAG graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dataset_id": {
+                    "type": "string",
+                    "description": "Dataset identifier, triad, or file path to inspect (optional; if omitted, returns the whole catalog DAG)."
+                },
+                "catalog_url": {
+                    "type": "string",
+                    "description": "Optional catalog URL to scope lineage discovery."
+                }
+            }
+        }
     }
 ]
 
@@ -420,6 +437,16 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                     "harvested_count": len(harvest_res.harvested_packages),
                     "packages": [p["name"] for p in harvest_res.harvested_packages],
                 })
+
+            elif tool_name == "datamesh_get_lineage":
+                dataset_id = args.get("dataset_id")
+                catalog_url = args.get("catalog_url")
+                if dataset_id:
+                    res = dm.get_lineage(dataset_id, catalog_url=catalog_url)
+                    return make_tool_result(msg_id, res)
+                else:
+                    g = dm.lineage(catalog_url=catalog_url)
+                    return make_tool_result(msg_id, g.to_dict())
 
             else:
                 return {

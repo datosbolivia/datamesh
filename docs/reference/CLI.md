@@ -192,10 +192,31 @@ datamesh align ./nodes/air_quality/datapackage.yml
 
 ---
 
-### 1.9 `mcp-serve` (Python CLI)
-Inicia el servidor Model Context Protocol (MCP) estándar sobre entrada/salida estándar (`stdio`). Permite a agentes de IA (Claude Desktop, Cursor, Antigravity, cline, etc.) ejecutar herramientas de descubrimiento, consulta tabular y SQL analítico directamente.
+### 1.9 `lineage [target] [--dir DIR] [--format FORMAT] [--catalog URL]`
+Inspecciona la proveniencia de datos y el grafo de derivación DAG para visualizar qué datasets son resultado de qué fuentes y transformaciones.
+- **`target`**: Identificador de dataset, archivo de manifiesto o tríada opcional. Si se omite, analiza todos los datasets del directorio o catálogo.
+- **`--dir` / `-d`**: Directorio para escanear manifiestos (`datapackage.yaml`, `index.md`).
+- **`--format` / `-f`**: Formato de salida: `ascii` (árbol de texto en terminal, por defecto), `mermaid` (diagrama de flujo interactivo) o `json` (objeto estructurado para scripts).
+- **`--catalog` / `-c`**: URL de catálogo federado opcional.
+
+```bash
+# Ver grafo en diagrama de terminal ASCII
+datamesh lineage dataset-curated --format ascii
+
+# Generar diagrama Mermaid interactivo para documentación
+datamesh lineage --format mermaid
+
+# Inspeccionar árbol de dependencias en JSON
+datamesh lineage dataset-aggregated --format json
+```
+
+---
+
+### 1.10 `mcp-serve` (Python CLI)
+Inicia el servidor Model Context Protocol (MCP) estándar sobre entrada/salida estándar (`stdio`). Permite a agentes de IA (Claude Desktop, Cursor, Antigravity, cline, etc.) ejecutar herramientas de descubrimiento, consulta tabular, SQL analítico e inspección de proveniencia (`datamesh_get_lineage`) directamente.
 
 ```bash
 python3 -m datamesh.cli mcp-serve
 ```
+
 

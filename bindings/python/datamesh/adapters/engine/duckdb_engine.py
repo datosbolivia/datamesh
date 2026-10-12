@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import uuid
 import duckdb
 
-from datamesh.constants import DEFAULT_CACHE_DIR, get_workspace_search_dirs
+from datamesh.constants import get_cache_dir, get_workspace_search_dirs
 from datamesh.ports.engine import QueryEnginePort
 
 # Matches table names in FROM and JOIN clauses (quoted or unquoted, including slashes and URLs)
@@ -366,7 +366,7 @@ class DuckDBQueryEngine(QueryEnginePort):
 
         search_roots = [
             os.path.abspath("core-go/testdata"),
-            str(DEFAULT_CACHE_DIR),
+            str(get_cache_dir()),
             os.path.abspath(".datamesh/cache"),
         ]
 

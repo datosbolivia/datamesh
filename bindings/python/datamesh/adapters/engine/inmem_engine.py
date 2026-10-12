@@ -6,7 +6,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Set
 from datamesh.ports.engine import QueryEnginePort
-from datamesh.constants import DEFAULT_CACHE_DIR, get_workspace_search_dirs
+from datamesh.constants import get_cache_dir, get_workspace_search_dirs
 
 class InMemTabularQueryEngine(QueryEnginePort):
     """
@@ -198,7 +198,7 @@ class InMemTabularQueryEngine(QueryEnginePort):
 
         search_roots = [
             os.path.abspath("core-go/testdata"),
-            str(DEFAULT_CACHE_DIR),
+            str(get_cache_dir()),
             os.path.abspath(".datamesh/cache"),
         ]
         for s_dir in get_workspace_search_dirs():

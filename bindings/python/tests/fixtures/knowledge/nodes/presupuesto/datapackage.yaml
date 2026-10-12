@@ -1,0 +1,17 @@
+name: presupuesto
+title: Ejecución presupuestaria municipal (fixture de pruebas)
+resources:
+  - name: ejecucion
+    type: table
+    path: mock_data_presupuesto.parquet
+    scheme: file
+    format: parquet
+    mediatype: application/parquet
+    schema:
+      fields:
+        - name: municipio
+          type: string
+        - name: sector
+          type: string
+        - name: presupuesto
+          type: number

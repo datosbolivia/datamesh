@@ -199,6 +199,11 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
    - La lógica extraída vive en adaptadores (`llmstxt_catalog.py`, `local_workspace.py`, `web.py`) y casos de uso (`discover_catalog.py`, `query_resource.py`, `validate_resource.py`, `resolve_dataproduct.py`, `datapackage_io.py`).
    - La fachada pública expone `resolve_resource()` y `get_engine()`; ningún consumidor accede a miembros privados de `_runtime`.
 
+7. **Resolución de Workspace Consciente del Entorno (ADR 0021)**:
+   - `LocalWorkspaceResolver`, `DuckDBQueryEngine`, `InMemTabularQueryEngine` y `zip_extractor` resuelven home/caché vía `get_datamesh_home()`/`get_cache_dir()` en tiempo de ejecución (no constantes congeladas), de modo que `DATAMESH_HOME`/`DATAMESH_CACHE_DIR` se respetan.
+   - `get_workspace_search_dirs()` trata `DATAMESH_PROJECTS_DIR`/`DATAMESH_WORKSPACE_DIR` como **raíz exclusiva** cuando se define; sin la variable conserva el escaneo por defecto (padre del CWD, `~/Projects`, `~/Proyectos`, `~/workspace`, `~/src`).
+   - La suite de pruebas usa un workspace de fixtures y caché temporal (`bindings/python/tests/conftest.py`) para ser hermética y offline.
+
 
 ## 7. Ingesta de Catálogos CKAN, Autenticación (Keycloak/OAuth2/APIKey) y Descubrimiento Well-Known
 

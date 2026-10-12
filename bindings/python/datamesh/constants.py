@@ -46,16 +46,24 @@ def get_cache_dir() -> Path:
     return get_datamesh_home() / "cache"
 
 def get_workspace_search_dirs() -> List[Path]:
-    """Returns workspace and project search directories dynamically without hardcoded machine paths."""
+    """Returns workspace and project search directories dynamically without hardcoded machine paths.
+
+    When ``DATAMESH_PROJECTS_DIR``/``DATAMESH_WORKSPACE_DIR`` is explicitly set it is treated
+    as the *sole* workspace root (exclusive override), which makes resolution hermetic and
+    reproducible in tests and CI instead of scanning the user's whole home directory.
+    """
     dirs: List[Path] = []
 
-    # 1. Explicit environment variable
+    # 1. Explicit environment variable (exclusive override)
+    explicit: List[Path] = []
     for env_k in [ENV_DATAMESH_PROJECTS_DIR, ENV_DATAMESH_WORKSPACE_DIR]:
         val = os.environ.get(env_k)
         if val:
             p = Path(val).expanduser().resolve()
-            if p.exists() and p.is_dir() and p not in dirs:
-                dirs.append(p)
+            if p.exists() and p.is_dir() and p not in explicit:
+                explicit.append(p)
+    if explicit:
+        return explicit
 
     # 2. Sibling directory to current working directory (e.g. parent of cloned repo)
     try:

@@ -1,0 +1,18 @@
+name: air_quality
+title: Calidad del aire (fixture de pruebas)
+resources:
+  - name: Compilación de datos de calidad del aire de Bolivia
+    type: table
+    path: calidad_aire_bolivia.csv
+    scheme: file
+    format: csv
+    mediatype: text/csv
+    encoding: utf-8
+    schema:
+      fields:
+        - name: lugar_nombre
+          type: string
+          description: Nombre del lugar
+        - name: valor_ica
+          type: number
+          description: Valor del Índice de Calidad del Aire (ICA)

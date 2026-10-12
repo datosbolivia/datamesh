@@ -1,0 +1,17 @@
+name: p2p-bob-exchange
+title: Mercado Cambiario P2P BOB / USDT (fixture de pruebas)
+resources:
+  - name: advertiser
+    type: table
+    path: advertiser.csv
+    scheme: file
+    format: csv
+    mediatype: text/csv
+    schema:
+      fields:
+        - name: advertiser_usertype
+          type: string
+          description: Tipo de comerciante (user, merchant)
+        - name: timestamp
+          type: datetime
+          description: Momento de captura de la cotización

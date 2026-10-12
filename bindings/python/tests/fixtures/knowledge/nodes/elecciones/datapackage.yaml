@@ -1,0 +1,17 @@
+name: elecciones
+title: Resultados electorales (fixture de pruebas)
+resources:
+  - name: votos
+    type: table
+    path: mock_data_elecciones.csv
+    scheme: file
+    format: csv
+    mediatype: text/csv
+    schema:
+      fields:
+        - name: departamento
+          type: string
+        - name: partido
+          type: string
+        - name: votos_validos
+          type: number

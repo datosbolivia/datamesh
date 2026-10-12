@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from datamesh.constants import DEFAULT_CACHE_DIR, DEFAULT_DATAMESH_HOME, get_workspace_search_dirs
+from datamesh.constants import get_cache_dir, get_datamesh_home, get_workspace_search_dirs
 from datamesh.domain.models import CanonicalURI
 
 try:
@@ -38,9 +38,10 @@ class LocalWorkspaceResolver:
         elif ext.lower() == ".parquet":
             names_to_try.append(f"{stem}.csv")
 
-        if os.path.exists(DEFAULT_CACHE_DIR):
+        cache_dir = get_cache_dir()
+        if os.path.exists(cache_dir):
             for n in names_to_try:
-                cp = os.path.join(DEFAULT_CACHE_DIR, n)
+                cp = os.path.join(cache_dir, n)
                 if os.path.exists(cp):
                     return os.path.abspath(cp)
         return None
@@ -57,10 +58,8 @@ class LocalWorkspaceResolver:
 
         candidates.extend([
             f"knowledge/nodes/{clean_ds}",
-            f"../catalogo-datamesh/knowledge/nodes/{clean_ds}",
-            f"../../catalogo-datamesh/knowledge/nodes/{clean_ds}",
-            str(DEFAULT_DATAMESH_HOME / "knowledge" / "nodes" / clean_ds),
-            str(DEFAULT_CACHE_DIR / "nodes" / clean_ds),
+            str(get_datamesh_home() / "knowledge" / "nodes" / clean_ds),
+            str(get_cache_dir() / "nodes" / clean_ds),
         ])
         for ws in get_workspace_search_dirs():
             candidates.append(str(ws / "catalogo-datamesh" / "knowledge" / "nodes" / clean_ds))

@@ -13,7 +13,7 @@ try:
 except ImportError:
     yaml = None
 
-from datamesh.constants import DEFAULT_CACHE_DIR
+from datamesh.constants import get_cache_dir
 
 def extract_zip_tabular_resource(
     zip_path: str | Path,
@@ -34,7 +34,7 @@ def extract_zip_tabular_resource(
     if not zipfile.is_zipfile(zip_p):
         return None, None
 
-    cdir = cache_dir or DEFAULT_CACHE_DIR
+    cdir = cache_dir or get_cache_dir()
     safe_stem = zip_p.stem[:32]
     hash_prefix = hashlib.sha256(str(zip_p).encode("utf-8")).hexdigest()[:12]
     unpacked_root = cdir / "unpacked" / f"{safe_stem}_{hash_prefix}"

@@ -108,10 +108,10 @@ func TestAsIsIngestUseCase_FallbackToRawReader(t *testing.T) {
 func TestAsIsIngestUseCase_RawCKANReconstruction(t *testing.T) {
 	client := &fakeCKANClient{
 		pkg: &domain.CKANPackage{
-			ID:    "abc-123",
-			Name:  "calidad-aire",
-			Title: "Calidad del aire de Bolivia",
-			Notes: "Resumen del dataset.",
+			ID:      "abc-123",
+			Name:    "calidad-aire",
+			Title:   "Calidad del aire de Bolivia",
+			Notes:   "Resumen del dataset.",
 			Version: "1.2.0",
 			Resources: []domain.CKANResource{
 				{ID: "res-1", Name: "pm25.csv", URL: "https://datos.bo/storage/pm25.csv", Format: "CSV", Size: 999},
@@ -120,13 +120,12 @@ func TestAsIsIngestUseCase_RawCKANReconstruction(t *testing.T) {
 		},
 		seen: map[string]string{},
 	}
-	harvester := NewHarvestCKANUseCase(nil, client, nil)
 	uc := NewAsIsIngestUseCase(
 		&fakeWellKnownResolver{wk: &domain.WellKnownDiscovery{Catalog: domain.CatalogMetadata{
 			Type:        "ckan",
 			APIEndpoint: "https://datos.bo/api/3/action",
 		}}},
-		nil, harvester, nil,
+		nil, client, nil,
 	)
 
 	got, err := uc.Ingest(context.Background(), "https://datos.bo/dataset/calidad-aire", "none")
@@ -146,8 +145,7 @@ func TestAsIsIngestUseCase_RawCKANReconstruction(t *testing.T) {
 
 func TestAsIsIngestUseCase_CKANCatalogRootRejected(t *testing.T) {
 	client := &fakeCKANClient{err: errors.New("should not be called")}
-	harvester := NewHarvestCKANUseCase(nil, client, nil)
-	uc := NewAsIsIngestUseCase(nil, nil, harvester, nil)
+	uc := NewAsIsIngestUseCase(nil, nil, client, nil)
 
 	if _, err := uc.Ingest(context.Background(), "https://datos.bo/api/3/action/package_search", ""); err == nil {
 		t.Fatal("expected error when target selects the catalog root, not a dataset")

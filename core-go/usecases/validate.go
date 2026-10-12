@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datosbolivia/datamesh-sdk/core-go/validator"
+	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
 )
 
 type ValidateUseCase struct {
@@ -26,7 +26,7 @@ func NewValidateUseCase(timeout time.Duration) *ValidateUseCase {
 }
 
 // Validate inspects a path (file or bundle directory), URL, or triad string.
-func (uc *ValidateUseCase) Validate(ctx context.Context, target string) (*validator.ValidationReport, error) {
+func (uc *ValidateUseCase) Validate(ctx context.Context, target string) (*domain.ValidationReport, error) {
 	trimmed := strings.TrimSpace(target)
 	if trimmed == "" {
 		return nil, fmt.Errorf("target to validate cannot be empty")
@@ -49,24 +49,24 @@ func (uc *ValidateUseCase) Validate(ctx context.Context, target string) (*valida
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return validator.ValidateConceptContent(string(bodyBytes), trimmed), nil
+		return domain.ValidateConceptContent(string(bodyBytes), trimmed), nil
 	}
 
 	// 2. Local filesystem path
 	if fi, err := os.Stat(trimmed); err == nil {
 		if fi.IsDir() {
-			return validator.ValidateBundle(trimmed)
+			return domain.ValidateBundle(trimmed)
 		}
 		contentBytes, err := os.ReadFile(trimmed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file '%s': %w", trimmed, err)
 		}
-		return validator.ValidateConceptContent(string(contentBytes), trimmed), nil
+		return domain.ValidateConceptContent(string(contentBytes), trimmed), nil
 	}
 
 	// 3. Fallback: check if it's a canonical triad
 	if strings.Contains(trimmed, ":") || strings.Contains(trimmed, "/") {
-		return validator.ValidateTriad(trimmed), nil
+		return domain.ValidateTriad(trimmed), nil
 	}
 
 	// 4. File not found

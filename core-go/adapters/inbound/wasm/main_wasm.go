@@ -25,9 +25,9 @@ func main() {
 	cfg, _ := cfgLoader.Load("")
 
 	catalogResolver := resolvers.NewLLMSTxtCatalogResolver(15 * time.Second)
-	nodeResolver := resolvers.NewNodeDataProductResolver(15 * time.Second)
-	inmemEngine := engine.NewInMemTabularQueryEngine()
 	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, 15*time.Second)
+	nodeResolver := resolvers.NewNodeDataProductResolver(unifiedReader)
+	inmemEngine := engine.NewInMemTabularQueryEngine()
 
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, nil, cfg)

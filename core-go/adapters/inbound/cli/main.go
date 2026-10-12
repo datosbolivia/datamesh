@@ -33,7 +33,8 @@ func main() {
 
 	// 2. Wire Hexagonal Architecture
 	catalogResolver := resolvers.NewLLMSTxtCatalogResolver(cfg.Base.Timeout)
-	nodeResolver := resolvers.NewNodeDataProductResolver(cfg.Base.Timeout)
+	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, cfg.Base.Timeout)
+	nodeResolver := resolvers.NewNodeDataProductResolver(unifiedReader)
 	fileStorage, err := storage.NewFileStorage(cfg.Base.StoragePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing storage: %v\n", err)
@@ -41,7 +42,6 @@ func main() {
 	}
 	tabularEngine := engine.NewInMemTabularQueryEngine()
 
-	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, cfg.Base.Timeout)
 	catalogUC := usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC := usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
 	queryUC := usecases.NewQueryDataProductUseCase(tabularEngine, fileStorage, unifiedReader)

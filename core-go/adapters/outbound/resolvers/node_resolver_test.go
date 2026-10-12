@@ -2,57 +2,59 @@ package resolvers
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"errors"
 	"testing"
-	"time"
+
+	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
+	"github.com/datosbolivia/datamesh-sdk/core-go/ports/outbound"
 )
 
+// fakeReader is a minimal UnifiedMetadataReaderPort that records the URI it was
+// asked to read and returns a prepared DataProduct, proving the resolver only
+// depends on the port and not on the concrete manifests adapter.
+type fakeReader struct {
+	dp     *domain.DataProduct
+	err    error
+	gotURL string
+}
+
+func (f *fakeReader) RegisterParser(parser outbound.ManifestParserPort) {}
+
+func (f *fakeReader) ReadPackage(ctx context.Context, uriOrPath string) (*domain.PackageManifest, error) {
+	return nil, errors.New("not implemented in test fake")
+}
+
+func (f *fakeReader) ReadNode(ctx context.Context, uriOrPath string) (*domain.DataProduct, error) {
+	f.gotURL = uriOrPath
+	return f.dp, f.err
+}
+
+func (f *fakeReader) ReadCatalog(ctx context.Context, uriOrPath string) (*domain.Catalog, error) {
+	return nil, errors.New("not implemented in test fake")
+}
+
 func TestNodeDataProductResolver(t *testing.T) {
-	nodeMarkdown := `---
-type: dataset
-title: Atlas Electoral y Elecciones Generales de Bolivia (1979-2025)
-dimensions:
-- año
-- departamento
-- circunscripcion
-- partido
-contracts:
-- type: datapackage
-  path: ./datapackage.yaml
-lineage:
-  version: 1.0.0
----
+	want, _ := domain.NewDataProduct(
+		"air_quality",
+		domain.Manifest{
+			Type:       "dataset",
+			Title:      "Atlas Electoral y Elecciones Generales de Bolivia (1979-2025)",
+			Dimensions: []string{"a", "b", "c", "d"},
+		},
+		"desc",
+		nil,
+	)
+	reader := &fakeReader{dp: want}
+	resolver := NewNodeDataProductResolver(reader)
 
-# Atlas Electoral
-
-Descripción detallada del dataset de elecciones.
-`
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "index.md")
-	if err := os.WriteFile(filePath, []byte(nodeMarkdown), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	resolver := NewNodeDataProductResolver(5 * time.Second)
-	dp, err := resolver.FetchDataProduct(context.Background(), "file://"+filePath)
+	got, err := resolver.FetchDataProduct(context.Background(), "file:///tmp/node/index.md")
 	if err != nil {
 		t.Fatalf("unexpected error resolving node: %v", err)
 	}
-
-	if dp.Manifest.Title != "Atlas Electoral y Elecciones Generales de Bolivia (1979-2025)" {
-		t.Errorf("title mismatch: %s", dp.Manifest.Title)
+	if got != want {
+		t.Fatalf("resolver did not delegate to the reader port: got %p want %p", got, want)
 	}
-	if dp.Manifest.Type != "dataset" {
-		t.Errorf("type mismatch: %s", dp.Manifest.Type)
-	}
-	if len(dp.Manifest.Dimensions) != 4 {
-		t.Errorf("expected 4 dimensions, got %d", len(dp.Manifest.Dimensions))
-	}
-	if len(dp.Manifest.Contracts) != 1 || dp.Manifest.Contracts[0].Type != "datapackage" {
-		t.Errorf("contracts mismatch: %v", dp.Manifest.Contracts)
-	}
-	if dp.Manifest.Lineage.Version != "1.0.0" {
-		t.Errorf("version mismatch: %s", dp.Manifest.Lineage.Version)
+	if reader.gotURL != "file:///tmp/node/index.md" {
+		t.Errorf("resolved URL not forwarded to reader: %q", reader.gotURL)
 	}
 }

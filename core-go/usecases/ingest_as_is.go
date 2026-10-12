@@ -17,9 +17,9 @@ import (
 // the source into a canonical ODKF DataProduct; it also exposes ODKF export
 // converters toward CKAN/Frictionless DataPackage and W3C DCAT.
 type AsIsIngestUseCase struct {
-	wellKnown    outbound.WellKnownResolverPort
-	reader       outbound.UnifiedMetadataReaderPort
-	harvester    *HarvestCKANUseCase
+	wellKnown     outbound.WellKnownResolverPort
+	reader        outbound.UnifiedMetadataReaderPort
+	ckanClient    outbound.CKANClientPort
 	authProviders map[string]outbound.AuthProviderPort
 }
 
@@ -30,7 +30,7 @@ var _ inbound.InteroperabilityServicePort = (*AsIsIngestUseCase)(nil)
 func NewAsIsIngestUseCase(
 	wellKnown outbound.WellKnownResolverPort,
 	reader outbound.UnifiedMetadataReaderPort,
-	harvester *HarvestCKANUseCase,
+	ckanClient outbound.CKANClientPort,
 	authProviders map[string]outbound.AuthProviderPort,
 ) *AsIsIngestUseCase {
 	if authProviders == nil {
@@ -39,7 +39,7 @@ func NewAsIsIngestUseCase(
 	return &AsIsIngestUseCase{
 		wellKnown:     wellKnown,
 		reader:        reader,
-		harvester:     harvester,
+		ckanClient:    ckanClient,
 		authProviders: authProviders,
 	}
 }
@@ -72,7 +72,7 @@ func (uc *AsIsIngestUseCase) Ingest(ctx context.Context, target, authType string
 		}
 	}
 
-	if uc.harvester != nil {
+	if uc.ckanClient != nil {
 		if dp, err := uc.ingestCKAN(ctx, target, authType); err == nil {
 			return dp, nil
 		} else {
@@ -106,12 +106,9 @@ func (uc *AsIsIngestUseCase) ingestConformant(ctx context.Context, target string
 }
 
 // ingestCKAN reads a raw CKAN dataset as-is and reconstructs the ODKF DataProduct
-// reusing the CKAN anticorruption layer (CU-13 / ADR 0010).
+// reusing the CKAN anticorruption layer and the domain reconstruction (CU-13 / ADR 0010).
 func (uc *AsIsIngestUseCase) ingestCKAN(ctx context.Context, ckanBaseURL, authType string) (*domain.DataProduct, error) {
-	if uc.harvester == nil {
-		return nil, errors.New("CKAN harvester port is not configured")
-	}
-	if uc.harvester.ckanClient == nil {
+	if uc.ckanClient == nil {
 		return nil, errors.New("CKAN client port is not configured")
 	}
 
@@ -121,12 +118,12 @@ func (uc *AsIsIngestUseCase) ingestCKAN(ctx context.Context, ckanBaseURL, authTy
 	}
 
 	auth := uc.authProviders[authType]
-	pkg, err := uc.harvester.ckanClient.GetPackage(ctx, ckanBaseURL, id, auth)
+	pkg, err := uc.ckanClient.GetPackage(ctx, ckanBaseURL, id, auth)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CKAN package %q as-is: %w", id, err)
 	}
 
-	manifest, err := uc.harvester.ReconstructOKF(ctx, pkg)
+	manifest, err := domain.ReconstructManifestFromCKAN(pkg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconstruct ODKF from CKAN package %q: %w", id, err)
 	}

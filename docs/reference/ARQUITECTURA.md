@@ -175,6 +175,12 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 4. **Resiliencia de Infraestructura en Adaptadores de Borde**:
    - Fallos de certificados SSL de portales de gobierno son absorbidos a nivel de adaptador (`DuckDBQueryEngine` -> `HttpAdapter` con `ssl.CERT_NONE` hacia temporal cache) sin contaminar los casos de uso ni la capa de dominio.
 
+5. **Aislamiento Estricto de Capas (ADR 0017)**:
+   - **Dominio**: concentra toda regla de negocio. Las reglas normativas OKF/ODKF (`ValidateConceptContent`, `ValidateBundle`, `ValidateTriad`, SHA-256, SKOS) y la reconstrucción `CKANPackage -> PackageManifest` (`ReconstructManifestFromCKAN`) residen en `core-go/domain/`.
+   - **Puertos:** los adaptadores outbound dependen exclusivamente de puertos (`UnifiedMetadataReaderPort`, `CKANClientPort`), nunca de otro adaptador. Los casos de uso no acceden a detalles privados de otros casos de uso; dependen de puertos y del dominio.
+   - El composition root (`cli/main.go`, `cshared/exports.go`, `wasm/main_wasm.go`) es el único lugar que conoce e inyecta adaptadores concretos.
+
+
 ## 7. Ingesta de Catálogos CKAN, Autenticación (Keycloak/OAuth2/APIKey) y Descubrimiento Well-Known
 
 ```text

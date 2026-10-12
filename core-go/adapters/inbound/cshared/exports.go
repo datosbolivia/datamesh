@@ -69,7 +69,7 @@ func initRuntime(configJSON string) error {
 	activeConfig = cfg
 	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, cfg.Base.Timeout)
 	catalogResolver := resolvers.NewLLMSTxtCatalogResolver(cfg.Base.Timeout)
-	nodeResolver := resolvers.NewNodeDataProductResolver(cfg.Base.Timeout)
+	nodeResolver := resolvers.NewNodeDataProductResolver(unifiedReader)
 	fileStorage, err := storage.NewFileStorage(cfg.Base.StoragePath)
 	if err != nil {
 		return err

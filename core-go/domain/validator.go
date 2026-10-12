@@ -1,4 +1,4 @@
-package validator
+package domain
 
 import (
 	"crypto/sha256"
@@ -57,8 +57,8 @@ func (r *ValidationReport) AddIssue(code string, sev Severity, msg string, path 
 }
 
 var (
-	sha256Regex = regexp.MustCompile(`^sha256:[a-fA-F0-9]{64}$`)
-	triadRegex  = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+[:/][a-zA-Z0-9_\-\. ]+([:/][a-zA-Z0-9_\-\. ]+)?$`)
+	sha256Regex   = regexp.MustCompile(`^sha256:[a-fA-F0-9]{64}$`)
+	triadRegex    = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+[:/][a-zA-Z0-9_\-\. ]+([:/][a-zA-Z0-9_\-\. ]+)?$`)
 	validPolicies = map[string]bool{
 		"allow_all":      true,
 		"zero_microdata": true,

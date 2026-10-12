@@ -67,3 +67,21 @@ Valida un documento de concepto OKF/ODKF, un directorio bundle, o la sintaxis de
   - `target` *(str)*: Ruta local hacia un archivo `.md`, directorio bundle, URL HTTP, o tríada canónica.
 - **Retorno**: Diccionario `ValidationReport` con `valid` *(bool)*, `total_errors` *(int)*, `total_warnings` *(int)*, y lista de `issues`.
 
+---
+
+### `datamesh.resolve_resource(resource_uri: str) -> Optional[ResolvedResource]`
+Resuelve una referencia de recurso (tríada canónica, URL o ruta local) a su descriptor local o cacheado, sin ejecutar ninguna consulta. Es el punto de entrada de bajo nivel usado internamente por los motores.
+
+- **Parámetros**:
+  - `resource_uri` *(str)*: Tríada canónica (`catalogo:dataset:recurso`), URL HTTP, o ruta local.
+- **Retorno**: `ResolvedResource` (con `local_path`, `format`, `is_cached`, `metadata`) o `None` si no se puede resolver.
+
+---
+
+### `datamesh.get_engine(name: Optional[str] = None) -> Any`
+Retorna una instancia del motor de consultas configurado.
+
+- **Parámetros**:
+  - `name` *(opcional)*: Identificador del motor (`"duckdb"`, `"inmem"` o `"go"`). Por defecto `"duckdb"`.
+- **Retorno**: Adaptador que implementa `QueryEnginePort`.
+

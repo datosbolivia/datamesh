@@ -22,6 +22,8 @@ DOCUMENTED_API = [
     "get",
     "query",
     "sql",
+    "resolve_resource",
+    "get_engine",
     "validate",
     "publish",
     "align_semantics",

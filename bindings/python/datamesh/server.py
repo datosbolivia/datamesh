@@ -76,7 +76,7 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
 
             # A. First check if DataMesh runtime resolver can resolve target_url
             try:
-                resolved = dm._runtime.resolver_usecase.resolve(target_url)
+                resolved = dm.resolve_resource(target_url)
                 if resolved and resolved.local_path and os.path.exists(resolved.local_path):
                     local_p = str(resolved.local_path)
                     # If target requested .csv but resolved is .parquet or .zip, convert on the fly if needed or stream

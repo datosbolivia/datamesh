@@ -60,7 +60,7 @@ def test_mcp_sql_tool():
         "bolivia:elecciones:votos": CSV_PATH,
     }
     # Pre-register for MCP tool test
-    dm._runtime._duckdb_engine.register_table("bolivia:elecciones:votos", CSV_PATH)
+    dm.get_engine("duckdb").register_table("bolivia:elecciones:votos", CSV_PATH)
 
     req = {
         "jsonrpc": "2.0",

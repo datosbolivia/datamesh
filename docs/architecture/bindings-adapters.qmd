@@ -21,7 +21,7 @@ flowchart LR
 
 ## 1. Python Binding (`bindings/python`)
 
-- **Puente C-ABI**: `datamesh/core.py` utiliza el módulo estándar `ctypes` para interactuar con `libdatamesh.so`.
+- **Puente C-ABI**: `datamesh/adapters/go_bridge.py` (`GoCoreBridge`) encapsula el módulo estándar `ctypes` y es el único punto de contacto con `libdatamesh.so`; `core.py` es un Composition Root delgado (ADR 0018).
 - **Estructuras de Retorno**: Las llamadas C-ABI retornan cadenas JSON gestionadas en memoria con `DataMeshFreeString` para garantizar cero fugas de memoria (memory leaks).
 - **Fallback**: Implementación hexagonal completa en `datamesh/adapters/` con soporte DuckDB y HTTP con timeouts seguros.
 

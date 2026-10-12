@@ -380,7 +380,7 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
 
                 # 1. First attempt resolver_usecase to locate local or cached file (Parquet/CSV/Zip)
                 try:
-                    resolved = dm._runtime.resolver_usecase.resolve(resource_uri)
+                    resolved = dm.resolve_resource(resource_uri)
                     if resolved and resolved.local_path and os.path.exists(resolved.local_path):
                         import duckdb
                         local_p = str(resolved.local_path)

@@ -101,13 +101,24 @@ datamesh/
 │   │   ├── github.py        # GitHubAdapter (streaming CDN raw.githubusercontent.com)
 │   │   ├── kaggle.py        # KaggleAdapter (API oficial Kaggle ~/.kaggle/kaggle.json)
 │   │   └── http.py          # HttpAdapter (endpoints web y Google Sheets)
-│   └── engine/
-│       ├── duckdb_engine.py # DuckDBQueryEngine (motor OLAP columnar sobre caché local y zips extraídos)
-│       ├── inmem_engine.py  # InMemTabularQueryEngine (motor en memoria puro sin binarios nativos)
-│       └── go_engine.py     # GoCoreQueryEngine (delegación C-ABI hacia libdatamesh.so)
+│   ├── engine/
+│   │   ├── duckdb_engine.py # DuckDBQueryEngine (motor OLAP columnar sobre caché local y zips extraídos)
+│   │   ├── inmem_engine.py  # InMemTabularQueryEngine (motor en memoria puro sin binarios nativos)
+│   │   └── go_engine.py     # GoCoreQueryEngine (delegación C-ABI hacia libdatamesh.so)
+│   ├── catalog/
+│   │   └── llmstxt_catalog.py # LLMSTxtCatalogFetcher (parseo de índices federados llms.txt)
+│   ├── workspace/
+│   │   └── local_workspace.py # LocalWorkspaceResolver (tríada -> ruta física: caché y proyectos hermanos)
+│   ├── go_bridge.py         # GoCoreBridge (único puente ctypes/C-ABI hacia libdatamesh.so)
+│   └── web.py               # fetch_text / safe_urlopen (lectura file://, http(s) y local)
 ├── usecases/                # Orquestación de aplicación
-│   └── resolve_resource.py  # ResolveAndCacheResourceUseCase (soporte jerárquico de recursos en zip)
-├── core.py                  # Composition Root (instancia adaptadores y cablea dependencias)
+│   ├── resolve_resource.py  # ResolveAndCacheResourceUseCase (soporte jerárquico de recursos en zip)
+│   ├── discover_catalog.py  # DiscoverCatalogUseCase (federación de catálogos llms.txt)
+│   ├── query_resource.py    # QueryResourceUseCase (consulta tabular CSV/JSON, fallback puro Python)
+│   ├── validate_resource.py # ValidateResourceUseCase (validación OKF/ODKF, fallback Python)
+│   ├── resolve_dataproduct.py # ResolveDataProductUseCase (frontmatter de nodos, fallback Python)
+│   └── datapackage_io.py     # load_datapackage / save_datapackage (YAML/JSON)
+├── core.py                  # Composition Root delgado (cablea dependencias; sin lógica de negocio)
 ├── cli.py                   # Inbound Adapter: CLI
 ├── server.py                # Inbound Adapter: Sovereign HTTP Server (REST + Proxy + MCP)
 └── mcp_server.py            # Inbound Adapter: Protocolo MCP JSON-RPC
@@ -179,6 +190,12 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
    - **Dominio**: concentra toda regla de negocio. Las reglas normativas OKF/ODKF (`ValidateConceptContent`, `ValidateBundle`, `ValidateTriad`, SHA-256, SKOS) y la reconstrucción `CKANPackage -> PackageManifest` (`ReconstructManifestFromCKAN`) residen en `core-go/domain/`.
    - **Puertos:** los adaptadores outbound dependen exclusivamente de puertos (`UnifiedMetadataReaderPort`, `CKANClientPort`), nunca de otro adaptador. Los casos de uso no acceden a detalles privados de otros casos de uso; dependen de puertos y del dominio.
    - El composition root (`cli/main.go`, `cshared/exports.go`, `wasm/main_wasm.go`) es el único lugar que conoce e inyecta adaptadores concretos.
+
+6. **Composition Root Delgado en Python (ADR 0018)**:
+   - `datamesh/core.py` (`DataMeshRuntime`) se limita a instanciar y cablear dependencias; no contiene lógica de ctypes, parseo de catálogos, resolución de workspace ni fallbacks tabulares.
+   - El **único** puente ctypes/C-ABI es `datamesh/adapters/go_bridge.py` (`GoCoreBridge`): carga `libdatamesh.so`, cablea símbolos y aplica el protocolo `call`/`free`/`decode`.
+   - La lógica extraída vive en adaptadores (`llmstxt_catalog.py`, `local_workspace.py`, `web.py`) y casos de uso (`discover_catalog.py`, `query_resource.py`, `validate_resource.py`, `resolve_dataproduct.py`, `datapackage_io.py`).
+   - La fachada pública expone `resolve_resource()` y `get_engine()`; ningún consumidor accede a miembros privados de `_runtime`.
 
 
 ## 7. Ingesta de Catálogos CKAN, Autenticación (Keycloak/OAuth2/APIKey) y Descubrimiento Well-Known
@@ -356,7 +373,7 @@ Autoridad normativa: **ADR 0016**. La capa de entrada (HTTP REST, proxy CORS y M
 | Destinos de reenvío (`/proxy`, `read_resource`, fetch de `query_resource`) | Solo `http(s)`; se bloquean hosts que resuelven a loopback, RFC 1918, link-local, multicast, reservados o no especificados | `datamesh/net.py` (Python), `core-go/adapters/inbound/cli/security.go` (Go) |
 | Verificación TLS | Estricta por defecto; fallback `CERT_NONE` solo con `DATAMESH_INSECURE_TLS=1` y solo ante errores de certificado | `datamesh.net.open_url` |
 | Referencias de recursos en MCP | Solo `http(s)` o tríadas canónicas; se rechazan rutas absolutas, `file://`, `..`, unidades Windows y UNC | `mcp_server.py`, `serve.go` |
-| SQL con datos del operador | Literales e identificadores escapados (`sql_string_literal`, `sql_identifier`) | `sql_utils.py` en `core.py`, `server.py`, `mcp_server.py` |
+| SQL con datos del operador | Literales e identificadores escapados (`sql_string_literal`, `sql_identifier`) | `sql_utils.py` en `usecases/query_resource.py`, `server.py`, `mcp_server.py` |
 | Serialización de configuración | `Config.Sanitized()` enmascara `token`, `secret`, `password`, `passwd`, `credential`, `api_key`, `apikey`, `client_secret` | `main.go` (`datamesh config`), `cshared/exports.go` (`DataMeshInit`) |
 | Bind del servidor | `127.0.0.1` por defecto (Python y Go); `0.0.0.0` explícito | `server.run_server`, `datamesh serve --host` |
 

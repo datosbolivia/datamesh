@@ -44,6 +44,14 @@ def sql(
     """
     return _runtime.sql(query_str, table_mapping=table_mapping, engine=engine)
 
+def resolve_resource(resource_uri: str):
+    """Resolve a resource reference to its local/cached descriptor (triad, URL or path)."""
+    return _runtime.resolver_usecase.resolve(resource_uri)
+
+def get_engine(name: Optional[str] = None):
+    """Return a configured query engine by name ('duckdb', 'inmem', 'go')."""
+    return _runtime.get_engine(name)
+
 def validate(target: str) -> Dict[str, Any]:
     """Validate OKF/ODKF concept document, bundle directory, or canonical triad."""
     return _runtime.validate(target)
@@ -231,6 +239,8 @@ __all__ = [
     "get",
     "query",
     "sql",
+    "resolve_resource",
+    "get_engine",
     "validate",
     "publish",
     "align_semantics",

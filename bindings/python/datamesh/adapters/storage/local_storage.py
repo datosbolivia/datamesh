@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
-from typing import Any, BinaryIO, Dict, Optional
+from typing import Any, BinaryIO, Dict, Optional, Union
 
 from datamesh.domain.models import CacheEntryMetadata, StorageConfig
 from datamesh.ports.storage import StoragePort
@@ -194,7 +194,9 @@ class LocalStorageManager(StoragePort):
         return None
 
     def evict(self, key_or_uri: str) -> bool:
-        k = self._hash_key(key_or_uri)
+        return self._evict_key(self._hash_key(key_or_uri))
+
+    def _evict_key(self, k: str) -> bool:
         if k in self._metadata_cache:
             entry = self._metadata_cache.pop(k)
             p = Path(entry.get("local_path", ""))
@@ -205,6 +207,18 @@ class LocalStorageManager(StoragePort):
                     pass
             self._save_metadata()
             return True
+        return False
+
+    def evict_by_path(self, local_path: Union[str, Path]) -> bool:
+        """Evicts the cache entry whose on-disk copy matches ``local_path``.
+
+        Used by the query engine to purge a cached file that turned out to be
+        unreadable (corrupt download) so the next resolution re-fetches fresh bytes.
+        """
+        target = str(Path(local_path))
+        for k, entry in list(self._metadata_cache.items()):
+            if str(Path(entry.get("local_path", ""))) == target:
+                return self._evict_key(k)
         return False
 
     def clear(self, older_than_seconds: Optional[int] = None) -> int:

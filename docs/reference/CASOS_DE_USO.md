@@ -54,8 +54,9 @@
   4. Si DuckDB falla al registrar una vista remota por errores SSL de CA gubernamental o IO de red, descarga automáticamente el recurso a la caché temporal local con contexto SSL no verificado (`ssl.CERT_NONE`) y recrea la vista apuntando al archivo local.
   5. Registra vistas virtuales con alias canónicos y slugificados (`slugify`).
   6. Ejecuta la consulta SQL, normaliza tipos complejos (`Decimal`, fechas, UUIDs) a primitivas serializables en JSON, y retorna columnas, filas y conteo.
-  7. Si una tabla no existe o es inalcanzable, genera un error descriptivo y explícito sin fallar con errores crípticos de DuckDB.
-  8. En entornos sin DuckDB (CLI/MCP de Go Core), el motor fallback puro Go sólo ejecuta el subconjunto `SELECT <cols|*> FROM <tabla> [WHERE col = valor [AND ...]] [LIMIT n]` sobre una única tabla local y **rechaza explícitamente** el resto de construcciones (agregaciones, `JOIN`, `GROUP BY`, `ORDER BY`, subconsultas) remitiendo a DuckDB. Ver **ADR 0019**.
+7. Si una tabla no existe o es inalcanzable, genera un error descriptivo y explícito sin fallar con errores crípticos de DuckDB.
+   8. **Auto-recuperación de caché corrupta:** si el registro de la vista falla para un archivo local bajo `~/datamesh/cache/`, desaloja esa entrada (`evict`/`evict_by_path`) y re-resuelve la referencia una sola vez desde la fuente, evitando que una descarga corrupta se sirva indefinidamente (ver CU-07 Storage).
+   9. En entornos sin DuckDB (CLI/MCP de Go Core), el motor fallback puro Go sólo ejecuta el subconjunto `SELECT <cols|*> FROM <tabla> [WHERE col = valor [AND ...]] [LIMIT n]` sobre una única tabla local y **rechaza explícitamente** el resto de construcciones (agregaciones, `JOIN`, `GROUP BY`, `ORDER BY`, subconsultas) remitiendo a DuckDB. Ver **ADR 0019**.
 
 ## CU-07: Fachada Unificada de 5 Métodos en Bindings (`UnifiedClientFacade`)
 - **Actor:** Desarrolladores e integradores en Python (`import datamesh as dm`) y TypeScript (`import { datamesh, discover, search, get, query, sql } from '@datosbolivia/datamesh-client'`).
@@ -76,8 +77,8 @@
   1. Administra el directorio genérico `~/datamesh/` y la caché local `~/datamesh/cache/`.
   2. Registra y verifica la presencia en caché (`is_cached`) mediante hash SHA-256 de la URI.
   3. Realiza escrituras seguras y atómicas a disco previniendo descargas corruptas o truncadas.
-  4. Mantiene el índice `metadata.json` con tamaño, checksum SHA-256, timestamps UTC, ETag y servicio origen.
-  5. Permite desalojo selectivo (`evict`) o purga total/por antigüedad (`clear`).
+4. Mantiene el índice `metadata.json` con tamaño, checksum SHA-256, timestamps UTC, ETag y servicio origen.
+   5. Permite desalojo selectivo (`evict`), desalojo por ruta de archivo local (`evict_by_path`, usado para purgar copias corruptas) o purga total/por antigüedad (`clear`).
 
 ## CU-08: Descarga y Resolución Adaptativa Multiproveedor (`ResolveAndCacheResourceUseCase`)
 - **Actor:** Adaptador `DuckDBQueryEngine` o consumidor del SDK.

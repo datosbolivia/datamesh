@@ -78,6 +78,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         self.storage = storage
         self._registered_views: Dict[str, str] = {}
         self._view_errors: Dict[str, str] = {}
+        self._healed_refs: Set[str] = set()
 
     @property
     def name(self) -> str:
@@ -100,6 +101,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         # 2. Resolve and register virtual views in DuckDB for each table reference
         for table_ref in tables:
             physical_path = None
+            resolved = None
             if table_mapping and table_ref in table_mapping:
                 physical_path = table_mapping[table_ref]
             elif self.resolver_usecase:
@@ -111,10 +113,16 @@ class DuckDBQueryEngine(QueryEnginePort):
                 physical_path = self.catalog_resolver(table_ref)
 
             if not physical_path:
+                resolved = None
                 physical_path = self._resolve_table_locally(table_ref)
 
             if physical_path:
-                self.register_table_aliases(table_ref, physical_path)
+                ok = self.register_table_aliases(table_ref, physical_path)
+                # Self-heal (ADR 0013 robustness): a cached copy that fails to parse
+                # (e.g. a corrupt download) is evicted once and re-fetched from source.
+                if not ok and table_ref not in self._healed_refs and self._can_self_heal(physical_path):
+                    if self._self_heal_cached_table(table_ref, physical_path, resolved):
+                        self._healed_refs.add(table_ref)
             else:
                 raise RuntimeError(
                     f"DuckDB SQL execution error: Could not resolve table reference '{table_ref}' "
@@ -144,19 +152,21 @@ class DuckDBQueryEngine(QueryEnginePort):
                     err_msg += f" (View registration for '{ref}' failed: {self._view_errors[ref]})"
             raise RuntimeError(f"DuckDB SQL execution error: {err_msg}") from e
 
-    def register_table(self, table_ref: str, file_path_or_url: str) -> None:
+    def register_table(self, table_ref: str, file_path_or_url: str) -> bool:
         """Backward-compatible alias for register_table_aliases."""
-        self.register_table_aliases(table_ref, file_path_or_url)
+        return self.register_table_aliases(table_ref, file_path_or_url)
 
-    def register_table_aliases(self, table_ref: str, file_path_or_url: str) -> None:
+    def register_table_aliases(self, table_ref: str, file_path_or_url: str) -> bool:
         """
         Registers a physical resource as a DuckDB virtual view under multiple canonical and slugified aliases.
         If registering a remote URL fails (e.g. SSL peer verification or HTTP IO error),
         downloads the file to local cache and registers the local copy.
+        Returns True if at least one alias was registered successfully.
         """
         read_expr = self._get_read_expression(file_path_or_url)
         aliases = self._generate_aliases(table_ref)
 
+        registered_ok = False
         actual_path = file_path_or_url
         is_remote = actual_path.startswith(("http://", "https://"))
 
@@ -165,6 +175,7 @@ class DuckDBQueryEngine(QueryEnginePort):
                 view_sql = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM {read_expr}'
                 try:
                     self.conn.execute(view_sql)
+                    registered_ok = True
                     self._registered_views[alias] = actual_path
                     if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
                         self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {read_expr}')
@@ -185,6 +196,7 @@ class DuckDBQueryEngine(QueryEnginePort):
                                 read_expr = self._get_read_expression(actual_path)
                                 view_sql = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM {read_expr}'
                                 self.conn.execute(view_sql)
+                                registered_ok = True
                                 self._registered_views[alias] = actual_path
                                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
                                     self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {read_expr}')
@@ -194,6 +206,40 @@ class DuckDBQueryEngine(QueryEnginePort):
                             continue
 
                     self._view_errors[alias] = str(e)
+
+        return registered_ok
+
+    def _can_self_heal(self, physical_path: str) -> bool:
+        """Only cached local files under the managed cache dir are safe to evict and re-fetch."""
+        if not (self.storage and self.resolver_usecase):
+            return False
+        if not os.path.isfile(physical_path):
+            return False
+        cache_root = str(self.storage.get_cache_dir())
+        return str(physical_path).startswith(cache_root)
+
+    def _self_heal_cached_table(self, table_ref: str, physical_path: str, resolved: Optional[Any]) -> bool:
+        """Evicts the corrupt cached copy and re-resolves the table reference once (retry)."""
+        evicted = False
+        meta = resolved.metadata if resolved else None
+        if meta and meta.original_uri:
+            evicted = self.storage.evict(meta.original_uri)
+        if not evicted:
+            evicted = self.storage.evict_by_path(physical_path)
+        if not evicted or not self.resolver_usecase:
+            return False
+
+        redone = self.resolver_usecase.resolve(table_ref)
+        if not (redone and redone.local_path):
+            return False
+        new_path = str(redone.local_path)
+        if new_path == physical_path:
+            return False
+
+        for alias in list(self._view_errors):
+            if alias in self._generate_aliases(table_ref):
+                del self._view_errors[alias]
+        return self.register_table_aliases(table_ref, new_path)
 
     def _generate_aliases(self, table_ref: str) -> List[str]:
         aliases = [table_ref]

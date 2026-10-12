@@ -75,7 +75,7 @@ El SDK implementa una cascada de configuración estricta:
 El adaptador `DuckDBQueryEngine` proporciona capacidades completas de analítica OLAP ANSI SQL sobre recursos federados:
 - **Resolución Canónica:** Soporta sintaxis de 2 partes (`dataset:resource`) y 3 partes (`catalogo:dataset:resource`), así como nombres slugificados generados en gráficos.
 - **Descubrimiento de Manifiestos Datapackage:** Localiza y analiza archivos `datapackage.yaml`, `datapackage.yml` y `datapackage.json` en nodos locales (`knowledge/nodes/`) o vía HTTP federado.
-- **Acceso Híbrido Cero-Latencia / Streaming:** Prioriza copias locales en repositorios de trabajo y caché (`~/datamesh/cache`), recurriendo de manera transparente a URLs remotas con `httpfs` (normalizando URLs de GitHub a `raw.githubusercontent.com`).
+- **Acceso Remoto-Primero / Streaming:** Para objetos remotos (`kaggle`, `github`, `http`) siempre se descarga la última versión y se refresca la caché (`~/datamesh/cache`), normalizando URLs de GitHub a `raw.githubusercontent.com`. Las copias locales (caché o proyectos hermanos) sólo se usan si la descarga falla, con `logging.warning`; el cambio se detecta por `sha256` y la frecuencia declarada por el nodo se registra en la metadata (`update_frequency`). Autoridad normativa: **ADR 0023**.
 - **Compatibilidad JSON:** Normalización recursiva de tipos de DuckDB (`Decimal`, `datetime`, `UUID`) para garantizar salida serializable limpia en JSON a través de CLI y MCP.
 
 **Motor fallback puro Go (`InMemTabularQueryEngine`):** cuando no hay DuckDB (CLI/MCP de Go Core), el camino SQL sólo soporta el subconjunto honesto `SELECT <cols|*> FROM <tabla> [WHERE col = valor [AND ...]] [LIMIT n]` sobre **una única** tabla local CSV/TSV. Las construcciones fuera de ese subconjunto (agregaciones, funciones, `JOIN`, `GROUP BY`, `ORDER BY`, subconsultas) se **rechazan con un error explícito** en lugar de devolver resultados parciales o incorrectos (`core-go/domain/sqlsubset.go`). La selección entre motores registrados (`QueryEngineRegistry.SelectEngine`) es determinista (orden por nombre), no dependiente del orden de iteración del `map`. Autoridad normativa: **ADR 0019**.
@@ -98,11 +98,11 @@ datamesh/
 │   │   └── zip_extractor.py # extract_zip_tabular_resource (desempaquetado selectivo de microdatos tabulares en ZIP)
 │   ├── config/
 │   │   └── file_config.py   # FileConfigAdapter (~/datamesh/config.yaml)
-│   ├── resolvers/           # Adaptadores multiproveedor
+│   ├── resolvers/           # Adaptadores multiproveedor (remoto-primero, ADR 0023)
 │   │   ├── local_file.py    # LocalFileAdapter (archivos locales, proyectos hermanos)
-│   │   ├── github.py        # GitHubAdapter (streaming CDN raw.githubusercontent.com)
-│   │   ├── kaggle.py        # KaggleAdapter (API oficial Kaggle ~/.kaggle/kaggle.json)
-│   │   └── http.py          # HttpAdapter (endpoints web y Google Sheets)
+│   │   ├── github.py        # GitHubAdapter (streaming CDN raw.githubusercontent.com; local clone solo como fallback con warning)
+│   │   ├── kaggle.py        # KaggleAdapter (API oficial Kaggle ~/.kaggle/kaggle.json; sibling local solo como fallback con warning)
+│   │   └── http.py          # HttpAdapter (endpoints web y Google Sheets; caché solo como fallback con warning)
 │   ├── engine/
 │   │   ├── duckdb_engine.py # DuckDBQueryEngine (motor OLAP columnar sobre caché local y zips extraídos)
 │   │   ├── inmem_engine.py  # InMemTabularQueryEngine (motor en memoria puro sin binarios nativos)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 import re
@@ -11,10 +12,15 @@ from datamesh.domain.models import ResolvedResource, ResourceDescriptor
 from datamesh.ports.resolver import ResourceAdapterPort
 from datamesh.ports.storage import StoragePort
 
+logger = logging.getLogger("datamesh.resolvers.github")
+
 class GitHubAdapter(ResourceAdapterPort):
     """
     Adapter for downloading and caching datasets hosted on GitHub repositories
     (raw files, releases, and blob URLs). Converts GitHub links to raw CDN endpoints.
+
+    Remote-first: the raw URL is always re-fetched and the cache refreshed. Local
+    clones and stale cache entries are only used when the download fails, with a warning.
     """
 
     @property
@@ -55,39 +61,11 @@ class GitHubAdapter(ResourceAdapterPort):
         ext = os.path.splitext(fname)[1].lower() or ".csv"
         fmt = ext.lstrip(".")
 
-        # 1. Check if the repo/file exists locally in sibling projects (instant zero-copy)
-        local_repo_match = self._find_in_local_clone(normalized_url, fname)
-        if local_repo_match and os.path.exists(local_repo_match):
-            p = Path(local_repo_match).resolve()
-            return ResolvedResource(
-                descriptor=ResourceDescriptor(
-                    raw_reference=uri_or_path,
-                    format=fmt,
-                    source_service="local",
-                ),
-                local_path=p,
-                format=fmt,
-                is_cached=False,
-            )
+        update_frequency = (context or {}).get("update_frequency")
+        prev_meta = storage.get_metadata(normalized_url)
+        prev_sha = prev_meta.sha256 if prev_meta else None
 
-        # 2. Check if already cached in ~/datamesh/cache
-        if storage.is_cached(normalized_url):
-            cached_path = storage.get_cached_path(normalized_url)
-            if cached_path and cached_path.exists():
-                meta = storage.get_metadata(normalized_url)
-                return ResolvedResource(
-                    descriptor=ResourceDescriptor(
-                        raw_reference=uri_or_path,
-                        format=fmt,
-                        source_service="github",
-                    ),
-                    local_path=cached_path,
-                    format=fmt,
-                    is_cached=True,
-                    metadata=meta,
-                )
-
-        # 3. Stream download from GitHub into temporal storage
+        # 1. Remote-first: always stream the latest file from the raw CDN.
         req = urllib.request.Request(
             normalized_url,
             headers={
@@ -109,8 +87,11 @@ class GitHubAdapter(ResourceAdapterPort):
                     extension=ext,
                     source_service="github",
                     etag=etag,
+                    update_frequency=update_frequency,
                 )
                 meta = storage.get_metadata(normalized_url)
+                if prev_sha and meta and meta.sha256 and prev_sha != meta.sha256:
+                    logger.info("GitHub resource '%s' changed (sha256 %s -> %s).", normalized_url, prev_sha[:12], meta.sha256[:12])
                 return ResolvedResource(
                     descriptor=ResourceDescriptor(
                         raw_reference=uri_or_path,
@@ -123,9 +104,39 @@ class GitHubAdapter(ResourceAdapterPort):
                     metadata=meta,
                 )
         except Exception as e:
-            # If download fails (e.g. offline/sandbox) and local clone exists, fallback
+            # 2. Fallback: cached version (possibly stale) -- always warn.
+            if storage.is_cached(normalized_url):
+                cached_path = storage.get_cached_path(normalized_url)
+                if cached_path and cached_path.exists():
+                    logger.warning(
+                        "GitHub download failed for '%s' (%s). Using cached (possibly stale) copy at %s.",
+                        normalized_url,
+                        e,
+                        cached_path,
+                    )
+                    meta = storage.get_metadata(normalized_url)
+                    return ResolvedResource(
+                        descriptor=ResourceDescriptor(
+                            raw_reference=uri_or_path,
+                            format=fmt,
+                            source_service="github",
+                        ),
+                        local_path=cached_path,
+                        format=fmt,
+                        is_cached=True,
+                        metadata=meta,
+                    )
+
+            # 3. Fallback: local clone (possibly stale) -- always warn.
+            local_repo_match = self._find_in_local_clone(normalized_url, fname)
             if local_repo_match and os.path.exists(local_repo_match):
                 p = Path(local_repo_match).resolve()
+                logger.warning(
+                    "GitHub download failed for '%s' (%s). Using local clone file '%s'; it may be stale.",
+                    normalized_url,
+                    e,
+                    p,
+                )
                 return ResolvedResource(
                     descriptor=ResourceDescriptor(
                         raw_reference=uri_or_path,

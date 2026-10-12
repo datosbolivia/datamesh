@@ -72,6 +72,25 @@ class LocalWorkspaceResolver:
 
         return self._read_manifest_from_catalog(clean_ds)
 
+    def node_update_frequency(self, dataset: str) -> Optional[str]:
+        """Returns the declared update frequency of a node manifest, if any.
+
+        Reads ``temporal.frequency`` (OKF/ODKF) falling back to a top-level
+        ``frequency``/``accrualperiodicity`` key. Used to record how often a
+        remote resource is expected to change in the cache metadata.
+        """
+        pkg = self.find_node_datapackage(dataset)
+        if not pkg:
+            return None
+        manifest = pkg[0] or {}
+        temporal = manifest.get("temporal")
+        if isinstance(temporal, dict) and temporal.get("frequency"):
+            return str(temporal["frequency"])
+        for key in ("frequency", "accrualperiodicity", "accrualPeriodicity", "periodicity"):
+            if manifest.get(key):
+                return str(manifest[key])
+        return None
+
     def _read_manifest_from_dir(self, directory: str) -> Optional[Tuple[Dict[str, Any], str]]:
         for fname in _MANIFEST_NAMES:
             path = os.path.join(directory, fname)

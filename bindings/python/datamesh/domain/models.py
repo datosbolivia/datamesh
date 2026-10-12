@@ -150,6 +150,7 @@ class CacheEntryMetadata:
     etag: Optional[str] = None
     sha256: Optional[str] = None
     source_service: str = "unknown"
+    update_frequency: Optional[str] = None  # daily | weekly | monthly | annual | irregular | streaming
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -162,6 +163,7 @@ class CacheEntryMetadata:
             "etag": self.etag,
             "sha256": self.sha256,
             "source_service": self.source_service,
+            "update_frequency": self.update_frequency,
         }
 
     @classmethod
@@ -176,6 +178,7 @@ class CacheEntryMetadata:
             etag=data.get("etag"),
             sha256=data.get("sha256"),
             source_service=data.get("source_service", "unknown"),
+            update_frequency=data.get("update_frequency"),
         )
 
 @dataclass(frozen=True)

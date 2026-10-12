@@ -95,6 +95,7 @@ class LocalStorageManager(StoragePort):
         extension: Optional[str] = None,
         source_service: str = "unknown",
         etag: Optional[str] = None,
+        update_frequency: Optional[str] = None,
     ) -> Path:
         k = self._hash_key(key_or_uri)
         ext = extension or ".bin"
@@ -138,6 +139,7 @@ class LocalStorageManager(StoragePort):
             etag=etag,
             sha256=sha.hexdigest(),
             source_service=source_service,
+            update_frequency=update_frequency,
         )
         self._metadata_cache[k] = meta.to_dict()
         self._save_metadata()
@@ -149,6 +151,7 @@ class LocalStorageManager(StoragePort):
         key_or_uri: str,
         source_service: str = "unknown",
         move: bool = False,
+        update_frequency: Optional[str] = None,
     ) -> Path:
         src = Path(source_path).resolve()
         if not src.exists():
@@ -177,6 +180,7 @@ class LocalStorageManager(StoragePort):
             cached_at=datetime.now(timezone.utc).isoformat(),
             sha256=sha.hexdigest(),
             source_service=source_service,
+            update_frequency=update_frequency,
         )
         self._metadata_cache[k] = meta.to_dict()
         self._save_metadata()

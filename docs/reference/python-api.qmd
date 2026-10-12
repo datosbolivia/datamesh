@@ -72,6 +72,8 @@ Valida un documento de concepto OKF/ODKF, un directorio bundle, o la sintaxis de
 ### `datamesh.resolve_resource(resource_uri: str) -> Optional[ResolvedResource]`
 Resuelve una referencia de recurso (tríada canónica, URL o ruta local) a su descriptor local o cacheado, sin ejecutar ninguna consulta. Es el punto de entrada de bajo nivel usado internamente por los motores.
 
+Para objetos remotos la resolución es **remoto-primero** (ADR 0023): los adaptadores (`kaggle`, `github`, `http`) siempre descargan la última versión publicada y refrescan la caché temporal, detectando cambios por `sha256`. Las copias locales (hermanas o en caché) solo se usan si la descarga falla, y en ese caso se emite un `logging.warning` indicando que pueden estar desactualizadas. `ResolvedResource.metadata.update_frequency` registra la periodicidad declarada por el nodo.
+
 - **Parámetros**:
   - `resource_uri` *(str)*: Tríada canónica (`catalogo:dataset:recurso`), URL HTTP, o ruta local.
 - **Retorno**: `ResolvedResource` (con `local_path`, `format`, `is_cached`, `metadata`) o `None` si no se puede resolver.

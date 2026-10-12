@@ -37,6 +37,7 @@ class StoragePort(ABC):
         extension: Optional[str] = None,
         source_service: str = "unknown",
         etag: Optional[str] = None,
+        update_frequency: Optional[str] = None,
     ) -> Path:
         """Saves content into temporal cache atomically and updates metadata."""
         ...
@@ -48,6 +49,7 @@ class StoragePort(ABC):
         key_or_uri: str,
         source_service: str = "unknown",
         move: bool = False,
+        update_frequency: Optional[str] = None,
     ) -> Path:
         """Stores or copies an existing physical file into the cache."""
         ...

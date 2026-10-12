@@ -86,6 +86,8 @@ class ResolveAndCacheResourceUseCase:
         physical_target: Optional[str] = None
         if dataset and resource:
             physical_target = self._workspace.resolve_triad_to_path(table_ref, dataset, resource)
+            if "update_frequency" not in ctx and dataset:
+                ctx["update_frequency"] = self._workspace.node_update_frequency(dataset)
 
         target_uri = physical_target or table_ref
 

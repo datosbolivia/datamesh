@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 import urllib.parse
@@ -11,10 +12,15 @@ from datamesh.net import open_url
 from datamesh.ports.resolver import ResourceAdapterPort
 from datamesh.ports.storage import StoragePort
 
+logger = logging.getLogger("datamesh.resolvers.http")
+
 class HttpAdapter(ResourceAdapterPort):
     """
     Generic HTTP/HTTPS adapter for streaming open datasets, Google Sheets CSV exports,
     and REST/tabular endpoints into temporal cache.
+
+    Remote-first: the endpoint is always re-fetched and the cache refreshed. A stale
+    cached copy is only served when the remote request fails, and a warning is emitted.
     """
 
     @property
@@ -61,25 +67,11 @@ class HttpAdapter(ResourceAdapterPort):
         storage: StoragePort,
         context: Optional[Dict[str, Any]] = None,
     ) -> Optional[ResolvedResource]:
-        # 1. Check if already cached in temporal storage
-        if storage.is_cached(uri_or_path):
-            cached_p = storage.get_cached_path(uri_or_path)
-            if cached_p and cached_p.exists():
-                meta = storage.get_metadata(uri_or_path)
-                fmt = cached_p.suffix.lstrip(".").lower() or "csv"
-                return ResolvedResource(
-                    descriptor=ResourceDescriptor(
-                        raw_reference=uri_or_path,
-                        format=fmt,
-                        source_service="http",
-                    ),
-                    local_path=cached_p,
-                    format=fmt,
-                    is_cached=True,
-                    metadata=meta,
-                )
+        update_frequency = (context or {}).get("update_frequency")
+        prev_meta = storage.get_metadata(uri_or_path)
+        prev_sha = prev_meta.sha256 if prev_meta else None
 
-        # 2. Stream download via HTTP
+        # 1. Remote-first: always re-fetch the endpoint and refresh temporal cache.
         req = urllib.request.Request(
             uri_or_path,
             headers={
@@ -103,9 +95,12 @@ class HttpAdapter(ResourceAdapterPort):
                     extension=ext,
                     source_service="http",
                     etag=etag,
+                    update_frequency=update_frequency,
                 )
                 fmt = ext.lstrip(".").lower()
                 meta = storage.get_metadata(uri_or_path)
+                if prev_sha and meta and meta.sha256 and prev_sha != meta.sha256:
+                    logger.info("HTTP resource '%s' changed (sha256 %s -> %s).", uri_or_path, prev_sha[:12], meta.sha256[:12])
                 return ResolvedResource(
                     descriptor=ResourceDescriptor(
                         raw_reference=uri_or_path,
@@ -118,4 +113,27 @@ class HttpAdapter(ResourceAdapterPort):
                     metadata=meta,
                 )
         except Exception as e:
+            # 2. Fallback: cached version (possibly stale) -- always warn.
+            if storage.is_cached(uri_or_path):
+                cached_p = storage.get_cached_path(uri_or_path)
+                if cached_p and cached_p.exists():
+                    logger.warning(
+                        "HTTP fetch failed for '%s' (%s). Using cached (possibly stale) copy at %s.",
+                        uri_or_path,
+                        e,
+                        cached_p,
+                    )
+                    meta = storage.get_metadata(uri_or_path)
+                    fmt = cached_p.suffix.lstrip(".").lower() or "csv"
+                    return ResolvedResource(
+                        descriptor=ResourceDescriptor(
+                            raw_reference=uri_or_path,
+                            format=fmt,
+                            source_service="http",
+                        ),
+                        local_path=cached_p,
+                        format=fmt,
+                        is_cached=True,
+                        metadata=meta,
+                    )
             raise RuntimeError(f"HTTP streaming error for '{uri_or_path}': {e}") from e

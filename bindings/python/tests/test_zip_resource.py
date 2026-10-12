@@ -52,14 +52,14 @@ def test_extract_zip_with_datapackage_manifest():
         assert "subfolder/metrics_*.csv" in extracted_p
         assert (tmp_p / "cache" / "unpacked").exists()
 
-def test_mcp_read_resource_from_zip():
+def test_mcp_read_resource_rejects_local_path():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_p = Path(tmpdir)
         zip_path = tmp_p / "mcp_test.zip"
-        
+
         with zipfile.ZipFile(zip_path, "w") as z:
             z.writestr("dataset.csv", "dept,population\nLP,3000000\nSC,3500000\nCB,2000000\n")
-            
+
         req = {
             "jsonrpc": "2.0",
             "id": 99,
@@ -74,10 +74,9 @@ def test_mcp_read_resource_from_zip():
         }
         resp = handle_jsonrpc(req)
         assert resp["id"] == 99
-        content = json.loads(resp["result"]["content"][0]["text"])
-        assert content["columns"] == ["dept", "population"]
-        assert content["row_count"] == 2
-        assert content["rows"][0] == ["LP", "3000000"]
+        assert resp["result"]["isError"] is True
+        text = resp["result"]["content"][0]["text"]
+        assert "Local filesystem paths are not allowed" in text
 
 def test_duckdb_sql_query_from_zip_table():
     with tempfile.TemporaryDirectory() as tmpdir:

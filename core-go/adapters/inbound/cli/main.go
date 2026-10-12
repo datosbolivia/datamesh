@@ -211,12 +211,12 @@ func main() {
 		}
 
 	case "config":
-		out, _ := json.MarshalIndent(cfg, "", "  ")
+		out, _ := json.MarshalIndent(cfg.Sanitized(), "", "  ")
 		fmt.Println(string(out))
 
 	case "serve":
 		port := "8000"
-		host := "0.0.0.0"
+		host := "127.0.0.1"
 		for i := 2; i < len(os.Args); i++ {
 			if (os.Args[i] == "--port" || os.Args[i] == "-p") && i+1 < len(os.Args) {
 				port = os.Args[i+1]
@@ -255,7 +255,6 @@ func printUsage() {
 	fmt.Println("  datamesh sql \"<SQL_QUERY>\"                   Execute full ANSI/DuckDB SQL with triad URIs")
 	fmt.Println("  datamesh query <uri> [--filter k=v] [--limit N] Query tabular resource")
 	fmt.Println("  datamesh lineage [target] [--format FORMAT]  Inspect dataset provenance and derivation DAG")
-	fmt.Println("  datamesh serve [--port 8000] [--host 0.0.0.0] Launch HTTP REST, CORS proxy, and MCP server")
+	fmt.Println("  datamesh serve [--port 8000] [--host 127.0.0.1] Launch HTTP REST, CORS proxy, and MCP server")
 	fmt.Println("  datamesh config                              Print active merged configuration")
 }
-

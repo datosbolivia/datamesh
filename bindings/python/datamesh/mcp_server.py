@@ -6,6 +6,8 @@ import sys
 from typing import Any, Dict
 
 import datamesh as dm
+from datamesh.adapters.engine.sql_utils import read_expression
+from datamesh.net import is_forbidden_local_ref, validate_proxy_url
 
 SERVER_NAME = "datamesh-mcp-server"
 SERVER_VERSION = "0.2.0"
@@ -341,6 +343,16 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
 
             elif tool_name == "datamesh_query_resource":
                 resource_uri = args.get("resource_uri", "")
+                if is_forbidden_local_ref(resource_uri):
+                    return make_tool_error(
+                        msg_id,
+                        "Local filesystem paths are not allowed; provide an http(s) URL or a catalog triad.",
+                    )
+                if resource_uri.startswith(("http://", "https://")):
+                    try:
+                        validate_proxy_url(resource_uri)
+                    except (ValueError, PermissionError) as guard_err:
+                        return make_tool_error(msg_id, str(guard_err))
                 filters = args.get("filters")
                 limit = args.get("limit")
                 data = dm.query(resource_uri, filters=filters, limit=limit)
@@ -354,7 +366,18 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
             elif tool_name in ("read_resource", "datamesh_read_resource"):
                 resource_uri = args.get("resource_uri") or args.get("uri") or ""
                 limit = args.get("limit")
-                
+
+                if is_forbidden_local_ref(resource_uri):
+                    return make_tool_error(
+                        msg_id,
+                        "Local filesystem paths are not allowed; provide an http(s) URL or a catalog triad.",
+                    )
+                if resource_uri.startswith(("http://", "https://")):
+                    try:
+                        validate_proxy_url(resource_uri)
+                    except (ValueError, PermissionError) as guard_err:
+                        return make_tool_error(msg_id, str(guard_err))
+
                 # 1. First attempt resolver_usecase to locate local or cached file (Parquet/CSV/Zip)
                 try:
                     resolved = dm._runtime.resolver_usecase.resolve(resource_uri)
@@ -380,13 +403,8 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                                 if z_fmt:
                                     fmt = z_fmt
 
-                        lower_p = local_p.lower()
-                        if lower_p.endswith(".parquet") or fmt == "parquet":
-                            read_clause = f"read_parquet('{local_p}')"
-                        elif lower_p.endswith(".json") or lower_p.endswith(".jsonl") or fmt in ("json", "jsonl"):
-                            read_clause = f"read_json_auto('{local_p}')"
-                        else:
-                            read_clause = f"read_csv_auto('{local_p}')"
+                        _ = fmt
+                        read_clause = read_expression(local_p)
 
                         limit_clause = f" LIMIT {int(limit)}" if limit else ""
                         df = duckdb.query(f"SELECT * FROM {read_clause}{limit_clause}").to_df()

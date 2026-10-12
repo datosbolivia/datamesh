@@ -33,7 +33,7 @@ def test_mcp_tools_list():
     assert "datamesh_search_catalog" in tool_names
     assert "datamesh_query_resource" in tool_names
 
-def test_mcp_tool_call_query():
+def test_mcp_tool_call_query_rejects_local_file():
     csv_path = os.path.join(TESTDATA_DIR, "mock_data_elecciones.csv")
     req = {
         "jsonrpc": "2.0",
@@ -49,9 +49,9 @@ def test_mcp_tool_call_query():
     }
     resp = handle_jsonrpc(req)
     assert resp["id"] == 3
-    content = json.loads(resp["result"]["content"][0]["text"])
-    assert content["row_count"] == 2
-    assert content["rows"][0][1] == "Santa Cruz"
+    assert resp["result"]["isError"] is True
+    text = resp["result"]["content"][0]["text"]
+    assert "Local filesystem paths are not allowed" in text
 
 def test_mcp_guardrails_instructions_and_prompts():
     # 1. Verify instructions in initialize

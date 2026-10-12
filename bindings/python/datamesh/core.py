@@ -26,6 +26,7 @@ from datamesh.adapters.resolvers.github import GitHubAdapter
 from datamesh.adapters.resolvers.kaggle import KaggleAdapter
 from datamesh.adapters.resolvers.http import HttpAdapter
 from datamesh.adapters.engine.duckdb_engine import DuckDBQueryEngine, slugify
+from datamesh.adapters.engine.sql_utils import read_expression, sql_identifier, sql_string_literal
 from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
 from datamesh.adapters.engine.go_engine import GoCoreQueryEngine
 from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
@@ -509,13 +510,11 @@ class DataMeshRuntime:
             try:
                 import duckdb
                 local_clean = target_path[7:] if target_path.startswith("file://") else target_path
-                read_clause = f"read_parquet('{local_clean}')" if local_clean.endswith(".parquet") else f"read_csv_auto('{local_clean}')"
+                read_clause = read_expression(local_clean)
                 where_clauses = []
                 if filters:
                     for k, v in filters.items():
-                        safe_k = k.replace("'", "''")
-                        safe_v = str(v).replace("'", "''")
-                        where_clauses.append(f"\"{safe_k}\" = '{safe_v}'")
+                        where_clauses.append(f"{sql_identifier(k)} = {sql_string_literal(v)}")
                 where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
                 limit_sql = f" LIMIT {int(limit)}" if limit else ""
                 df = duckdb.query(f"SELECT * FROM {read_clause}{where_sql}{limit_sql}").to_df()

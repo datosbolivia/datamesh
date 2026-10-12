@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 
@@ -16,11 +15,11 @@ import (
 
 // ServerConfig defines options for datamesh serve.
 type ServerConfig struct {
-	Port         string
-	Host         string
-	EnableProxy  bool
-	EnableMcp    bool
-	EnableCors   bool
+	Port        string
+	Host        string
+	EnableProxy bool
+	EnableMcp   bool
+	EnableCors  bool
 }
 
 // StartDataMeshServer boots the HTTP REST, CORS proxy, and JSON-RPC / MCP server.
@@ -59,9 +58,8 @@ func StartDataMeshServer(
 			return
 		}
 
-		parsedURL, err := url.Parse(targetURL)
-		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-			http.Error(w, `{"error": "Invalid target URL scheme"}`, http.StatusBadRequest)
+		if _, err := validateOutboundURL(targetURL); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusForbidden)
 			return
 		}
 
@@ -182,7 +180,15 @@ func StartDataMeshServer(
 	fmt.Fprintf(os.Stdout, "  - REST SQL:   http://%s/api/sql?q=<sql_query>\n", addr)
 	fmt.Fprintf(os.Stdout, "  - MCP RPC:    http://%s/mcp\n", addr)
 
-	return http.ListenAndServe(addr, mux)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	return server.ListenAndServe()
 }
 
 func enableCorsHeaders(w http.ResponseWriter) {
@@ -427,6 +433,30 @@ func handleMcpRPC(
 
 		if toolName == "datamesh_query_resource" {
 			resURI, _ := args["resource_uri"].(string)
+			if !isRemoteOrTriad(resURI) {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"isError": true,
+						"content": []map[string]interface{}{
+							{"type": "text", "text": "Local filesystem paths are not allowed; provide an http(s) URL or a catalog triad."},
+						},
+					},
+				}
+			}
+			if _, err := validateOutboundURL(resURI); err != nil {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"isError": true,
+						"content": []map[string]interface{}{
+							{"type": "text", "text": err.Error()},
+						},
+					},
+				}
+			}
 			limit := 0
 			if lVal, ok := args["limit"].(float64); ok {
 				limit = int(lVal)
@@ -469,6 +499,18 @@ func handleMcpRPC(
 
 		if toolName == "read_resource" {
 			uri, _ := args["uri"].(string)
+			if _, err := validateOutboundURL(uri); err != nil {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"isError": true,
+						"content": []map[string]interface{}{
+							{"type": "text", "text": err.Error()},
+						},
+					},
+				}
+			}
 			client := &http.Client{Timeout: 30 * time.Second}
 			resp, err := client.Get(uri)
 			if err != nil {

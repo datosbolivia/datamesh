@@ -12,12 +12,16 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict, Optional
 
 import datamesh as dm
+from datamesh.adapters.engine.sql_utils import read_expression
+from datamesh.net import open_url, validate_proxy_url
+
+DEFAULT_CORS_ORIGIN = os.environ.get("DATAMESH_CORS_ORIGIN", "*")
 
 class DataMeshServerHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler providing REST API, CORS Proxy, and MCP JSON-RPC 2.0 endpoints."""
 
     def _send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", DEFAULT_CORS_ORIGIN)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 
@@ -59,6 +63,17 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b'{"error": "Missing \'url\' query parameter"}')
                 return
 
+            # SSRF guard: only http/https to allowed (non-private) hosts.
+            try:
+                validate_proxy_url(target_url)
+            except (ValueError, PermissionError) as guard_err:
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(guard_err)}).encode("utf-8"))
+                return
+
             # A. First check if DataMesh runtime resolver can resolve target_url
             try:
                 resolved = dm._runtime.resolver_usecase.resolve(target_url)
@@ -71,7 +86,7 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                     
                     if wants_csv and is_parquet:
                         import duckdb
-                        csv_data = duckdb.query(f"SELECT * FROM read_parquet('{local_p}')").to_df().to_csv(index=False).encode("utf-8")
+                        csv_data = duckdb.query(f"SELECT * FROM {read_expression(local_p)}").to_df().to_csv(index=False).encode("utf-8")
                         self.send_response(200)
                         self.send_header("Content-Type", "text/csv; charset=utf-8")
                         self._send_cors_headers()
@@ -83,7 +98,7 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                         extracted_p, _ = extract_zip_tabular_resource(local_p)
                         if extracted_p:
                             import duckdb
-                            csv_data = duckdb.query(f"SELECT * FROM read_csv_auto('{extracted_p}')").to_df().to_csv(index=False).encode("utf-8")
+                            csv_data = duckdb.query(f"SELECT * FROM {read_expression(extracted_p)}").to_df().to_csv(index=False).encode("utf-8")
                             self.send_response(200)
                             self.send_header("Content-Type", "text/csv; charset=utf-8")
                             self._send_cors_headers()
@@ -113,23 +128,13 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
             except Exception as resolve_err:
                 sys.stderr.write(f"[datamesh serve] Resolver fallback skipped: {resolve_err}\n")
 
-            # B. Direct HTTP fetch attempt
-            import ssl
+            # B. Direct HTTP fetch attempt (TLS verification on unless DATAMESH_INSECURE_TLS=1)
             try:
                 req = urllib.request.Request(
                     target_url,
                     headers={"User-Agent": "DataMesh-Sovereign-Proxy/0.2.0 (+https://datosbolivia.org)"},
                 )
-                try:
-                    resp_ctx = urllib.request.urlopen(req, timeout=30)
-                except urllib.error.URLError as u_err:
-                    if isinstance(u_err.reason, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in str(u_err) or "certificate" in str(u_err).lower():
-                        unverified = ssl.create_default_context()
-                        unverified.check_hostname = False
-                        unverified.verify_mode = ssl.CERT_NONE
-                        resp_ctx = urllib.request.urlopen(req, timeout=30, context=unverified)
-                    else:
-                        raise
+                resp_ctx = open_url(req, timeout=30)
 
                 with resp_ctx as resp:
                     status_code = resp.status
@@ -282,12 +287,15 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
 class ReusableHTTPServer(HTTPServer):
     allow_reuse_address = True
 
-def run_server(host: str = "0.0.0.0", port: int = 8000):
-    """Starts the DataMesh HTTP REST, CORS proxy, and MCP server."""
+def run_server(host: str = "127.0.0.1", port: int = 8000):
+    """Starts the DataMesh HTTP REST, CORS proxy, and MCP server.
+
+    Binds to loopback by default; pass host='0.0.0.0' explicitly to expose it.
+    """
     server_address = (host, port)
     httpd = ReusableHTTPServer(server_address, DataMeshServerHandler)
 
-    addr_display = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}"
+    addr_display = f"http://{host if host not in ('0.0.0.0', '') else 'localhost'}:{port}"
     sys.stderr.write(f"DataMesh Sovereign Server started on {addr_display}\n")
     sys.stderr.write(f"  - Health:     {addr_display}/health\n")
     sys.stderr.write(f"  - CORS Proxy: {addr_display}/proxy?url=<target_url>\n")

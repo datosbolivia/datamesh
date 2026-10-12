@@ -64,3 +64,38 @@ func (c Config) GetAdapterValue(adapterName, key string) (string, bool) {
 	val, ok := adapter[strings.ToLower(key)]
 	return val, ok
 }
+
+// redactSensitiveKeys masks adapter values that look like secrets (tokens,
+// API keys, passwords) so that serialized configuration never leaks them.
+func redactSensitiveKeys(c Config) Config {
+	sanitized := NewDefaultConfig()
+	sanitized.Base = c.Base
+	sanitized.Adapters = make(map[string]map[string]string, len(c.Adapters))
+	for adapter, kv := range c.Adapters {
+		out := make(map[string]string, len(kv))
+		for key, value := range kv {
+			lk := strings.ToLower(key)
+			switch {
+			case strings.Contains(lk, "token"),
+				strings.Contains(lk, "secret"),
+				strings.Contains(lk, "password"),
+				strings.Contains(lk, "passwd"),
+				strings.Contains(lk, "credential"),
+				strings.Contains(lk, "api_key"),
+				strings.Contains(lk, "apikey"),
+				strings.Contains(lk, "client_secret"):
+				out[key] = "***"
+			default:
+				out[key] = value
+			}
+		}
+		sanitized.Adapters[adapter] = out
+	}
+	return sanitized
+}
+
+// Sanitized returns a copy of the configuration safe for logging or
+// serialization: adapter secrets (tokens, keys, passwords) are masked.
+func (c Config) Sanitized() Config {
+	return redactSensitiveKeys(c)
+}

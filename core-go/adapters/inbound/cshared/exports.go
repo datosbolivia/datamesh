@@ -99,7 +99,7 @@ func DataMeshInit(configJSON *C.char) *C.char {
 	if initErr != nil {
 		return makeJSONResponse(nil, initErr)
 	}
-	return makeJSONResponse(map[string]interface{}{"status": "initialized", "config": activeConfig}, nil)
+	return makeJSONResponse(map[string]interface{}{"status": "initialized", "config": activeConfig.Sanitized()}, nil)
 }
 
 //export DataMeshDiscoverCatalog

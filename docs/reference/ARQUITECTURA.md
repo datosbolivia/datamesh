@@ -340,3 +340,23 @@ El motor debe encontrar metadatos *tal y como están publicados* (sin depender d
   - W3C DCAT-AP JSON-LD (`ToDCATJSON`, catalog de tipo `dcat`).
   - Nuevos destinos = nuevo convertidor en dominio + (opcionalmente) nuevo `ManifestParserPort` para su re-ingesta.
 - **Puerto:** `Inbound.InteroperabilityServicePort` (ingestar, exportar CKAN, exportar DCAT); caso de uso de referencia: **CU-20** en `docs/reference/CASOS_DE_USO.md`.
+
+## 13. Perímetro de Seguridad (ADR 0016)
+
+Autoridad normativa: **ADR 0016**. La capa de entrada (HTTP REST, proxy CORS y MCP, en Python y Go) opera bajo una política **default-deny** para SSRF, TLS y lectura local:
+
+| Superficie | Política | Aplica en |
+| --- | --- | --- |
+| Destinos de reenvío (`/proxy`, `read_resource`, fetch de `query_resource`) | Solo `http(s)`; se bloquean hosts que resuelven a loopback, RFC 1918, link-local, multicast, reservados o no especificados | `datamesh/net.py` (Python), `core-go/adapters/inbound/cli/security.go` (Go) |
+| Verificación TLS | Estricta por defecto; fallback `CERT_NONE` solo con `DATAMESH_INSECURE_TLS=1` y solo ante errores de certificado | `datamesh.net.open_url` |
+| Referencias de recursos en MCP | Solo `http(s)` o tríadas canónicas; se rechazan rutas absolutas, `file://`, `..`, unidades Windows y UNC | `mcp_server.py`, `serve.go` |
+| SQL con datos del operador | Literales e identificadores escapados (`sql_string_literal`, `sql_identifier`) | `sql_utils.py` en `core.py`, `server.py`, `mcp_server.py` |
+| Serialización de configuración | `Config.Sanitized()` enmascara `token`, `secret`, `password`, `passwd`, `credential`, `api_key`, `apikey`, `client_secret` | `main.go` (`datamesh config`), `cshared/exports.go` (`DataMeshInit`) |
+| Bind del servidor | `127.0.0.1` por defecto (Python y Go); `0.0.0.0` explícito | `server.run_server`, `datamesh serve --host` |
+
+**Variables de entorno de configuración (todas opt-in):**
+
+- `DATAMESH_INSECURE_TLS=1` — degrada la verificación de certificado ante errores TLS.
+- `DATAMESH_PROXY_ALLOWED_HOSTS=host1,host2` — allowlist SSRF; si está definida, solo esos hosts.
+- `DATAMESH_PROXY_ALLOW_PRIVATE=1` — restaura destinos privados (federaciones de intranet).
+- `DATAMESH_CORS_ORIGIN=...` — origen CORS permitido (default `*`).

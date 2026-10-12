@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
 	"github.com/datosbolivia/datamesh-sdk/core-go/ports/outbound"
@@ -31,7 +32,7 @@ func NewQueryDataProductUseCase(
 		engine:        engine,
 		storage:       storage,
 		triadResolver: triadResolver,
-		httpClient:    &http.Client{},
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

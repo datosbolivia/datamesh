@@ -277,11 +277,11 @@ func handleMcpRPC(
 					},
 					{
 						"name":        "datamesh_sql_query",
-						"description": "Executes full ANSI SQL queries with canonical triad table names 'catalogo:dataset:resource' or direct URLs.",
+						"description": "Executes the supported SQL subset (SELECT cols FROM <triad|csv|tsv> [WHERE col = value AND ...] [LIMIT n]) with canonical triad table names 'catalogo:dataset:resource' or direct CSV/TSV URLs. Full ANSI SQL requires the DuckDB engine.",
 						"inputSchema": map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
-								"sql_query": map[string]interface{}{"type": "string", "description": "Full ANSI SQL query."},
+								"sql_query": map[string]interface{}{"type": "string", "description": "SQL subset query (SELECT cols FROM <triad|csv|tsv> [WHERE ...] [LIMIT n]); full ANSI SQL needs the DuckDB engine."},
 								"sql":       map[string]interface{}{"type": "string", "description": "Alternative alias for sql_query."},
 							},
 							"required": []string{"sql_query"},

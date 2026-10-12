@@ -44,7 +44,7 @@ Ejecuta una consulta sobre un archivo CSV aplicando filtros y límites con strea
 ---
 
 ### `DataMeshExecuteSQL(sqlQuery *C.char, tableMappingJSON *C.char) *C.char`
-Ejecuta ANSI SQL con DuckDB embebido en Go sobre tríadas canónicas y retorna columnas y filas en formato JSON.
+Ejecuta el subconjunto SQL soportado por el motor fallback puro Go (`SELECT <cols|*> FROM <tabla> [WHERE col = valor [AND ...]] [LIMIT n]`) sobre una única tríada canónica o archivo CSV/TSV, y retorna columnas y filas en formato JSON. Las consultas fuera de este subconjunto (agregaciones, JOIN, GROUP BY, ORDER BY, expresiones) se rechazan explícitamente; el SQL ANSI completo requiere el motor DuckDB del binding Python.
 
 ---
 

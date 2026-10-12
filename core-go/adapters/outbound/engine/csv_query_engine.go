@@ -62,6 +62,11 @@ func (e *InMemTabularQueryEngine) Execute(
 		colIndex[strings.ToLower(strings.TrimSpace(h))] = i
 	}
 
+	outHeaders, projectIdx, projErr := projectColumns(headers, colIndex, req.Select)
+	if projErr != nil {
+		return nil, projErr
+	}
+
 	// Filter mapping (case-insensitive column names)
 	filterIndices := make(map[int]string)
 	for k, v := range req.Filters {
@@ -96,11 +101,23 @@ func (e *InMemTabularQueryEngine) Execute(
 		}
 
 		if matches {
-			row := make([]interface{}, len(record))
-			for i, val := range record {
-				row[i] = val
+			if len(projectIdx) > 0 {
+				row := make([]interface{}, len(projectIdx))
+				for i, idx := range projectIdx {
+					if idx >= 0 && idx < len(record) {
+						row[i] = record[idx]
+					} else {
+						row[i] = ""
+					}
+				}
+				matchedRows = append(matchedRows, row)
+			} else {
+				row := make([]interface{}, len(record))
+				for i, val := range record {
+					row[i] = val
+				}
+				matchedRows = append(matchedRows, row)
 			}
-			matchedRows = append(matchedRows, row)
 
 			if req.Limit > 0 && len(matchedRows) >= req.Limit {
 				break
@@ -109,43 +126,90 @@ func (e *InMemTabularQueryEngine) Execute(
 	}
 
 	elapsed := time.Since(start)
-	return domain.NewQueryResult(headers, matchedRows, elapsed), nil
+	return domain.NewQueryResult(outHeaders, matchedRows, elapsed), nil
 }
 
-// ExecuteSQL provides basic SQL execution fallback over resolved CSV/TSV resources in Go Core.
+// projectColumns resolves the requested column projection to output headers and
+// source indices. An empty selection means "all columns".
+func projectColumns(headers []string, colIndex map[string]int, selectCols []string) ([]string, []int, error) {
+	if len(selectCols) == 0 {
+		return headers, nil, nil
+	}
+	outHeaders := make([]string, 0, len(selectCols))
+	projectIdx := make([]int, 0, len(selectCols))
+	for _, col := range selectCols {
+		idx, found := colIndex[strings.ToLower(strings.TrimSpace(col))]
+		if !found {
+			return nil, nil, fmt.Errorf("column %q not found in table", col)
+		}
+		outHeaders = append(outHeaders, headers[idx])
+		projectIdx = append(projectIdx, idx)
+	}
+	return outHeaders, projectIdx, nil
+}
+
+// ExecuteSQL executes the supported SQL subset (see domain.SimpleSelect) over a
+// single resolved CSV/TSV resource. Queries outside that subset are rejected
+// explicitly instead of silently returning wrong rows; callers needing full ANSI
+// SQL must use the DuckDB engine.
 func (e *InMemTabularQueryEngine) ExecuteSQL(ctx context.Context, req domain.SQLQueryRequest) (*domain.QueryResult, error) {
-	if len(req.ResolvedTables) == 0 && len(req.Bindings) == 0 {
-		return nil, fmt.Errorf("no tables resolved for SQL query: %s", req.SQLQuery)
+	selectStmt, err := domain.ParseSimpleSelect(req.SQLQuery)
+	if err != nil {
+		return nil, err
 	}
 
-	// 1. For single table queries from resolved triads in Go Core fallback
-	for _, res := range req.ResolvedTables {
-		// Read physical file if local
-		data, err := os.ReadFile(res.PhysicalURI)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read table '%s' at %s: %w", res.Triad.String(), res.PhysicalURI, err)
-		}
-
-		queryReq := domain.QueryRequest{
-			ResourceURI: res.PhysicalURI,
-			Query:       req.SQLQuery,
-		}
-		return e.Execute(ctx, queryReq, data, res.Format)
+	binding, err := selectSingleBinding(req, selectStmt.Table)
+	if err != nil {
+		return nil, err
 	}
 
-	// 2. For single table queries from explicit bindings
-	for _, b := range req.Bindings {
-		data, err := os.ReadFile(b.PhysicalPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read table '%s' at %s: %w", b.Name, b.PhysicalPath, err)
-		}
-
-		queryReq := domain.QueryRequest{
-			ResourceURI: b.PhysicalPath,
-			Query:       req.SQLQuery,
-		}
-		return e.Execute(ctx, queryReq, data, b.Format)
+	if strings.HasPrefix(binding.PhysicalPath, "http://") || strings.HasPrefix(binding.PhysicalPath, "https://") {
+		return nil, fmt.Errorf("pure-Go fallback engine cannot read remote resource %q; use the DuckDB engine", binding.PhysicalPath)
 	}
 
-	return nil, fmt.Errorf("unsupported multi-table query in pure Go fallback (use DuckDB engine)")
+	localPath := strings.TrimPrefix(binding.PhysicalPath, "file://")
+	rawData, err := os.ReadFile(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read table '%s' at %s: %w", binding.Name, binding.PhysicalPath, err)
+	}
+
+	return e.Execute(ctx, domain.QueryRequest{
+		ResourceURI: binding.PhysicalPath,
+		Query:       req.SQLQuery,
+		Select:      selectStmt.Columns,
+		Filters:     selectStmt.Where,
+		Limit:       selectStmt.Limit,
+	}, rawData, binding.Format)
+}
+
+// selectSingleBinding resolves the single table referenced by the query from the
+// resolved triads or explicit mappings, rejecting multi-table queries instead of
+// picking an arbitrary table (map iteration order is not deterministic).
+func selectSingleBinding(req domain.SQLQueryRequest, tableName string) (domain.TableBinding, error) {
+	if tableName != "" {
+		if binding, ok := req.Bindings[tableName]; ok {
+			return binding, nil
+		}
+		if res, ok := req.ResolvedTables[tableName]; ok {
+			return bindingFromResolved(tableName, res), nil
+		}
+	}
+
+	total := len(req.Bindings) + len(req.ResolvedTables)
+	switch {
+	case total == 0:
+		return domain.TableBinding{}, fmt.Errorf("no table resolved for query %q", req.SQLQuery)
+	case total == 1:
+		for _, binding := range req.Bindings {
+			return binding, nil
+		}
+		for key, res := range req.ResolvedTables {
+			return bindingFromResolved(key, res), nil
+		}
+	}
+	return domain.TableBinding{}, fmt.Errorf("pure-Go fallback engine supports a single table per query (use the DuckDB engine for JOIN / multi-table queries)")
+}
+
+func bindingFromResolved(name string, res domain.ResolvedResource) domain.TableBinding {
+	return domain.TableBinding{Name: name, PhysicalPath: res.PhysicalURI, Format: res.Format}
 }

@@ -78,6 +78,8 @@ El adaptador `DuckDBQueryEngine` proporciona capacidades completas de analítica
 - **Acceso Híbrido Cero-Latencia / Streaming:** Prioriza copias locales en repositorios de trabajo y caché (`~/datamesh/cache`), recurriendo de manera transparente a URLs remotas con `httpfs` (normalizando URLs de GitHub a `raw.githubusercontent.com`).
 - **Compatibilidad JSON:** Normalización recursiva de tipos de DuckDB (`Decimal`, `datetime`, `UUID`) para garantizar salida serializable limpia en JSON a través de CLI y MCP.
 
+**Motor fallback puro Go (`InMemTabularQueryEngine`):** cuando no hay DuckDB (CLI/MCP de Go Core), el camino SQL sólo soporta el subconjunto honesto `SELECT <cols|*> FROM <tabla> [WHERE col = valor [AND ...]] [LIMIT n]` sobre **una única** tabla local CSV/TSV. Las construcciones fuera de ese subconjunto (agregaciones, funciones, `JOIN`, `GROUP BY`, `ORDER BY`, subconsultas) se **rechazan con un error explícito** en lugar de devolver resultados parciales o incorrectos (`core-go/domain/sqlsubset.go`). La selección entre motores registrados (`QueryEngineRegistry.SelectEngine`) es determinista (orden por nombre), no dependiente del orden de iteración del `map`. Autoridad normativa: **ADR 0019**.
+
 ## 4. Módulos Hexagonales en Python (`bindings/python/datamesh/`)
 
 El runtime de Python implementa Arquitectura Hexagonal estricta con inversión de dependencias hacia el dominio:

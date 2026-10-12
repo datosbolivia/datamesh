@@ -55,6 +55,7 @@
   5. Registra vistas virtuales con alias canónicos y slugificados (`slugify`).
   6. Ejecuta la consulta SQL, normaliza tipos complejos (`Decimal`, fechas, UUIDs) a primitivas serializables en JSON, y retorna columnas, filas y conteo.
   7. Si una tabla no existe o es inalcanzable, genera un error descriptivo y explícito sin fallar con errores crípticos de DuckDB.
+  8. En entornos sin DuckDB (CLI/MCP de Go Core), el motor fallback puro Go sólo ejecuta el subconjunto `SELECT <cols|*> FROM <tabla> [WHERE col = valor [AND ...]] [LIMIT n]` sobre una única tabla local y **rechaza explícitamente** el resto de construcciones (agregaciones, `JOIN`, `GROUP BY`, `ORDER BY`, subconsultas) remitiendo a DuckDB. Ver **ADR 0019**.
 
 ## CU-07: Fachada Unificada de 5 Métodos en Bindings (`UnifiedClientFacade`)
 - **Actor:** Desarrolladores e integradores en Python (`import datamesh as dm`) y TypeScript (`import { datamesh, discover, search, get, query, sql } from '@datosbolivia/datamesh-client'`).

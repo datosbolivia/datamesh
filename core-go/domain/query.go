@@ -8,6 +8,7 @@ import (
 type QueryRequest struct {
 	ResourceURI string            `json:"resource_uri"`
 	Query       string            `json:"query"`
+	Select      []string          `json:"select,omitempty"` // column projection; empty means all
 	Filters     map[string]string `json:"filters,omitempty"`
 	Limit       int               `json:"limit,omitempty"`
 }

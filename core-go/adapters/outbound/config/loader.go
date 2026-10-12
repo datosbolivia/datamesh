@@ -14,7 +14,7 @@ import (
 
 // FileAndEnvConfigLoader loads configuration prioritizing Environment Variables > File Config > Defaults.
 type FileAndEnvConfigLoader struct {
-	envLookup func(string) []string
+	envLookup func() []string
 }
 
 // NewConfigLoader returns an initialized configuration loader.

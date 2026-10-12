@@ -54,4 +54,13 @@ type LineageServicePort interface {
 	GetLineage(ctx context.Context, datasetIDOrPath string, searchDirs []string, catalogURL string) (map[string]interface{}, error)
 }
 
+// InteroperabilityServicePort defines inbound operations for as-is ingestion of heterogeneous
+// metadata into canonical ODKF DataProducts (ADR 0013) and export from ODKF to external
+// standards (CKAN/Frictionless DataPackage, W3C DCAT).
+type InteroperabilityServicePort interface {
+	Ingest(ctx context.Context, target string, authType string) (*domain.DataProduct, error)
+	ExportCKANDataPackage(ctx context.Context, dp *domain.DataProduct) ([]byte, error)
+	ExportDCAT(ctx context.Context, dp *domain.DataProduct) ([]byte, error)
+}
+
 

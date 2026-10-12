@@ -100,7 +100,7 @@ resources:
 		t.Errorf("r0 find mismatch: %+v", r0)
 	}
 
-	r1, found := manifest.FindResource("compilacion_de_datos_de_calidad_del_aire_de_bolivia")
+	r1, found := manifest.FindResource("compilaci_n_de_datos_de_calidad_del_aire_de_bolivia")
 	if !found || r1.Format != "csv" {
 		t.Errorf("r1 find by slug mismatch: %+v", r1)
 	}

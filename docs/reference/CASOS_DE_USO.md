@@ -203,3 +203,15 @@
   2. Asocia y propaga consistentemente metadatos dimensionales (`row_count`/`filas`, `columnas`, `fecha_minima`, `fecha_maxima`, `frecuencia_actualizacion_dias`, `resource_family_id`), gobernanza (`x-policy`), y ejecución distribuida (`lakequery: {enabled, storage}`).
   3. Permite la exportación e ingesta directa de paquetes como Frictionless DataPackage vía HTTP (`/dataset/<id>/datapackage.json` y `/dataset/<id>/datapackage.yaml`) y Action APIs (`metadata_datapackage_show` y `lakequery_datapackage_show`).
   4. Garantiza que cualquier dataset registrado o modificado en CKAN sea inmediatamente comprensible por el motor DuckDB de `datamesh-sdk` y consultable analíticamente por `ckanext-lakequery` sin desajustes de esquema ni transformaciones manuales.
+
+
+## CU-20: Ingesta As-Is y Exportación ODKF como Hub (`AsIsIngestUseCase`)
+- **Actor:** Cliente DataMesh, Agente IA, harvester genérico o CLI (`datamesh ingest`, `dm.ingest()`).
+- **Entrada:** `target` (URL de nodo OKF, `datapackage.json`/`.yaml`/`.yml`, `llms.txt`, `index.md`, dataset CKAN `package_show` o portal con well-known) y `auth_type` opcional.
+- **Comportamiento:**
+  1. **Vía conformante:** consulta `/.well-known/datamesh.json` (CU-14) y, según el tipo (`okf`, `git`, `dcat`, `ckan`), delega en el puerto idiomático adecuado.
+  2. **Vía as-is (ADR 0013):** si no hay well-known publicado, sondea el manifiesto *tal y como está* mediante `UnifiedMetadataReader` (cadena de parsers de `llms.txt`, `datapackage.json`/`yaml`/`yml`, `index.md` OKF, DCAT, RO-Crate registrables con `RegisterParser`).
+  3. **Fallback CKAN:** si el destino parece un package de CKAN (`/api/3/action/package_show`, `/dataset/<id>`), lee el paquete crudo y lo reconstruye a OKF con la capa anticorrupción (`ReconstructOKF`).
+  4. **Elevación a ODKF:** todo manifiesto intermedio (capa Información) se normaliza a un `DataProduct` canónico (capa Conocimiento) validando invariantes OKF (título, tipo, dimensiones).
+  5. **Exportación hub:** el `DataProduct` ODKF se exporta, puro en el dominio, a CKAN/Frictionless DataPackage JSON (`ToCKANDataPackageJSON`) y W3C DCAT JSON-LD (`ToDCATJSON`), para publicar en portales que no emiten well-known.
+- **Nota de autoridad:** la lógica de conversión vive exclusivamente en `core-go`; los bindings solo aportan adaptadores que implementan los puertos de red/lectura definidos en Go (ADR 0013).

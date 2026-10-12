@@ -2,7 +2,10 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 
-const EMOJI_RE = /[\p{Emoji}]/u
+// \p{Emoji} also matches ASCII digits, '#' and '*' (they carry the Emoji property
+// for VS16 use), which would forbid any .md containing a numeral. Extended_Pictographic
+// narrows the match to actual emoji depictions.
+const EMOJI_RE = /[\p{Extended_Pictographic}]/u
 const DOC_FILE_RE = /\.(md|qmd|rst)$/i
 const CODE_FILE_RE = /^(bindings\/python\/.*\.py|core-go\/.*\.go|bindings\/typescript\/src\/.*\.tsx?|bindings\/r\/.*\.[Rr])$/i
 const IGNORED_DIR_RE = /(^|\/)(dist|build|node_modules|\.venv|__pycache__)\//

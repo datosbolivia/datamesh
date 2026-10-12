@@ -327,3 +327,16 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 +-----------------------------------------------------------------------------------------------+
 ```
 
+
+## 12. Ingesta As-Is y ODKF como Hub de Exportación (ADR 0013)
+
+El motor debe encontrar metadatos *tal y como están publicados* (sin depender del well-known) y convertirlos al modelo ODKF canónico, y desde ODKF exportar a otros estándares. Autoridad normativa: **ADR 0013**.
+
+- **Vía conformante:** `/.well-known/datamesh.json` (ver §7) resuelve el tipo de backend y se delega en el puerto idiomático (`ckan`, `okf`, `git`, `dcat`).
+- **Vía as-is:** si no hay well-known, `AsIsIngestUseCase` recorre la cadena de sondeo (ADR 0013): `llms.txt`/`llms-full.txt`, `datapackage.json`/`.yaml`/`.yml` (parsers registrados en `UnifiedMetadataReaderPort`), `index.md` OKF y, en fallback, `package_show`/`status_show` de CKAN via capa anticorrupción (`HarvestCKANUseCase.ReconstructOKF`).
+- **Elevación a ODKF:** cada manifiesto intermedio (Capa 2 Información) se normaliza a `DataProduct` canónico (Capa 3 Conocimiento) con invariantes (título, tipo, dimensiones) en el límite del dominio.
+- **Exportación hub (dominio puro):** `core-go/domain/knowledge_export.go` serializa `DataProduct` a:
+  - CKAN/Frictionless DataPackage JSON (`ToCKANDataPackageJSON`, punta a puente `/dataset/<id>/datapackage.json` de ADR 0012).
+  - W3C DCAT-AP JSON-LD (`ToDCATJSON`, catalog de tipo `dcat`).
+  - Nuevos destinos = nuevo convertidor en dominio + (opcionalmente) nuevo `ManifestParserPort` para su re-ingesta.
+- **Puerto:** `Inbound.InteroperabilityServicePort` (ingestar, exportar CKAN, exportar DCAT); caso de uso de referencia: **CU-20** en `docs/reference/CASOS_DE_USO.md`.

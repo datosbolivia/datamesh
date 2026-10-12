@@ -60,11 +60,25 @@ class CanonicalURI:
         # 1. datamesh:// or odkf:// scheme
         if trimmed.startswith(("datamesh://", "odkf://")):
             clean = trimmed.split("://", 1)[1]
+            clean = clean.split("?")[0].split("#")[0]
             parts = [p.strip() for p in clean.split("/") if p.strip()]
-            if len(parts) >= 3:
-                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2])
+            if len(parts) >= 4:
+                # Format odkf://namespace/catalog/dataset/resource[:version] or odkf://namespace/catalog/dataset:version
+                cat = parts[1]
+                ds = parts[2]
+                res_raw = parts[3].split(":", 1)[0]
+                return cls(catalog=cat, dataset=ds, resource=res_raw)
+            elif len(parts) == 3:
+                # If parts[2] contains a version colon (e.g. dataset:v1.0), parts[0] is namespace, parts[1] is catalog
+                if ":" in parts[2] and trimmed.startswith("odkf://"):
+                    cat = parts[1]
+                    ds = parts[2].split(":", 1)[0]
+                    res_raw = parts[2].split(":", 1)[1]
+                    return cls(catalog=cat, dataset=ds, resource=res_raw)
+                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2].split(":", 1)[0])
             elif len(parts) == 2:
-                return cls(catalog=None, dataset=parts[0], resource=parts[1])
+                res_raw = parts[1].split(":", 1)[0]
+                return cls(catalog=None, dataset=parts[0], resource=res_raw)
             return None
 
         # 2. HTTP/HTTPS or file URLs containing /datasets/<dataset>/<resource> or /nodes/<dataset>/<resource>
@@ -649,12 +663,60 @@ class LineageTransformation:
 
 
 @dataclass(frozen=True)
+class EpistemicActor:
+    """Represents an epistemic actor in the provenance and trust chain (emitter or attester)."""
+    by: str                                           # human:<id>, agent:<id>, process:<id>
+    at: Optional[str] = None                          # ISO 8601 timestamp
+    role: Optional[str] = None                        # raw-data-producer, validator, auditor
+    verdict: Optional[str] = None                     # verified, refuted, pending
+    trust_tier: Optional[str] = None                  # unverified, machine-confirmed, human-reviewed
+    signature: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"by": self.by}
+        if self.at:
+            out["at"] = self.at
+        if self.role:
+            out["role"] = self.role
+        if self.verdict:
+            out["verdict"] = self.verdict
+        if self.trust_tier:
+            out["trust_tier"] = self.trust_tier
+        if self.signature:
+            out["signature"] = dict(self.signature)
+        if self.metadata:
+            out["metadata"] = dict(self.metadata)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Union[str, Dict[str, Any]]) -> EpistemicActor:
+        if isinstance(data, str):
+            return cls(by=data)
+        return cls(
+            by=str(data.get("by") or "unknown_actor"),
+            at=data.get("at"),
+            role=data.get("role"),
+            verdict=data.get("verdict"),
+            trust_tier=data.get("trust_tier"),
+            signature=data.get("signature"),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class LineageInfo:
-    """OKF v0.2 / W3C PROV-O provenance metadata record for a dataset."""
+    """OKF v0.2 / W3C PROV-O provenance and epistemic metadata record for a dataset."""
     dataset_id: str
     title: Optional[str] = None
     version: Optional[str] = None
     updated_at: Optional[str] = None
+    emitter: Optional[EpistemicActor] = None
+    attester: Optional[EpistemicActor] = None
+    ref: Optional[str] = None                         # By-Reference external lineage file
+    status: Optional[str] = None                      # draft, stable, verified, refuted, deprecated
+    supersedes: Optional[str] = None                  # URI of superseded concept (Popperian falsability)
+    nature: Optional[str] = None                      # structured, semi-structured, unstructured
     sources: tuple[LineageSource, ...] = ()
     transformations: tuple[LineageTransformation, ...] = ()
     was_derived_from: tuple[str, ...] = ()
@@ -668,6 +730,20 @@ class LineageInfo:
             out["title"] = self.title
         if self.version:
             out["version"] = self.version
+        if self.updated_at:
+            out["updated_at"] = self.updated_at
+        if self.emitter:
+            out["emitter"] = self.emitter.to_dict()
+        if self.attester:
+            out["attester"] = self.attester.to_dict()
+        if self.ref:
+            out["ref"] = self.ref
+        if self.status:
+            out["status"] = self.status
+        if self.supersedes:
+            out["supersedes"] = self.supersedes
+        if self.nature:
+            out["nature"] = self.nature
         if self.updated_at:
             out["updated_at"] = self.updated_at
         if self.sources:
@@ -725,11 +801,24 @@ class LineageInfo:
             if parent and parent not in derived and parent != did:
                 derived.append(parent)
 
+        # Emitter and attester
+        raw_emitter = lineage_dict.get("emitter") or data.get("emitter")
+        emitter = EpistemicActor.from_dict(raw_emitter) if raw_emitter else None
+
+        raw_attester = lineage_dict.get("attester") or data.get("attester")
+        attester = EpistemicActor.from_dict(raw_attester) if raw_attester else None
+
         return cls(
             dataset_id=did,
             title=title,
             version=lineage_dict.get("version") or data.get("version"),
             updated_at=lineage_dict.get("updated_at") or data.get("updated_at"),
+            emitter=emitter,
+            attester=attester,
+            ref=lineage_dict.get("ref") or data.get("lineage_ref"),
+            status=data.get("status") or lineage_dict.get("status"),
+            supersedes=data.get("supersedes") or lineage_dict.get("supersedes"),
+            nature=data.get("nature") or lineage_dict.get("nature"),
             sources=sources,
             transformations=transforms,
             was_derived_from=tuple(derived),

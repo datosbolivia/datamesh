@@ -156,6 +156,32 @@ class ResolveAndCacheResourceUseCase:
                         except Exception:
                             continue
 
+                # Also inspect index.md frontmatter to see if it specifies contracts by-reference (ref)
+                index_p = os.path.join(c, "index.md")
+                if os.path.exists(index_p):
+                    try:
+                        with open(index_p, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        if content.startswith("---") and yaml:
+                            parts = content.split("---", 2)
+                            if len(parts) >= 3:
+                                fm = yaml.safe_load(parts[1])
+                                if isinstance(fm, dict):
+                                    contracts = fm.get("contracts") or []
+                                    for c_entry in contracts:
+                                        if isinstance(c_entry, dict):
+                                            c_ref = c_entry.get("ref") or c_entry.get("path")
+                                            if c_ref and not c_ref.startswith(("http://", "https://")):
+                                                ref_full = os.path.normpath(os.path.join(c, c_ref))
+                                                if os.path.exists(ref_full):
+                                                    with open(ref_full, "r", encoding="utf-8") as rf:
+                                                        if ref_full.endswith((".yaml", ".yml")):
+                                                            return yaml.safe_load(rf), os.path.dirname(ref_full)
+                                                        elif ref_full.endswith(".json"):
+                                                            return json.load(rf), os.path.dirname(ref_full)
+                    except Exception:
+                        pass
+
         # Remote check via catalog discovery
         if self.catalog_discovery_fn:
             try:

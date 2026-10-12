@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,5 +200,54 @@ resources:
 	}
 	if resolved.Triad.Dataset != "air_quality" || resolved.Triad.Resource != "mediciones" {
 		t.Errorf("resolved triad mismatch: %+v", resolved.Triad)
+	}
+}
+
+func TestOKFMarkdownParserWithByReferenceContract(t *testing.T) {
+	mdContent := `---
+type: dataset
+title: Atlas Electoral y Elecciones
+nature: structured
+status: verified
+supersedes: odkf://org.gob.bolivia/oep/atlas-preliminar:v1.0
+dimensions:
+- año
+- departamento
+contracts:
+- type: datapackage
+  ref: ./datapackage.yaml
+lineage:
+  version: 2.0.0
+  ref: ./lineage.yaml
+---
+# Atlas Electoral
+
+Metodología científica validada.
+`
+	manifest, body, err := ParseOKFFrontmatter([]byte(mdContent))
+	if err != nil {
+		t.Fatalf("unexpected error parsing frontmatter: %v", err)
+	}
+
+	if manifest.Title != "Atlas Electoral y Elecciones" {
+		t.Errorf("title mismatch: %s", manifest.Title)
+	}
+	if manifest.Nature != "structured" {
+		t.Errorf("nature mismatch: %s", manifest.Nature)
+	}
+	if manifest.Status != "verified" {
+		t.Errorf("status mismatch: %s", manifest.Status)
+	}
+	if manifest.Supersedes != "odkf://org.gob.bolivia/oep/atlas-preliminar:v1.0" {
+		t.Errorf("supersedes mismatch: %s", manifest.Supersedes)
+	}
+	if len(manifest.Contracts) != 1 || manifest.Contracts[0].Ref != "./datapackage.yaml" {
+		t.Errorf("contracts ref mismatch: %+v", manifest.Contracts)
+	}
+	if manifest.Lineage.Ref != "./lineage.yaml" || manifest.Lineage.Version != "2.0.0" {
+		t.Errorf("lineage ref mismatch: %+v", manifest.Lineage)
+	}
+	if !strings.Contains(body, "Metodología científica validada") {
+		t.Errorf("body content mismatch: %s", body)
 	}
 }

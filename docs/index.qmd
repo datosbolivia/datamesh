@@ -11,22 +11,22 @@ subtitle: "Infraestructura Hexagonal y Soberana para el Formato de Conocimiento 
 
 ::: {.feature-grid}
 ::: {.feature-card}
-### 🏛️ Soberanía de Datos
+### Soberanía de Datos
 Descubrimiento federado a través de archivos estáticos `llms.txt` y nodos OKF v0.2. Sin intermediarios propietarios ni dependencias de nube cerrada.
 :::
 
 ::: {.feature-card}
-### ⚙️ Arquitectura Hexagonal
+### Arquitectura Hexagonal
 El núcleo en Go (`core-go`) es la única autoridad de dominio. Los bindings de Python, TypeScript y R operan como adaptadores de borde compilados a C-ABI o WASM.
 :::
 
 ::: {.feature-card}
-### ⚡ Fachada Unificada
+### Fachada Unificada
 API de 5 verbos universales (`discover`, `search`, `get`, `query`, `sql`) idénticos en todos los lenguajes de programación soportados.
 :::
 
 ::: {.feature-card}
-### 🦆 Motor DuckDB Integrado
+### Motor DuckDB Integrado
 Consultas SQL analíticas directamente sobre tríadas canónicas (`catalogo:dataset:recurso` o `catalogo/dataset/recurso`), con JOINs transparentes entre CSV, Parquet y JSON.
 :::
 :::

@@ -73,8 +73,11 @@ Cada documento `.md` (excepto `index.md` y `log.md`) se divide en:
 
 ````yaml
 ---
-# --- Metadatos Generales (OKF Base) ---
+# --- Metadatos Generales (OKF Base / ADR 0014 Capa 2: Información) ---
 type: dataset                          # REQUERIDO. Tipo de concepto (dataset, catalog, service, indicator, playbook)
+nature: structured                     # RECOMENDADO. structured | semi-structured | unstructured
+status: verified                       # RECOMENDADO. draft | stable | verified | refuted | deprecated
+supersedes: odkf://org.gob.bolivia/salud/censo-preliminar:v1.0 # OPCIONAL. Falsabilidad Popperiana
 title: Censo Nacional de Población     # RECOMENDADO. Nombre legible
 description: Microdatos anonimizados   # RECOMENDADO. Resumen en una sola línea
 resource: https://datos.gob.bo/censo   # OPCIONAL. URI del recurso original
@@ -108,18 +111,29 @@ quality:                               # OPCIONAL. Perfil y validación de calid
   status: verified                     # raw, curated, verified, official
   completeness: 0.99                   # Ratio [0.0 - 1.0]
 
-# --- Interoperabilidad Sintáctica / Contratos de Ejecución (ODKF v0.2) ---
+# --- Interoperabilidad Sintáctica / Contratos de Ejecución (Inline o By-Reference) ---
 contracts:                             # REQUERIDO para activos de datos y servicios
   - type: datapackage                  # Datos estáticos (Frictionless / Table Schema)
-    path: datapackage.json
+    ref: ./datapackage.yaml            # By-Reference (desacoplado) o path: datapackage.json
   - type: openapi                      # Servicios web REST / Spring Boot docs
-    path: https://api.censo.gob.bo/v3/api-docs
+    ref: https://api.censo.gob.bo/v3/api-docs
   - type: cwl                          # Tareas batch / scripts ejecutables
-    path: tasks/etl_limpieza.cwl.json
+    ref: tasks/etl_limpieza.cwl.json
 
-# --- Linaje y Trazabilidad Criptográfica (ODKF v0.2) ---
+# --- Linaje, Epistemología y Trazabilidad Criptográfica (ODKF v0.2 / ADR 0014-0015) ---
 lineage:
-  source:
+  # Roles Epistémicos (ADR 0015)
+  emitter:
+    by: agent:censo-collector/v2.1
+    at: 2026-05-01T10:00:00Z
+    role: raw-data-producer
+  attester:
+    by: human:experto-demografia
+    at: 2026-05-01T12:00:00Z
+    role: methodology-validator
+    verdict: verified                  # verified | refuted
+    trust_tier: human-reviewed
+  sources:
     - url: https://fuente.ine.gob.bo/censo_raw.csv
   transformations:
     - tool: scripts/clean_data.py

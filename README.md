@@ -14,12 +14,12 @@ Repositorio: [https://github.com/datosbolivia/datamesh.git](https://github.com/d
 
 ## Características Principales
 
-- 🌐 **Federación Descentralizada de Catálogos**: Lee el catálogo soberano base (`https://datosbolivia.github.io/llms.txt`) y permite federar múltiples catálogos institucionales concurrentemente.
-- 🦆 **Motor SQL Columnar Embebido (DuckDB)**: Ejecuta consultas ANSI SQL completas (JOINs, agregaciones, CTEs) sobre recursos tabulares.
-- 🔄 **Normalización de Heterogeneidad**: Unifica automáticamente archivos CSV, TSV, Parquet, JSON y JSON Lines en representaciones columnares en memoria.
-- 🏷️ **Tríada Canónica Universal**: Direcciona cualquier tabla o recurso mediante `"catalogo:dataset:resource"`.
-- 🤖 **Servidor MCP Nativo para Agentes**: Protocolo JSON-RPC 2.0 sobre `stdio` para Claude Desktop, Cursor, Antigravity y otros asistentes de IA.
-- ⚙️ **Configuración Jerárquica Determinista**: Soporte para `datamesh.json`, `datamesh.yaml`, variables de entorno `DATAMESH_{{BASE_VAR}}` y adaptadores `DATAMESH__{{ADAPTADOR}}_{{VAR}}`.
+- **Federación Descentralizada de Catálogos**: Lee el catálogo soberano base (`https://datosbolivia.github.io/llms.txt`) y permite federar múltiples catálogos institucionales concurrentemente.
+- **Motor SQL Columnar Embebido (DuckDB)**: Ejecuta consultas ANSI SQL completas (JOINs, agregaciones, CTEs) sobre recursos tabulares.
+- **Normalización de Heterogeneidad**: Unifica automáticamente archivos CSV, TSV, Parquet, JSON y JSON Lines en representaciones columnares en memoria.
+- **Tríada Canónica Universal**: Direcciona cualquier tabla o recurso mediante `"catalogo:dataset:resource"`.
+- **Servidor MCP Nativo para Agentes**: Protocolo JSON-RPC 2.0 sobre `stdio` para Claude Desktop, Cursor, Antigravity y otros asistentes de IA.
+- **Configuración Jerárquica Determinista**: Soporte para `datamesh.json`, `datamesh.yaml`, variables de entorno `DATAMESH_{{BASE_VAR}}` y adaptadores `DATAMESH__{{ADAPTADOR}}_{{VAR}}`.
 
 ---
 

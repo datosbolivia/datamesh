@@ -65,24 +65,43 @@ func ParseTriad(raw string) (*ResourceTriad, error) {
 		return nil, ErrInvalidTriadFormat
 	}
 
-	// 1. datamesh:// URI scheme
-	if strings.HasPrefix(trimmed, "datamesh://") {
-		clean := strings.TrimPrefix(trimmed, "datamesh://")
+	// 1. datamesh:// or odkf:// URI scheme
+	if strings.HasPrefix(trimmed, "datamesh://") || strings.HasPrefix(trimmed, "odkf://") {
+		clean := trimmed
+		if strings.HasPrefix(clean, "datamesh://") {
+			clean = strings.TrimPrefix(clean, "datamesh://")
+		} else {
+			clean = strings.TrimPrefix(clean, "odkf://")
+		}
+		// Strip optional version tag after colon or query (e.g. :v1.0 or ?version=...)
+		clean = strings.Split(clean, "?")[0]
+		clean = strings.Split(clean, "#")[0]
+
 		parts := strings.Split(clean, "/")
-		if len(parts) == 3 {
-			ds := NormalizeTriadSegment(parts[1])
-			res := NormalizeTriadSegment(parts[2])
+		if len(parts) >= 3 {
+			// Format odkf://namespace/catalog/dataset[:version] or datamesh://catalog/dataset/resource
+			cat := NormalizeTriadSegment(parts[len(parts)-3])
+			ds := NormalizeTriadSegment(parts[len(parts)-2])
+			resRaw := strings.TrimSpace(parts[len(parts)-1])
+			if colonIdx := strings.Index(resRaw, ":"); colonIdx > 0 {
+				resRaw = resRaw[:colonIdx]
+			}
+			res := NormalizeTriadSegment(resRaw)
 			if ds == "" || res == "" {
 				return nil, ErrInvalidTriadFormat
 			}
 			return &ResourceTriad{
-				Catalog:  NormalizeTriadSegment(parts[0]),
+				Catalog:  cat,
 				Dataset:  ds,
 				Resource: res,
 			}, nil
 		} else if len(parts) == 2 {
 			ds := NormalizeTriadSegment(parts[0])
-			res := NormalizeTriadSegment(parts[1])
+			resRaw := strings.TrimSpace(parts[1])
+			if colonIdx := strings.Index(resRaw, ":"); colonIdx > 0 {
+				resRaw = resRaw[:colonIdx]
+			}
+			res := NormalizeTriadSegment(resRaw)
 			if ds == "" || res == "" {
 				return nil, ErrInvalidTriadFormat
 			}

@@ -19,22 +19,22 @@ Sin importar el lenguaje que utilices, DataMesh SDK estandariza las 5 operacione
 
 ::: {.feature-grid}
 ::: {.feature-card}
-### 🐍 [Python](python.qmd)
+### [Python](python.qmd)
 Instalación vía `pip`, integración fluida con Pandas, PyArrow y DuckDB, soporte CLI y servidor MCP.
 :::
 
 ::: {.feature-card}
-### 🟦 [TypeScript / JavaScript](typescript.qmd)
+### [TypeScript / JavaScript](typescript.qmd)
 Para navegadores y Node.js, compatible con React, Vue, Svelte y Astro. Acelerado opcionalmente con Go WebAssembly.
 :::
 
 ::: {.feature-card}
-### 📊 [R](r.qmd)
+### [R](r.qmd)
 Paquete para análisis estadístico y data science. Conversión nativa a `data.frame` e integración con `duckdb` R package.
 :::
 
 ::: {.feature-card}
-### 🦫 [Go Core](go.qmd)
+### [Go Core](go.qmd)
 Compilación de la CLI soberana `datamesh`, generación de binarios C-ABI (`libdatamesh.so`) y servidor MCP local.
 :::
 :::

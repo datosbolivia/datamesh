@@ -294,3 +294,36 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 |  - DuckDB Query Engine: Ejecución analítica federada sobre URLs, S3, o archivos locales.     |
 +-----------------------------------------------------------------------------------------------+
 ```
+
+## 11. Pila Ontológica, Contratos Distribuidos y Gobernanza Epistémica (ADR 0014 & ADR 0015)
+
+```text
++-----------------------------------------------------------------------------------------------+
+|                    CAPA 4: INTELIGENCIA (Agentes Model Context Protocol - MCP)                |
+|  [Razonamiento cruzado]  [Consultas analíticas sin alucinación]  [Falsabilidad Popperiana]    |
++-----------------------------------------------------------------------------------------------+
+                                              |
+                                              v
++-----------------------------------------------------------------------------------------------+
+|                    CAPA 3: CONOCIMIENTO (Epistemología, Paradatos y Validación)               |
+|  - Roles Epistémicos: emitter (productor + firma digital) y attester (validador + dictamen)  |
+|  - Paradatos Narrativos: Metodología, supuestos de medición, sesgos y limitaciones en Body    |
+|  - Falsabilidad Algorítmica: status (draft, stable, verified, refuted), supersedes: <uri>     |
++-----------------------------------------------------------------------------------------------+
+                                              |
+                                              v
++-----------------------------------------------------------------------------------------------+
+|                    CAPA 2: INFORMACIÓN (Metadatos y Contratos Sintácticos)                    |
+|  - Pluralidad: Contratos Inline vs By-Reference (contracts: [{type, ref: ./datapackage.yaml}])|
+|  - Semántica Ontológica: skos (Wikidata, Schema.org), dimensiones analíticas                  |
++-----------------------------------------------------------------------------------------------+
+                                              |
+                                              v
++-----------------------------------------------------------------------------------------------+
+|                    CAPA 1: DATOS (La Evidencia Bruta / Zero-Microdata)                        |
+|  - Microdatos Distribuidos: Parquet, CSV, S3, Lakehouses, APIs REST, CKAN Datastore           |
+|  - Direccionamiento Canónico: odkf://<namespace>/<catalog>/<dataset>[:<version>]               |
+|  - Adaptadores Desacoplados: LocalFileAdapter, HttpAdapter, GitHubAdapter, KaggleAdapter      |
++-----------------------------------------------------------------------------------------------+
+```
+

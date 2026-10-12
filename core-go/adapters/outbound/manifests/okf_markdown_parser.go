@@ -121,7 +121,7 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 				continue
 			}
 			if currentSection == "contracts" {
-				if currentContract.Type != "" || currentContract.Path != "" {
+				if currentContract.Type != "" || currentContract.Path != "" || currentContract.Ref != "" {
 					m.Contracts = append(m.Contracts, currentContract)
 					currentContract = domain.Contract{}
 				}
@@ -133,6 +133,8 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 						currentContract.Type = subV
 					} else if subK == "path" {
 						currentContract.Path = subV
+					} else if subK == "ref" {
+						currentContract.Ref = subV
 					}
 				}
 				continue
@@ -149,12 +151,16 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 			case "contracts":
 				if k == "path" {
 					currentContract.Path = v
+				} else if k == "ref" {
+					currentContract.Ref = v
 				} else if k == "type" {
 					currentContract.Type = v
 				}
 			case "lineage":
 				if k == "version" {
 					m.Lineage.Version = v
+				} else if k == "ref" {
+					m.Lineage.Ref = v
 				} else if k == "updated_at" {
 					if t, err := time.Parse(time.RFC3339, v); err == nil {
 						m.Lineage.UpdatedAt = t
@@ -165,6 +171,12 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 					m.Type = v
 				} else if k == "title" {
 					m.Title = v
+				} else if k == "nature" {
+					m.Nature = v
+				} else if k == "status" {
+					m.Status = v
+				} else if k == "supersedes" {
+					m.Supersedes = v
 				} else if k == "domain" || k == "dominio" {
 					m.Dimensions = append(m.Dimensions, v)
 				}
@@ -172,7 +184,7 @@ func parseManifestFromYAML(lines []string) domain.Manifest {
 		}
 	}
 
-	if currentContract.Type != "" || currentContract.Path != "" {
+	if currentContract.Type != "" || currentContract.Path != "" || currentContract.Ref != "" {
 		m.Contracts = append(m.Contracts, currentContract)
 	}
 

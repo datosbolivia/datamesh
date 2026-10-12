@@ -7,7 +7,7 @@ El SDK de DataMesh está modelado alrededor de los conceptos del negocio de dato
 
 Para consultar la especificación exhaustiva y formal de los Agregados, Value Objects, Eventos de Dominio y Capas Anticorrupción (ACL), consulte el documento normativo:
 
-👉 [**Especificación Canónica del Modelo de Dominio (MODELO_DE_DOMINIO.md)**](../reference/MODELO_DE_DOMINIO.md)
+[**Especificación Canónica del Modelo de Dominio (MODELO_DE_DOMINIO.md)**](../reference/MODELO_DE_DOMINIO.md)
 
 ---
 

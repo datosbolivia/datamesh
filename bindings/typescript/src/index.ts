@@ -84,19 +84,39 @@ export interface DataPackage {
 
 export interface Contract {
   type: string;
-  path: string;
+  path?: string;
+  ref?: string;
+  inline?: Record<string, any>;
+}
+
+export interface EpistemicActor {
+  by: string;
+  at?: string;
+  role?: string;
+  verdict?: "verified" | "refuted" | "pending" | string;
+  trust_tier?: "unverified" | "machine-confirmed" | "human-reviewed" | string;
+  signature?: Record<string, any>;
+  metadata?: Record<string, any>;
 }
 
 export interface Manifest {
   type: string;
   title: string;
   dimensions: string[];
+  nature?: "structured" | "semi-structured" | "unstructured" | string;
+  status?: "draft" | "stable" | "verified" | "refuted" | "deprecated" | string;
+  supersedes?: string;
   contracts?: Contract[];
   lineage: {
     sources?: string[];
     version: string;
     updated_at?: string;
+    ref?: string;
+    emitter?: EpistemicActor;
+    attester?: EpistemicActor;
   };
+  emitter?: EpistemicActor;
+  attester?: EpistemicActor;
 }
 
 export interface DataProduct {
@@ -499,12 +519,16 @@ export function parseCanonicalUri(raw: string): ResourceTriad | null {
 
   // 1. datamesh:// or odkf:// scheme
   if (trimmed.startsWith("datamesh://") || trimmed.startsWith("odkf://")) {
-    const clean = trimmed.split("://")[1];
-    const parts = clean.split("/").map((p) => p.trim()).filter(Boolean);
+    const rawClean = trimmed.split("://")[1].split("?")[0].split("#")[0];
+    const parts = rawClean.split("/").map((p) => p.trim()).filter(Boolean);
     if (parts.length >= 3) {
-      return { catalog: parts[0], dataset: parts[1], resource: parts[2] };
+      const cat = parts[parts.length - 3];
+      const ds = parts[parts.length - 2];
+      const resRaw = parts[parts.length - 1].split(":")[0];
+      return { catalog: cat, dataset: ds, resource: resRaw };
     } else if (parts.length === 2) {
-      return { dataset: parts[0], resource: parts[1] };
+      const resRaw = parts[1].split(":")[0];
+      return { dataset: parts[0], resource: resRaw };
     }
     return null;
   }

@@ -14,16 +14,21 @@ class GoCoreBridge:
     envelope. No other module touches ``ctypes`` or the ABI contract directly.
     """
 
+    # C-ABI returns are declared as ``c_void_p`` (not ``c_char_p``) so the raw
+    # Go-allocated pointer is preserved: ``c_char_p`` would copy the buffer into a
+    # Python ``bytes`` and hand ``DataMeshFreeString`` a foreign address, corrupting
+    # the heap (``munmap_chunk(): invalid pointer``). We decode with ``string_at``
+    # and free the original pointer.
     _SIGNATURES: Dict[str, tuple] = {
-        "DataMeshInit": ([ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshDiscoverCatalog": ([ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshSearchCatalog": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshResolveDataProduct": ([ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshQueryResource": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshExecuteSQL": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshValidate": ([ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshGetLineage": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_char_p),
-        "DataMeshLineageGraph": ([ctypes.c_char_p], ctypes.c_char_p),
+        "DataMeshInit": ([ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshDiscoverCatalog": ([ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshSearchCatalog": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshResolveDataProduct": ([ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshQueryResource": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshExecuteSQL": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshValidate": ([ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshGetLineage": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshLineageGraph": ([ctypes.c_char_p], ctypes.c_void_p),
     }
 
     def __init__(self, lib_path: Optional[str] = None, lib_handle: Optional[Any] = None):
@@ -47,11 +52,13 @@ class GoCoreBridge:
                     fn.restype = restype
             free = getattr(self._lib, "DataMeshFreeString", None)
             if free is not None:
-                free.argtypes = [ctypes.c_char_p]
+                free.argtypes = [ctypes.c_void_p]
                 free.restype = None
             init = getattr(self._lib, "DataMeshInit", None)
             if init is not None:
-                init(None)
+                init_ptr = init(None)
+                if init_ptr and free is not None:
+                    free(init_ptr)
         except Exception:
             self._lib = None
 

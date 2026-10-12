@@ -235,8 +235,8 @@ Agrega el servidor en tu archivo `claude_desktop_config.json`:
 
 ## 6. Documentación Adicional
 
-- [Arquitectura Hexagonal y Puertos](file:///home/andreschirinos/Proyectos/datamesh-sdk/docs/reference/ARQUITECTURA.md)
-- [Casos de Uso Formales](file:///home/andreschirinos/Proyectos/datamesh-sdk/docs/reference/CASOS_DE_USO.md)
-- [Referencia Completa de Comandos CLI](file:///home/andreschirinos/Proyectos/datamesh-sdk/docs/reference/CLI.md)
-- [Especificación Técnica del Servidor MCP](file:///home/andreschirinos/Proyectos/datamesh-sdk/docs/reference/MCP_SERVER.md)
-- [ADRs de Decisiones de Diseño](file:///home/andreschirinos/Proyectos/datamesh-sdk/docs/decisions/)
+- [Arquitectura Hexagonal y Puertos](docs/reference/ARQUITECTURA.md)
+- [Casos de Uso Formales](docs/reference/CASOS_DE_USO.md)
+- [Referencia Completa de Comandos CLI](docs/reference/CLI.md)
+- [Especificación Técnica del Servidor MCP](docs/reference/MCP_SERVER.md)
+- [ADRs de Decisiones de Diseño](docs/decisions/)

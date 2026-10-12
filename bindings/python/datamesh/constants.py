@@ -65,19 +65,4 @@ def get_workspace_search_dirs() -> List[Path]:
     if explicit:
         return explicit
 
-    # 2. Sibling directory to current working directory (e.g. parent of cloned repo)
-    try:
-        parent_dir = Path.cwd().parent.resolve()
-        if parent_dir.exists() and parent_dir.is_dir() and parent_dir != Path.home() and parent_dir not in dirs:
-            dirs.append(parent_dir)
-    except Exception:
-        pass
-
-    # 3. Standard user project directories (Projects, Proyectos, workspace, src)
-    home = Path.home()
-    for sub in ["Projects", "Proyectos", "workspace", "src"]:
-        p = home / sub
-        if p.exists() and p.is_dir() and p not in dirs:
-            dirs.append(p)
-
     return dirs

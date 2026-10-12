@@ -111,7 +111,7 @@ datamesh/
 │   │   └── llmstxt_catalog.py # LLMSTxtCatalogFetcher (parseo de índices federados llms.txt)
 │   ├── workspace/
 │   │   └── local_workspace.py # LocalWorkspaceResolver (tríada -> ruta física: caché y proyectos hermanos)
-│   ├── go_bridge.py         # GoCoreBridge (único puente ctypes/C-ABI hacia libdatamesh.so)
+│   ├── go_bridge.py         # GoCoreBridge (único puente ctypes/C-ABI hacia libdatamesh.so; retornos c_void_p para preservar el puntero Go y liberarlo con DataMeshFreeString — ADR 0022)
 │   └── web.py               # fetch_text / safe_urlopen (lectura file://, http(s) y local)
 ├── usecases/                # Orquestación de aplicación
 │   ├── resolve_resource.py  # ResolveAndCacheResourceUseCase (caché + adaptadores; lookup de datapackage delegado a LocalWorkspaceResolver)

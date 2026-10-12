@@ -86,6 +86,41 @@ class LocalWorkspaceResolver:
                         return json.load(f), os.path.dirname(path)
             except Exception:
                 continue
+
+        return self._read_manifest_from_index(directory)
+
+    def _read_manifest_from_index(self, directory: str) -> Optional[Tuple[Dict[str, Any], str]]:
+        """Reads a bundle manifest whose contracts are referenced by an index.md frontmatter entry."""
+        if not yaml:
+            return None
+        index_path = os.path.join(directory, "index.md")
+        if not os.path.exists(index_path):
+            return None
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if not content.startswith("---"):
+                return None
+            parts = content.split("---", 2)
+            if len(parts) < 3:
+                return None
+            frontmatter = yaml.safe_load(parts[1])
+            if not isinstance(frontmatter, dict):
+                return None
+            for entry in frontmatter.get("contracts") or []:
+                if not isinstance(entry, dict):
+                    continue
+                c_ref = entry.get("ref") or entry.get("path")
+                if c_ref and not c_ref.startswith(("http://", "https://")):
+                    ref_full = os.path.normpath(os.path.join(directory, c_ref))
+                    if os.path.exists(ref_full):
+                        with open(ref_full, "r", encoding="utf-8") as rf:
+                            if ref_full.endswith((".yaml", ".yml")):
+                                return yaml.safe_load(rf), os.path.dirname(ref_full)
+                            if ref_full.endswith(".json"):
+                                return json.load(rf), os.path.dirname(ref_full)
+        except Exception:
+            return None
         return None
 
     def _read_manifest_from_catalog(self, clean_ds: str) -> Optional[Tuple[Dict[str, Any], str]]:

@@ -114,7 +114,7 @@ datamesh/
 │   ├── go_bridge.py         # GoCoreBridge (único puente ctypes/C-ABI hacia libdatamesh.so)
 │   └── web.py               # fetch_text / safe_urlopen (lectura file://, http(s) y local)
 ├── usecases/                # Orquestación de aplicación
-│   ├── resolve_resource.py  # ResolveAndCacheResourceUseCase (soporte jerárquico de recursos en zip)
+│   ├── resolve_resource.py  # ResolveAndCacheResourceUseCase (caché + adaptadores; lookup de datapackage delegado a LocalWorkspaceResolver)
 │   ├── discover_catalog.py  # DiscoverCatalogUseCase (federación de catálogos llms.txt)
 │   ├── query_resource.py    # QueryResourceUseCase (consulta tabular CSV/JSON, fallback puro Python)
 │   ├── validate_resource.py # ValidateResourceUseCase (validación OKF/ODKF, fallback Python)

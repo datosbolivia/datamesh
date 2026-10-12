@@ -79,6 +79,7 @@ class DataMeshRuntime:
             storage=self._storage,
             resolvers=self._resolvers,
             catalog_discovery_fn=self.discover,
+            workspace_resolver=self._workspace,
         )
 
         self._duckdb_engine = DuckDBQueryEngine(

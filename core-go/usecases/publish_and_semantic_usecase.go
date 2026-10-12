@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/datosbolivia/datamesh-sdk/core-go/domain"
@@ -97,8 +98,17 @@ func (uc *SemanticAlignmentUseCase) GenerateCaseExpression(mapping domain.Semant
 		return col
 	}
 
-	var whenClauses []string
-	for rawVal, conceptID := range mapping.ValueMapping {
+	// Sort raw values so the generated CASE expression is deterministic
+	// (map iteration order in Go is randomized).
+	rawValues := make([]string, 0, len(mapping.ValueMapping))
+	for rawVal := range mapping.ValueMapping {
+		rawValues = append(rawValues, rawVal)
+	}
+	sort.Strings(rawValues)
+
+	whenClauses := make([]string, 0, len(rawValues))
+	for _, rawVal := range rawValues {
+		conceptID := mapping.ValueMapping[rawVal]
 		escapedVal := strings.ReplaceAll(rawVal, "'", "''")
 		escapedConcept := strings.ReplaceAll(conceptID, "'", "''")
 		whenClauses = append(whenClauses, fmt.Sprintf("WHEN %s = '%s' THEN '%s'", col, escapedVal, escapedConcept))

@@ -11,7 +11,7 @@ type mockPublisher struct {
 	targetName string
 }
 
-func (m *mockPublisher) Name() string { return m.targetName }
+func (m *mockPublisher) Name() string                  { return m.targetName }
 func (m *mockPublisher) CanPublish(target string) bool { return target == m.targetName }
 func (m *mockPublisher) Publish(ctx context.Context, manifest *domain.PackageManifest, datasetPath string, options map[string]interface{}) (domain.PublicationTargetResult, error) {
 	return domain.PublicationTargetResult{
@@ -55,12 +55,12 @@ func TestSemanticAlignmentUseCase(t *testing.T) {
 		},
 	}
 
-	expr := uc.GenerateCaseExpression(mapping, "t")
-	if expr == "" {
-		t.Fatalf("expected non-empty CASE expression")
-	}
-	if expr != "(CASE WHEN t.cod_dep = 'LPZ' THEN 'concept:departamentos:la_paz' WHEN t.cod_dep = 'SCZ' THEN 'concept:departamentos:santa_cruz' ELSE t.cod_dep END)" &&
-		expr != "(CASE WHEN t.cod_dep = 'SCZ' THEN 'concept:departamentos:santa_cruz' WHEN t.cod_dep = 'LPZ' THEN 'concept:departamentos:la_paz' ELSE t.cod_dep END)" {
-		t.Errorf("unexpected CASE expression output: %s", expr)
+	want := "(CASE WHEN t.cod_dep = 'LPZ' THEN 'concept:departamentos:la_paz' WHEN t.cod_dep = 'SCZ' THEN 'concept:departamentos:santa_cruz' ELSE t.cod_dep END)"
+
+	// Deterministic output: repeated calls must be identical (raw values sorted).
+	for i := 0; i < 20; i++ {
+		if expr := uc.GenerateCaseExpression(mapping, "t"); expr != want {
+			t.Fatalf("non-deterministic CASE expression on call %d: %s", i, expr)
+		}
 	}
 }

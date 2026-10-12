@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -6,6 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import pytest
 import datamesh as dm
+from datamesh.adapters.workspace.local_workspace import LocalWorkspaceResolver
 from datamesh.domain.models import StorageConfig, ResourceDescriptor, ResolvedResource
 from datamesh.ports.storage import StoragePort
 from datamesh.ports.resolver import ResourceAdapterPort
@@ -197,3 +199,23 @@ def test_canonical_uri_normalization():
     assert uri3.dataset == "my-dataset"
     assert uri3.resource == "my-resource"
     assert uri3.triad == "my-catalog:my-dataset:my-resource"
+
+
+def test_local_workspace_resolves_contract_ref_from_index(monkeypatch, tmp_path):
+    node = tmp_path / "votos-2020"
+    (node / "contracts").mkdir(parents=True)
+    (node / "contracts" / "votos.datapackage.json").write_text(
+        json.dumps({"resources": [{"name": "votos", "path": "votos.csv"}]}),
+        encoding="utf-8",
+    )
+    (node / "index.md").write_text(
+        "---\ncontracts:\n  - ref: contracts/votos.datapackage.json\n---\n# Votos\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DATAMESH_NODES_DIR", str(tmp_path))
+
+    resolver = LocalWorkspaceResolver(catalog_discovery_fn=lambda: {"entries": []})
+    manifest, base_loc = resolver.find_node_datapackage("votos-2020")
+
+    assert manifest == {"resources": [{"name": "votos", "path": "votos.csv"}]}
+    assert base_loc == str(node / "contracts")

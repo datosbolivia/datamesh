@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional, Tuple
-import urllib.parse
-import urllib.request
-try:
-    import yaml
-except ImportError:
-    yaml = None
+from typing import Any, Dict, List, Optional
 
+from datamesh.adapters.workspace.local_workspace import LocalWorkspaceResolver
 from datamesh.domain.models import ResolvedResource, ResourceDescriptor, CanonicalURI
 from datamesh.ports.resolver import ResourceAdapterPort
 from datamesh.ports.storage import StoragePort
@@ -23,6 +16,9 @@ class ResolveAndCacheResourceUseCase:
     """
     Application use case orchestrating resource resolution and temporal cache download.
     Decoupled from transport, storage technology, and DuckDB execution.
+
+    Datapackage manifest lookup is delegated to the shared ``LocalWorkspaceResolver``
+    so caching, workspace search and catalog fallback have a single implementation.
     """
 
     def __init__(
@@ -30,10 +26,14 @@ class ResolveAndCacheResourceUseCase:
         storage: StoragePort,
         resolvers: List[ResourceAdapterPort],
         catalog_discovery_fn: Optional[Any] = None,
+        workspace_resolver: Optional[LocalWorkspaceResolver] = None,
     ):
         self.storage = storage
         self.resolvers = resolvers
         self.catalog_discovery_fn = catalog_discovery_fn
+        self._workspace = workspace_resolver or LocalWorkspaceResolver(
+            catalog_discovery_fn=catalog_discovery_fn or (lambda: {"entries": []})
+        )
 
     def resolve(self, table_ref: str, context: Optional[Dict[str, Any]] = None) -> Optional[ResolvedResource]:
         """
@@ -85,9 +85,7 @@ class ResolveAndCacheResourceUseCase:
         # 2. Check if table_ref maps to a datapackage manifest resource
         physical_target: Optional[str] = None
         if dataset and resource:
-            pkg_res = self._lookup_datapackage_resource(dataset, resource)
-            if pkg_res:
-                physical_target = pkg_res
+            physical_target = self._workspace.resolve_triad_to_path(table_ref, dataset, resource)
 
         target_uri = physical_target or table_ref
 
@@ -112,145 +110,3 @@ class ResolveAndCacheResourceUseCase:
                     continue
 
         return None
-
-    def _find_node_datapackage(self, dataset: str) -> Optional[Tuple[Dict[str, Any], Optional[str]]]:
-        clean_ds = dataset.strip()
-        ds_variants = list(dict.fromkeys([
-            clean_ds,
-            clean_ds.replace(" ", "-").lower(),
-            clean_ds.replace("-", "_").lower(),
-            clean_ds.replace("_", "-").lower(),
-            slugify(clean_ds),
-        ]))
-        candidates = []
-        for v in ds_variants:
-            for env_k in ["DATAMESH_KNOWLEDGE_DIR", "DATAMESH_NODES_DIR", "DATAMESH_CATALOG_DIR"]:
-                env_val = os.environ.get(env_k)
-                if env_val:
-                    candidates.append(os.path.join(env_val, v))
-                    candidates.append(os.path.join(env_val, "nodes", v))
-
-            from datamesh.constants import get_workspace_search_dirs
-            candidates.extend([
-                f"knowledge/nodes/{v}",
-                f"../catalogo-datamesh/knowledge/nodes/{v}",
-                f"../../catalogo-datamesh/knowledge/nodes/{v}",
-                str(self.storage.config.home_dir / "knowledge" / "nodes" / v),
-                str(self.storage.config.cache_dir / "nodes" / v),
-            ])
-            for ws in get_workspace_search_dirs():
-                candidates.append(str(ws / "catalogo-datamesh" / "knowledge" / "nodes" / v))
-                candidates.append(str(ws / "knowledge" / "nodes" / v))
-
-        for c in candidates:
-            if os.path.isdir(c):
-                for fname in ["datapackage.yaml", "datapackage.yml", "datapackage.json"]:
-                    full_p = os.path.join(c, fname)
-                    if os.path.exists(full_p):
-                        try:
-                            with open(full_p, "r", encoding="utf-8") as f:
-                                if full_p.endswith((".yaml", ".yml")) and yaml:
-                                    return yaml.safe_load(f), os.path.dirname(full_p)
-                                elif full_p.endswith(".json"):
-                                    return json.load(f), os.path.dirname(full_p)
-                        except Exception:
-                            continue
-
-                # Also inspect index.md frontmatter to see if it specifies contracts by-reference (ref)
-                index_p = os.path.join(c, "index.md")
-                if os.path.exists(index_p):
-                    try:
-                        with open(index_p, "r", encoding="utf-8") as f:
-                            content = f.read()
-                        if content.startswith("---") and yaml:
-                            parts = content.split("---", 2)
-                            if len(parts) >= 3:
-                                fm = yaml.safe_load(parts[1])
-                                if isinstance(fm, dict):
-                                    contracts = fm.get("contracts") or []
-                                    for c_entry in contracts:
-                                        if isinstance(c_entry, dict):
-                                            c_ref = c_entry.get("ref") or c_entry.get("path")
-                                            if c_ref and not c_ref.startswith(("http://", "https://")):
-                                                ref_full = os.path.normpath(os.path.join(c, c_ref))
-                                                if os.path.exists(ref_full):
-                                                    with open(ref_full, "r", encoding="utf-8") as rf:
-                                                        if ref_full.endswith((".yaml", ".yml")):
-                                                            return yaml.safe_load(rf), os.path.dirname(ref_full)
-                                                        elif ref_full.endswith(".json"):
-                                                            return json.load(rf), os.path.dirname(ref_full)
-                    except Exception:
-                        pass
-
-        # Remote check via catalog discovery
-        if self.catalog_discovery_fn:
-            try:
-                cat = self.catalog_discovery_fn()
-                for entry in cat.get("entries", []):
-                    uri = entry.get("uri", "")
-                    resolved_url = entry.get("resolved_url", "")
-                    if clean_ds.lower() in uri.lower() or (resolved_url and clean_ds.lower() in resolved_url.lower()):
-                        base_url = resolved_url.rsplit("/", 1)[0]
-                        for fname in ["datapackage.yaml", "datapackage.yml", "datapackage.json"]:
-                            m_url = f"{base_url}/{fname}"
-                            try:
-                                req = urllib.request.Request(m_url, headers={"User-Agent": "datamesh-sdk/0.2 (Python)"})
-                                with urllib.request.urlopen(req, timeout=3) as resp:
-                                    content = resp.read().decode("utf-8")
-                                    if fname.endswith((".yaml", ".yml")) and yaml:
-                                        return yaml.safe_load(content), base_url
-                                    elif fname.endswith(".json"):
-                                        return json.loads(content), base_url
-                            except Exception:
-                                continue
-            except Exception:
-                pass
-
-        return None
-
-    def _lookup_datapackage_resource(self, dataset: str, resource: str) -> Optional[str]:
-        pkg_data = self._find_node_datapackage(dataset)
-        if not pkg_data:
-            return None
-
-        manifest, base_loc = pkg_data
-        res_slug = slugify(resource)
-
-        def _search_res(r_list: List[Dict[str, Any]], parent_zip: Optional[str] = None) -> Optional[str]:
-            for r in r_list:
-                is_zip = r.get("mediatype") == "zip" or r.get("format") == "zip" or str(r.get("path", "")).endswith(".zip")
-                curr_zip = r.get("path") if is_zip else parent_zip
-
-                r_name = str(r.get("name", ""))
-                r_title = str(r.get("title", ""))
-                r_path = str(r.get("path", ""))
-                if (
-                    r_name == resource
-                    or r_name.lower() == resource.lower()
-                    or slugify(r_name) == res_slug
-                    or (res_slug and res_slug in slugify(r_name))
-                    or (r_title and (r_title == resource or slugify(r_title) == res_slug or (res_slug and res_slug in slugify(r_title))))
-                ):
-                    target_path = r_path or curr_zip
-                    if not target_path:
-                        continue
-                    if target_path.startswith(("http://", "https://", "ftp://")):
-                        return target_path
-                    else:
-                        if base_loc and not base_loc.startswith(("http://", "https://")):
-                            candidate = os.path.normpath(os.path.join(base_loc, target_path))
-                            if os.path.exists(candidate):
-                                return os.path.abspath(candidate)
-                        if os.path.exists(target_path):
-                            return os.path.abspath(target_path)
-                        if curr_zip:
-                            return curr_zip
-
-                nested = r.get("resources", [])
-                if isinstance(nested, list) and nested:
-                    found = _search_res(nested, parent_zip=curr_zip)
-                    if found:
-                        return found
-            return None
-
-        return _search_res(manifest.get("resources", []))

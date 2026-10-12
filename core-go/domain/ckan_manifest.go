@@ -29,7 +29,7 @@ func ReconstructManifestFromCKAN(pkg *CKANPackage) (*PackageManifest, error) {
 		}
 		resName := Slugify(r.Name)
 		if resName == "" {
-			resName = fmt.Sprintf("resource_%s", r.ID[:8])
+			resName = resourceNameFromID(r.ID)
 		}
 
 		resources = append(resources, Resource{
@@ -98,6 +98,21 @@ func ReconstructManifestFromCKAN(pkg *CKANPackage) (*PackageManifest, error) {
 		Resources:   resources,
 		Metadata:    metadata,
 	}, nil
+}
+
+// resourceNameFromID derives a stable, panic-free resource name from a CKAN
+// resource identifier. It tolerates empty and arbitrarily short IDs (a bare
+// r.ID[:8] would panic on IDs shorter than 8 characters).
+func resourceNameFromID(id string) string {
+	slug := Slugify(id)
+	if slug == "" {
+		return "resource"
+	}
+	runes := []rune(slug)
+	if len(runes) > 8 {
+		runes = runes[:8]
+	}
+	return "resource_" + string(runes)
 }
 
 func parseSpatialExtra(val string) *SpatialCoverage {

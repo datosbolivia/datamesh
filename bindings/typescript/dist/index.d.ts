@@ -255,6 +255,35 @@ export declare function parseCsv(text: string, delimiter?: string): {
     rows: string[][];
 };
 /**
+ * Checks whether an ArrayBuffer or Uint8Array contains Apache Parquet magic header 'PAR1'.
+ */
+export declare function isParquetBuffer(buffer: ArrayBuffer | Uint8Array): boolean;
+/**
+ * Normalizes a raw cell value from a Parquet file to a standardized string representation.
+ */
+export declare function normalizeParquetValue(val: any): string;
+/**
+ * Parses raw Apache Parquet binary data into column headers and string matrix rows.
+ * Uses hyparquet engine.
+ */
+export declare function parseParquet(buffer: ArrayBuffer | Uint8Array, options?: {
+    columns?: string[];
+    rowStart?: number;
+    rowEnd?: number;
+}): Promise<{
+    columns: string[];
+    rows: string[][];
+    total_count: number;
+}>;
+/**
+ * Parses tabular content (either CSV text or Parquet buffer) into columns and rows.
+ */
+export declare function parseTabular(data: string | ArrayBuffer | Uint8Array, hintFormatOrUrl?: string): Promise<{
+    columns: string[];
+    rows: string[][];
+    total_count?: number;
+}>;
+/**
  * DuckDB WASM Client Engine for Browser execution.
  * Lazily loads DuckDB-WASM via dynamic import and executes full ANSI SQL.
  */

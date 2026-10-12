@@ -268,8 +268,29 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
 +-----------------------------------------------------------------------------------------------+
 ```
 
+## 10. Interoperabilidad Soberana de Metadatos (MEFP + Lakequery + CKAN + DataPackage)
 
-
-
-
-
+```text
++-----------------------------------------------------------------------------------------------+
+|                                    CKAN / PORTAL MEFP                                         |
+|  [ckanext-mefp Web UI]   [ckanext-metadata Audit/Quality]   [ckanext-lakequery DuckDB S3]     |
++-----------------------------------------------------------------------------------------------+
+       |                                      |                                      |
+       | (/dataset/<id>/datapackage.{json,yaml})| (/api/action/metadata_datapackage_show)    |
+       v                                      v                                      v
++-----------------------------------------------------------------------------------------------+
+|                       CANONICAL FRICTIONLESS DATAPACKAGE / OKF v0.2                           |
+|  - Dialecto Unificado: string, integer, number, boolean, date, datetime, object, array       |
+|  - Dimensiones: row_count/filas, columnas, fecha_minima, fecha_maxima, frecuencia_dias        |
+|  - Gobernanza: x-policy (zero_microdata, allow_all, deny)                                     |
+|  - Ejecución Distribuida: lakequery spec { enabled, storage: {backend, bucket, key} }        |
+|  - Esquema Tabular: schema: { fields: [{name, type, title, description, unit}] }              |
++-----------------------------------------------------------------------------------------------+
+                                              |
+                                              v
++-----------------------------------------------------------------------------------------------+
+|                                     DATAMESH-SDK CORE                                         |
+|  - CKANClientAdapter / HarvestCKANUseCase: Ingesta enriquecida sin pérdida semántica.        |
+|  - DuckDB Query Engine: Ejecución analítica federada sobre URLs, S3, o archivos locales.     |
++-----------------------------------------------------------------------------------------------+
+```

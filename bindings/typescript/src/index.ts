@@ -1,3 +1,5 @@
+import { parquetMetadata, parquetRead } from "hyparquet";
+
 export interface ResourceTriad {
   catalog?: string;
   dataset: string;
@@ -645,6 +647,114 @@ export function parseCsv(text: string, delimiter?: string): { columns: string[];
 }
 
 /**
+ * Checks whether an ArrayBuffer or Uint8Array contains Apache Parquet magic header 'PAR1'.
+ */
+export function isParquetBuffer(buffer: ArrayBuffer | Uint8Array): boolean {
+  if (!buffer) return false;
+  const uint8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (uint8.byteLength < 4) return false;
+  return uint8[0] === 0x50 && uint8[1] === 0x41 && uint8[2] === 0x52 && uint8[3] === 0x31;
+}
+
+/**
+ * Normalizes a raw cell value from a Parquet file to a standardized string representation.
+ */
+export function normalizeParquetValue(val: any): string {
+  if (val === null || val === undefined) return "";
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? "" : val.toISOString().slice(0, 10);
+  }
+  if (typeof val === "bigint" || typeof val === "number" || typeof val === "boolean") {
+    return String(val);
+  }
+  if (typeof val === "object") {
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return String(val);
+    }
+  }
+  return String(val).trim();
+}
+
+/**
+ * Parses raw Apache Parquet binary data into column headers and string matrix rows.
+ * Uses hyparquet engine.
+ */
+export async function parseParquet(
+  buffer: ArrayBuffer | Uint8Array,
+  options?: { columns?: string[]; rowStart?: number; rowEnd?: number }
+): Promise<{ columns: string[]; rows: string[][]; total_count: number }> {
+  const arrayBuffer = (
+    buffer instanceof Uint8Array
+      ? buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+      : buffer
+  ) as ArrayBuffer;
+
+  const meta = parquetMetadata(arrayBuffer);
+  const totalCount = Number(meta.num_rows) || 0;
+
+  let schemaCols: string[] = [];
+  if (meta.schema && Array.isArray(meta.schema)) {
+    schemaCols = meta.schema
+      .filter((s: any) => s.num_children === undefined && s.name)
+      .map((s: any) => s.name);
+  }
+
+  const requestedCols = options?.columns && options.columns.length > 0 ? options.columns : undefined;
+  let readRows: any[] = [];
+
+  await parquetRead({
+    file: arrayBuffer,
+    columns: requestedCols,
+    rowStart: options?.rowStart,
+    rowEnd: options?.rowEnd,
+    rowFormat: "object",
+    onComplete: (data) => {
+      readRows = data || [];
+    },
+  });
+
+  let columns = requestedCols || schemaCols;
+  if (columns.length === 0 && readRows.length > 0) {
+    columns = Object.keys(readRows[0]);
+  }
+
+  const rows: string[][] = readRows.map((item: any) => {
+    if (Array.isArray(item)) {
+      return item.map(normalizeParquetValue);
+    }
+    if (item && typeof item === "object") {
+      return columns.map((c) => normalizeParquetValue(item[c]));
+    }
+    return [normalizeParquetValue(item)];
+  });
+
+  return {
+    columns,
+    rows,
+    total_count: totalCount,
+  };
+}
+
+/**
+ * Parses tabular content (either CSV text or Parquet buffer) into columns and rows.
+ */
+export async function parseTabular(
+  data: string | ArrayBuffer | Uint8Array,
+  hintFormatOrUrl?: string
+): Promise<{ columns: string[]; rows: string[][]; total_count?: number }> {
+  if (typeof data === "string") {
+    return parseCsv(data);
+  }
+  if (isParquetBuffer(data) || (hintFormatOrUrl && hintFormatOrUrl.toLowerCase().endsWith(".parquet"))) {
+    return parseParquet(data);
+  }
+  const decoder = new TextDecoder("utf-8");
+  return parseCsv(decoder.decode(data));
+}
+
+/**
  * DuckDB WASM Client Engine for Browser execution.
  * Lazily loads DuckDB-WASM via dynamic import and executes full ANSI SQL.
  */
@@ -1111,9 +1221,24 @@ export class DataMeshClient {
       throw new Error(`Failed to fetch tabular resource from '${resolvedUrl}' (resolved from '${req.resource_uri}'): HTTP ${res.status}`);
     }
 
-    const text = await res.text();
-    const parsed = parseCsv(text);
-    return this.queryTable(parsed, req);
+    const arrayBuffer = await res.arrayBuffer();
+    const isParquet = isParquetBuffer(arrayBuffer) || resolvedUrl.toLowerCase().endsWith(".parquet");
+
+    let parsed: { columns: string[]; rows: string[][] };
+    let engineUsed: ExecutionEngine = "in-memory";
+
+    if (isParquet) {
+      engineUsed = "hyparquet";
+      parsed = await parseParquet(arrayBuffer);
+    } else {
+      const decoder = new TextDecoder("utf-8");
+      const text = decoder.decode(arrayBuffer);
+      parsed = parseCsv(text);
+    }
+
+    const result = this.queryTable(parsed, req);
+    result.engine = engineUsed;
+    return result;
   }
 
   /**
@@ -1271,8 +1396,14 @@ export class DataMeshClient {
     if (!res.ok) {
       throw new Error(`Failed to fetch tabular resource from '${primaryUrl}': HTTP ${res.status}`);
     }
-    const text = await res.text();
-    const table = parseCsv(text);
+    const arrayBuffer = await res.arrayBuffer();
+    let table: { columns: string[]; rows: string[][] };
+    if (isParquetBuffer(arrayBuffer) || primaryUrl.toLowerCase().endsWith(".parquet")) {
+      table = await parseParquet(arrayBuffer);
+    } else {
+      const decoder = new TextDecoder("utf-8");
+      table = parseCsv(decoder.decode(arrayBuffer));
+    }
 
     return this.queryTableWithSql(table, sqlQuery);
   }
@@ -1332,8 +1463,13 @@ export class DataMeshClient {
       if (!res.ok) {
         throw new Error(`Failed to fetch tabular resource: HTTP ${res.status}`);
       }
-      const text = await res.text();
-      table = parseCsv(text);
+      const arrayBuffer = await res.arrayBuffer();
+      if (isParquetBuffer(arrayBuffer) || source.toLowerCase().endsWith(".parquet")) {
+        table = await parseParquet(arrayBuffer);
+      } else {
+        const decoder = new TextDecoder("utf-8");
+        table = parseCsv(decoder.decode(arrayBuffer));
+      }
     } else {
       table = source;
     }

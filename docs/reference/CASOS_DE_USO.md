@@ -195,8 +195,11 @@
   4. Extrae las transformaciones intermedias (herramientas ETL, scripts, consultas SQL) con sus hashes criptográficos de integridad SHA-256 (conforme a OKF PE3 y PE5).
   5. Renderiza la topología del grafo en diagramas de flujo Mermaid (`flowchart LR`), diagramas jerárquicos de terminal ASCII o diccionarios JSON estructurados.
 
-
-
-
-
-
+## CU-19: Interoperabilidad Unificada de Metadatos MEFP, CKAN, Lakequery y DataPackage (`UnifiedMetadataInteroperabilityUseCase`)
+- **Actor:** Administrador de datos, analista, agente analítico LLM, portal MEFP (`ckanext-mefp`) o DataMesh SDK (`dm.harvest_ckan`).
+- **Entrada:** Dataset o recurso en CKAN, consulta analítica Lakequery, o bundle DataPackage Frictionless / OKF v0.2.
+- **Comportamiento:**
+  1. Estandariza la taxonomía y tipos de columna en un dialecto unificado compartido (`string`, `integer`, `number`, `boolean`, `date`, `datetime`, `object`, `array`).
+  2. Asocia y propaga consistentemente metadatos dimensionales (`row_count`/`filas`, `columnas`, `fecha_minima`, `fecha_maxima`, `frecuencia_actualizacion_dias`, `resource_family_id`), gobernanza (`x-policy`), y ejecución distribuida (`lakequery: {enabled, storage}`).
+  3. Permite la exportación e ingesta directa de paquetes como Frictionless DataPackage vía HTTP (`/dataset/<id>/datapackage.json` y `/dataset/<id>/datapackage.yaml`) y Action APIs (`metadata_datapackage_show` y `lakequery_datapackage_show`).
+  4. Garantiza que cualquier dataset registrado o modificado en CKAN sea inmediatamente comprensible por el motor DuckDB de `datamesh-sdk` y consultable analíticamente por `ckanext-lakequery` sin desajustes de esquema ni transformaciones manuales.

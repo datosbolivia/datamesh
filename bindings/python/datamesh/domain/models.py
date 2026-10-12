@@ -440,6 +440,16 @@ class CKANResource:
     size: Optional[int] = None
     datastore_active: bool = False
     fields: tuple[Dict[str, str], ...] = ()
+    schema: Optional[Dict[str, Any]] = None
+    filas: Optional[int] = None
+    columnas: Optional[int] = None
+    fecha_minima: Optional[str] = None
+    fecha_maxima: Optional[str] = None
+    frecuencia_actualizacion_dias: Optional[int] = None
+    resource_family_id: Optional[str] = None
+    x_policy: Optional[str] = "allow_all"
+    lakequery: Optional[Dict[str, Any]] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

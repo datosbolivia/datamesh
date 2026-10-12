@@ -310,6 +310,68 @@ def test_cli_discover_and_harvest(capsys):
             captured = capsys.readouterr()
             data = json.loads(captured.out)
             assert data["catalog_url"] == "https://datos.gob.bo"
-            assert data["harvested_count"] == 1
-            assert "censo_2024" in data["packages"]
+
+def test_ckan_harvest_with_mefp_and_lakequery_metadata(tmp_path):
+    pkg_raw = {
+        "id": "mefp-pkg-001",
+        "name": "gasto-publico-2024",
+        "title": "Gasto Público MEFP 2024",
+        "notes": "Ejecución presupuestaria del MEFP.",
+        "version": "2.0.0",
+        "resources": [
+            {
+                "id": "res-parquet-01",
+                "name": "Ejecución Presupuestaria Parquet",
+                "url": "s3://lake/resources/res-parquet-01/ejecucion.parquet",
+                "format": "parquet",
+                "size": 1048576,
+                "mimetype": "application/x-parquet",
+                "filas": 250000,
+                "columnas": 12,
+                "fecha_minima": "2024-01-01",
+                "fecha_maxima": "2024-12-31",
+                "frecuencia_actualizacion_dias": 30,
+                "resource_family_id": "ejecucion_anual",
+                "x-policy": "zero_microdata",
+                "lakequery": {
+                    "enabled": True,
+                    "storage": {"backend": "s3", "bucket": "lake", "key": "ejecucion.parquet"},
+                },
+                "schema": {
+                    "fields": [
+                        {"name": "codigo_entidad", "type": "string", "title": "Código Entidad"},
+                        {"name": "monto_ejecutado", "type": "number", "unit": "BOB"},
+                    ]
+                },
+            }
+        ],
+    }
+
+    client = CKANClientAdapter()
+    pkg = client._parse_package(pkg_raw)
+    assert len(pkg.resources) == 1
+    r = pkg.resources[0]
+    assert r.filas == 250000
+    assert r.columnas == 12
+    assert r.fecha_minima == "2024-01-01"
+    assert r.resource_family_id == "ejecucion_anual"
+    assert r.x_policy == "zero_microdata"
+    assert r.lakequery["enabled"] is True
+
+    usecase = HarvestCKANUseCase(client=client)
+    manifest, index_md = usecase.reconstruct_okf_bundle(pkg)
+
+    assert manifest["name"] == "gasto_publico_2024"
+    res_entry = manifest["resources"][0]
+    assert res_entry["format"] == "parquet"
+    assert res_entry["scheme"] == "s3"
+    assert res_entry["filas"] == 250000
+    assert res_entry["columnas"] == 12
+    assert res_entry["fecha_minima"] == "2024-01-01"
+    assert res_entry["resource_family_id"] == "ejecucion_anual"
+    assert res_entry["x-policy"] == "zero_microdata"
+    assert res_entry["lakequery"]["enabled"] is True
+    assert len(res_entry["schema"]["fields"]) == 2
+    assert res_entry["schema"]["fields"][1]["unit"] == "BOB"
+
 

@@ -116,12 +116,19 @@ class HarvestCKANUseCase:
                 except Exception as e:
                     logger.debug("Failed to probe datastore schema for resource %s: %s", r.id, e)
 
+            # Schema precedence: explicit r.schema > datastore probed fields
+            schema_dict = None
+            if r.schema and isinstance(r.schema, dict):
+                schema_dict = r.schema
+            elif fields:
+                schema_dict = {"fields": fields}
+
             res_entry: Dict[str, Any] = {
                 "name": r_slug,
                 "title": r.name,
                 "path": r.url,
                 "format": r.format,
-                "scheme": "http" if r.url.startswith("http") else "file",
+                "scheme": "s3" if r.url.startswith("s3://") else ("http" if r.url.startswith("http") else "file"),
             }
             if r.description:
                 res_entry["description"] = r.description
@@ -129,10 +136,36 @@ class HarvestCKANUseCase:
                 res_entry["bytes"] = r.size
             if r.mimetype:
                 res_entry["mediatype"] = r.mimetype
-            if fields:
-                res_entry["schema"] = {"fields": fields}
+            if schema_dict:
+                res_entry["schema"] = schema_dict
+
+            # MEFP facts & dimensional metadata
+            if r.filas is not None:
+                res_entry["row_count"] = r.filas
+                res_entry["filas"] = r.filas
+            if r.columnas is not None:
+                res_entry["columnas"] = r.columnas
+            elif schema_dict and isinstance(schema_dict.get("fields"), list):
+                res_entry["columnas"] = len(schema_dict["fields"])
+
+            if r.fecha_minima:
+                res_entry["fecha_minima"] = r.fecha_minima
+            if r.fecha_maxima:
+                res_entry["fecha_maxima"] = r.fecha_maxima
+            if r.frecuencia_actualizacion_dias is not None:
+                res_entry["frecuencia_actualizacion_dias"] = r.frecuencia_actualizacion_dias
+            if r.resource_family_id:
+                res_entry["resource_family_id"] = r.resource_family_id
+
+            # Policy
+            res_entry["x-policy"] = r.x_policy or "allow_all"
+
+            # Lakequery execution spec
+            if r.lakequery and isinstance(r.lakequery, dict):
+                res_entry["lakequery"] = r.lakequery
 
             resources_list.append(res_entry)
+
 
         # 2. Spatial & Temporal extras
         spatial_cov = self._extract_spatial(pkg.extras)

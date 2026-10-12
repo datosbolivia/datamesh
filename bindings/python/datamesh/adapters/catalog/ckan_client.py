@@ -155,6 +155,43 @@ class CKANClientAdapter(CKANClientPort):
                 r_size = r.get("size")
                 r_datastore = bool(r.get("datastore_active", False))
 
+                # Rich MEFP and Lakequery metadata
+                r_filas = None
+                if r.get("filas") is not None:
+                    try:
+                        r_filas = int(r["filas"])
+                    except (ValueError, TypeError):
+                        pass
+
+                r_cols = None
+                if r.get("columnas") is not None:
+                    try:
+                        r_cols = int(r["columnas"])
+                    except (ValueError, TypeError):
+                        pass
+
+                r_freq = None
+                if r.get("frecuencia_actualizacion_dias") is not None:
+                    try:
+                        r_freq = int(r["frecuencia_actualizacion_dias"])
+                    except (ValueError, TypeError):
+                        pass
+
+                # Parse schema object/string if present
+                r_schema = r.get("schema") or r.get("esquema") or r.get("table_schema")
+                if isinstance(r_schema, str):
+                    try:
+                        r_schema = json.loads(r_schema)
+                    except Exception:
+                        r_schema = None
+
+                r_lakequery = r.get("lakequery")
+                if isinstance(r_lakequery, str):
+                    try:
+                        r_lakequery = json.loads(r_lakequery)
+                    except Exception:
+                        r_lakequery = None
+
                 resources_list.append(
                     CKANResource(
                         id=r_id,
@@ -165,8 +202,19 @@ class CKANClientAdapter(CKANClientPort):
                         mimetype=r_mime,
                         size=int(r_size) if r_size is not None and str(r_size).isdigit() else None,
                         datastore_active=r_datastore,
+                        schema=r_schema if isinstance(r_schema, dict) else None,
+                        filas=r_filas,
+                        columnas=r_cols,
+                        fecha_minima=r.get("fecha_minima"),
+                        fecha_maxima=r.get("fecha_maxima"),
+                        frecuencia_actualizacion_dias=r_freq,
+                        resource_family_id=r.get("resource_family_id"),
+                        x_policy=r.get("x-policy") or r.get("policy") or "allow_all",
+                        lakequery=r_lakequery if isinstance(r_lakequery, dict) else None,
+                        raw=r,
                     )
                 )
+
 
         return CKANPackage(
             id=pkg_id,

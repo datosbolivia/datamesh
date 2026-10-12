@@ -31,6 +31,11 @@ Para garantizar la coherencia arquitectónica y metodológica, los agentes deben
 | **`python-performance-optimization`** | `.agents/skills/python-performance-optimization` | Optimización de pipelines de datos en memoria, DuckDB streaming, cero copias con Apache Arrow y compresión columnar.                                                                  |
 | **`agent-guardrails`**                | `.agents/skills/agent-guardrails`                | Cero alucinación: fundamentación estricta en datos de herramientas (`datamesh_sql_query`), citas obligatorias de tríadas y transparencia ante datos nulos o vacíos.                 |
 | **`caveman`**                         | `.agents/skills/caveman`                         | Modo de salida ultra-comprimido para comunicación con el usuario y mensajes de estado (frases fragmentadas, eliminación de artículos y relleno sin perder exactitud técnica).         |
+| **`ponytail`**                        | `.agents/skills/ponytail`                        | Modo desarrollador senior perezoso: mínimo cambio completo que resuelve la tarea (YAGNI → stdlib → una línea). Cero código para el que nadie preguntó.                               |
+| **`ponytail-audit`**                  | `.agents/skills/ponytail-audit`                  | Auditoría de calidad de todo el repo (bugs, seguridad, escala, tests faltantes, bloat) priorizada en inglés simple. Informe one-shot, no cambia código.                                |
+| **`ponytail-review`**                 | `.agents/skills/ponytail-review`                 | Revisión de calidad de un cambio (diff/commit/PR): corrección, seguridad, escala, tests, rendimiento y lean. Informe one-shot, no cambia código.                                       |
+| **`reference-integrity-tests`**       | `.agents/skills/reference-integrity-tests`       | Verifica que la API documentada existe de verdad: símbolos de `datamesh.__all__`, API pública y subcomandos CLI resolvibles. Contrato contra roturas en `docs/reference/`.               |
+| **`technical-reference-comments`**    | `.agents/skills/technical-reference-comments`    | Docstrings y comentarios en archivo como referencia técnica canónica del SDK, sincronizados con `docs/reference/` y las cláusulas normativas OKF/ODKF (PE1-PE5, OE1-OE5, ADRs).       |
 
 ---
 

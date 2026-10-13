@@ -170,6 +170,24 @@ class DuckDBQueryEngine(QueryEnginePort):
         actual_path = file_path_or_url
         is_remote = actual_path.startswith(("http://", "https://"))
 
+        # Pre-fetch if remote URL requires auth or is from a secured portal
+        has_auth = bool(os.environ.get("CKAN_ACCESS_KEY") or os.environ.get("DATAMESH_AUTH_TOKEN"))
+        if is_remote and has_auth and (self.resolver_usecase or self.storage):
+            try:
+                resolved = None
+                if self.resolver_usecase:
+                    resolved = self.resolver_usecase.resolve(actual_path)
+                elif self.storage:
+                    from datamesh.adapters.resolvers.http import HttpAdapter
+                    resolved = HttpAdapter().resolve_and_fetch(actual_path, self.storage)
+
+                if resolved and resolved.local_path and os.path.exists(resolved.local_path):
+                    actual_path = str(resolved.local_path)
+                    is_remote = False
+                    read_expr = self._get_read_expression(actual_path)
+            except Exception as dl_err:
+                logger.debug("Pre-fetch of remote URL %s failed: %s", actual_path, dl_err)
+
         for alias in aliases:
             if self._registered_views.get(alias) != actual_path:
                 view_sql = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM {read_expr}'
@@ -247,9 +265,14 @@ class DuckDBQueryEngine(QueryEnginePort):
         if clean_slug:
             aliases.append(clean_slug)
 
-        # 1. URL pattern: https://datosbolivia.github.io/datasets/cartera-creditos/creditos.csv
-        if table_ref.startswith(("http://", "https://", "file://")):
+        # 1. URL pattern: https://..., s3://..., aistor://...
+        if table_ref.startswith(("http://", "https://", "file://", "s3://", "aistor://")):
             parsed_path = table_ref.split("?")[0].split("#")[0].rstrip("/")
+            # Remove scheme
+            for scheme in ("http://", "https://", "file://", "s3://", "aistor://"):
+                if parsed_path.startswith(scheme):
+                    parsed_path = parsed_path[len(scheme):]
+                    break
             path_parts = [p for p in parsed_path.split("/") if p]
             if len(path_parts) >= 2:
                 ds = path_parts[-2]

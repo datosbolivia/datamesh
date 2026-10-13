@@ -81,8 +81,8 @@ class CanonicalURI:
                 return cls(catalog=None, dataset=parts[0], resource=res_raw)
             return None
 
-        # 2. HTTP/HTTPS or file URLs containing /datasets/<dataset>/<resource> or /nodes/<dataset>/<resource>
-        if trimmed.startswith(("http://", "https://", "file://")):
+        # 2. HTTP/HTTPS, file, s3, or aistor URLs
+        if trimmed.startswith(("http://", "https://", "file://", "s3://", "aistor://")):
             # Match e.g. .../datasets/cartera-creditos/creditos.csv or .../nodes/elecciones/votos.parquet
             match = re.search(r'/(?:datasets|nodes)/([^/]+)/([^/?#]+)', trimmed)
             if match:
@@ -94,6 +94,13 @@ class CanonicalURI:
             parsed_path = trimmed.split("?")[0].split("#")[0].rstrip("/")
             path_parts = [p for p in parsed_path.split("/") if p]
             if len(path_parts) >= 2:
+                # If s3://bucket/ds/res, catalog can be bucket if 3 parts, or dataset if 2 parts
+                if trimmed.startswith(("s3://", "aistor://")) and len(path_parts) >= 3:
+                    cat = path_parts[-3]
+                    ds = path_parts[-2]
+                    res_raw = path_parts[-1]
+                    res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
+                    return cls(catalog=cat, dataset=ds, resource=res)
                 ds = path_parts[-2]
                 res_raw = path_parts[-1]
                 res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,6 +40,8 @@ class CKANClientAdapter(CKANClientPort):
         }
         if auth_provider:
             headers.update(auth_provider.get_auth_headers())
+        elif os.environ.get("CKAN_ACCESS_KEY", "").strip():
+            headers["Authorization"] = os.environ.get("CKAN_ACCESS_KEY", "").strip()
 
         body_bytes = None
         if data is not None:

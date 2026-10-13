@@ -17,11 +17,14 @@ from datamesh.adapters.engine.inmem_engine import InMemTabularQueryEngine
 from datamesh.adapters.publishers.kaggle_publisher import KagglePublisherAdapter
 from datamesh.adapters.publishers.local_publisher import LocalBundlePublisherAdapter
 from datamesh.adapters.publishers.portal_publisher import PortalPublisherAdapter
+from datamesh.adapters.publishers.ckan_publisher import CKANPublisherAdapter
 from datamesh.adapters.resolvers.github import GitHubAdapter
 from datamesh.adapters.resolvers.http import HttpAdapter
 from datamesh.adapters.resolvers.kaggle import KaggleAdapter
 from datamesh.adapters.resolvers.local_file import LocalFileAdapter
+from datamesh.adapters.resolvers.s3 import S3Adapter
 from datamesh.adapters.storage.local_storage import LocalStorageManager
+from datamesh.adapters.storage.s3_storage import S3StorageAdapter
 from datamesh.domain.models import (
     StorageConfig,
     WellKnownDiscovery,
@@ -59,8 +62,10 @@ class DataMeshRuntime:
     def __init__(self, lib_path: Optional[str] = None):
         self._storage = LocalStorageManager(StorageConfig.default())
         self._config_adapter = FileConfigAdapter(self._storage.config.config_file)
+        self._s3_storage = S3StorageAdapter()
         self._resolvers: List[ResourceAdapterPort] = [
             LocalFileAdapter(),
+            S3Adapter(s3_storage=self._s3_storage),
             GitHubAdapter(),
             KaggleAdapter(),
             HttpAdapter(),
@@ -107,6 +112,7 @@ class DataMeshRuntime:
             LocalBundlePublisherAdapter(),
             PortalPublisherAdapter(),
             KagglePublisherAdapter(),
+            CKANPublisherAdapter(),
         ]
         self._publish_usecase = PublishDatasetUseCase(publishers=self._publishers)
         self._semantic_aligner = SemanticAlignmentUseCase()
@@ -126,6 +132,11 @@ class DataMeshRuntime:
     def storage(self) -> Any:
         """Temporal and persistent storage manager for ~/datamesh."""
         return self._storage
+
+    @property
+    def s3(self) -> S3StorageAdapter:
+        """S3 and Aistor storage operations adapter."""
+        return self._s3_storage
 
     @property
     def config_adapter(self) -> Any:
@@ -166,10 +177,16 @@ class DataMeshRuntime:
         env_catalogs = os.environ.get("DATAMESH_CATALOGS") or os.environ.get("DATAMESH_CATALOG_URLS")
         if env_catalogs:
             return [c.strip() for c in env_catalogs.split(",") if c.strip()]
+        urls: List[str] = []
+        ckan_url = os.environ.get("CKAN_URL") or os.environ.get("CKAN_BASE_URL")
+        if ckan_url and ckan_url.strip():
+            urls.append(ckan_url.strip())
         single = os.environ.get("DATAMESH_CATALOG_URL")
-        if single:
-            return [single]
-        return ["https://datosbolivia.github.io/llms.txt"]
+        if single and single.strip():
+            urls.append(single.strip())
+        if not urls:
+            urls.append("https://datosbolivia.github.io/llms.txt")
+        return urls
 
     def discover(self, catalog_url: Optional[str] = None) -> Dict[str, Any]:
         """Discovers a specific catalog or aggregates all configured catalogs."""
@@ -241,6 +258,7 @@ class DataMeshRuntime:
         scope: Optional[str] = None,
         output_dir: Optional[str | Path] = None,
         probe_datastore_schema: bool = True,
+        package_id: Optional[str] = None,
     ) -> CKANHarvestResult:
         """Harvests datasets from a CKAN catalog and reconstructs OKF v0.2 packages."""
         discovery = self.discover_endpoint(ckan_url)
@@ -260,6 +278,7 @@ class DataMeshRuntime:
             auth_provider=auth_provider,
             output_dir=output_dir,
             probe_datastore_schema=probe_datastore_schema,
+            package_id=package_id,
         )
 
     def create_datapackage(

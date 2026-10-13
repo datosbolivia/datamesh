@@ -66,3 +66,84 @@ def get_workspace_search_dirs() -> List[Path]:
         return explicit
 
     return dirs
+
+
+def load_environment() -> None:
+    """Auto-loads environment variables from datamesh.env and .env files if present.
+
+    Searches current working directory and its parents up to repository boundary.
+    Existing environment variables are never overwritten.
+    """
+    try:
+        cwd = Path.cwd()
+    except Exception:
+        return
+
+    search_dirs = [cwd]
+    try:
+        for parent in cwd.parents:
+            search_dirs.append(parent)
+            if (parent / ".git").exists():
+                break
+    except Exception:
+        pass
+
+    loaded = False
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        for d in search_dirs:
+            for fname in ("datamesh.env", ".env"):
+                p = d / fname
+                if p.is_file():
+                    if "PROJECT_ROOT" not in os.environ:
+                        os.environ["PROJECT_ROOT"] = str(d.resolve())
+                    try:
+                        import io
+                        with open(p, "r", encoding="utf-8") as f:
+                            lines = [ln for ln in f if "$(" not in ln]
+                        load_dotenv(stream=io.StringIO("".join(lines)), override=False)
+                        loaded = True
+                    except Exception:
+                        load_dotenv(p, override=False)
+                        loaded = True
+    except ImportError:
+        pass
+
+    if not loaded:
+        for d in search_dirs:
+            for fname in ("datamesh.env", ".env"):
+                p = d / fname
+                if p.is_file():
+                    if "PROJECT_ROOT" not in os.environ:
+                        os.environ["PROJECT_ROOT"] = str(d.resolve())
+                    try:
+                        with open(p, "r", encoding="utf-8") as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line or line.startswith("#"):
+                                    continue
+                                if line.startswith("export "):
+                                    line = line[7:].strip()
+                                if "=" in line:
+                                    k, v = line.split("=", 1)
+                                    k = k.strip()
+                                    v = v.strip().strip("'\"")
+                                    if "${PROJECT_ROOT}" in v:
+                                        v = v.replace("${PROJECT_ROOT}", os.environ["PROJECT_ROOT"])
+                                    if k and k not in os.environ and not v.startswith("$("):
+                                        os.environ[k] = v
+                    except Exception:
+                        pass
+
+    # Sanity check: fix any accidental root-level paths from unexpanded ${PROJECT_ROOT}
+    for k in ("DATAMESH_HOME", "DATAMESH_CACHE_DIR", "DATAMESH_PROJECTS_DIR", "DATAMESH_WORKSPACE_DIR"):
+        v = os.environ.get(k)
+        if v and (v.startswith("/.datamesh") or v == "/"):
+            proj_root = os.environ.get("PROJECT_ROOT", str(cwd.resolve()))
+            rel = v.lstrip("/")
+            os.environ[k] = str(Path(proj_root) / rel)
+
+
+load_environment()
+

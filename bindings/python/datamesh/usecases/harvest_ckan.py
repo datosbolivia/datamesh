@@ -40,15 +40,21 @@ class HarvestCKANUseCase:
         auth_provider: Optional[AuthProviderPort] = None,
         output_dir: Optional[str | Path] = None,
         probe_datastore_schema: bool = True,
+        package_id: Optional[str] = None,
     ) -> CKANHarvestResult:
         start_time = time.time()
-        packages, total_count = self._client.search_packages(
-            base_url=base_url,
-            query=query,
-            offset=offset,
-            limit=limit,
-            auth_provider=auth_provider,
-        )
+        if package_id:
+            single_pkg = self._client.get_package(base_url, package_id, auth_provider)
+            packages = [single_pkg] if single_pkg else []
+            total_count = len(packages)
+        else:
+            packages, total_count = self._client.search_packages(
+                base_url=base_url,
+                query=query,
+                offset=offset,
+                limit=limit,
+                auth_provider=auth_provider,
+            )
 
         reconstructed_manifests: List[Dict[str, Any]] = []
 
@@ -292,11 +298,52 @@ class HarvestCKANUseCase:
             "## Recursos Disponibles\n",
         ]
         for r in pkg.resources:
-            body_lines.append(f"- **{r.name}** (`{r.format}`): [{r.url}]({r.url})")
+            body_lines.append(f"### {r.name} (`{r.format}`)\n")
+            body_lines.append(f"- **URL / Acceso**: [{r.url}]({r.url})")
             if r.description:
-                body_lines.append(f"  - *Descripción*: {r.description}")
+                body_lines.append(f"- **Descripción**: {r.description}")
+            
+            # Dimensiones y estadísticas
+            dim_parts = []
+            if r.filas is not None:
+                dim_parts.append(f"**Filas**: {r.filas:,}")
+            if r.columnas is not None:
+                dim_parts.append(f"**Columnas**: {r.columnas}")
+            if r.size:
+                dim_parts.append(f"**Tamaño**: {r.size:,} bytes")
+            if dim_parts:
+                body_lines.append(f"- {', '.join(dim_parts)}")
 
-        body_lines.append("\n## Origen e Integración OKF")
+            # Cobertura temporal
+            if r.fecha_minima or r.fecha_maxima:
+                body_lines.append(f"- **Cobertura temporal**: {r.fecha_minima or '—'} hasta {r.fecha_maxima or '—'}")
+            if r.frecuencia_actualizacion_dias:
+                body_lines.append(f"- **Frecuencia de actualización**: cada {r.frecuencia_actualizacion_dias} días")
+
+            # Gobernanza y Lakequery
+            if r.x_policy and r.x_policy != "allow_all":
+                body_lines.append(f"- **Política de acceso**: `{r.x_policy}`")
+            if r.lakequery:
+                body_lines.append(f"- **Lakequery**: `habilitado` (motor DuckDB distribuido)")
+
+            # Esquema de campos / Diccionario de datos
+            schema_fields = (r.schema or {}).get("fields") if r.schema else None
+            if not schema_fields and r.fields:
+                schema_fields = list(r.fields)
+
+            if schema_fields and isinstance(schema_fields, list):
+                body_lines.append("\n**Esquema de Columnas:**\n")
+                body_lines.append("| Columna | Tipo | Título / Etiqueta | Descripción |")
+                body_lines.append("| :--- | :--- | :--- | :--- |")
+                for fld in schema_fields:
+                    f_name = fld.get("name") or fld.get("id") or "col"
+                    f_type = fld.get("type", "string")
+                    f_title = fld.get("title") or (fld.get("info") or {}).get("label") or "—"
+                    f_desc = fld.get("description") or (fld.get("info") or {}).get("notes") or "—"
+                    body_lines.append(f"| `{f_name}` | `{f_type}` | {f_title} | {f_desc} |")
+            body_lines.append("")
+
+        body_lines.append("## Origen e Integración OKF")
         body_lines.append("Reconstruido automáticamente desde portal CKAN hacia especificación soberana OKF / ODKF v0.2.")
 
         return "\n".join(fm_lines) + "\n" + "\n".join(body_lines) + "\n"

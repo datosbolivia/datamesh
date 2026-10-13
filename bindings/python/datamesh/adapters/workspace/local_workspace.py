@@ -46,6 +46,26 @@ class LocalWorkspaceResolver:
                     return os.path.abspath(cp)
         return None
 
+    def find_cached_uri_file(self, uri: str) -> Optional[str]:
+        """Checks if a URI has already been fetched and cached in the temporal storage."""
+        import hashlib
+        k = hashlib.sha256(uri.encode("utf-8")).hexdigest()[:24]
+        cache_dir = get_cache_dir()
+        if not cache_dir.exists():
+            return None
+        meta_file = cache_dir / "metadata.json"
+        if meta_file.exists():
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    meta_dict = json.load(f)
+                if k in meta_dict:
+                    lp = meta_dict[k].get("local_path")
+                    if lp and os.path.isfile(lp) and os.path.getsize(lp) > 0:
+                        return os.path.abspath(lp)
+            except Exception:
+                pass
+        return None
+
     def find_node_datapackage(self, dataset: str) -> Optional[Tuple[Dict[str, Any], Optional[str]]]:
         """Finds and parses a datapackage manifest locally or from the remote catalog."""
         clean_ds = dataset.strip()
@@ -70,7 +90,11 @@ class LocalWorkspaceResolver:
             if manifest is not None:
                 return manifest
 
-        return self._read_manifest_from_catalog(clean_ds)
+        manifest_cat = self._read_manifest_from_catalog(clean_ds)
+        if manifest_cat is not None:
+            return manifest_cat
+
+        return self._read_manifest_from_ckan(clean_ds)
 
     def node_update_frequency(self, dataset: str) -> Optional[str]:
         """Returns the declared update frequency of a node manifest, if any.
@@ -165,6 +189,67 @@ class LocalWorkspaceResolver:
                         continue
         return None
 
+    def _read_manifest_from_ckan(self, clean_ds: str) -> Optional[Tuple[Dict[str, Any], str]]:
+        """Probes configured CKAN catalog(s) for the dataset, reconstructs the OKF bundle,
+        and caches it into <cache_dir>/nodes/<clean_ds>/."""
+        ckan_urls: List[str] = []
+        for env_k in ["CKAN_URL", "CKAN_BASE_URL"]:
+            val = os.environ.get(env_k)
+            if val and val.strip() and val.strip() not in ckan_urls:
+                ckan_urls.append(val.strip())
+
+        try:
+            cat = self._discover()
+            for src in cat.get("source_catalogs", []):
+                if isinstance(src, str) and ("ckan" in src.lower() or "/api/3" in src.lower()):
+                    if src not in ckan_urls:
+                        ckan_urls.append(src)
+        except Exception:
+            pass
+
+        if not ckan_urls:
+            return None
+
+        from datamesh.adapters.catalog.ckan_client import CKANClientAdapter
+        from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
+
+        client = CKANClientAdapter()
+        harvester = HarvestCKANUseCase(client)
+
+        for ckan_url in ckan_urls:
+            try:
+                pkg = client.get_package(ckan_url, clean_ds)
+                if not pkg:
+                    continue
+
+                manifest_dict, index_md = harvester.reconstruct_okf_bundle(
+                    pkg=pkg,
+                    base_url=ckan_url,
+                    probe_datastore_schema=False,
+                )
+
+                cache_node_dir = get_cache_dir() / "nodes" / clean_ds
+                cache_node_dir.mkdir(parents=True, exist_ok=True)
+
+                dp_file = cache_node_dir / "datapackage.yaml"
+                if yaml:
+                    with open(dp_file, "w", encoding="utf-8") as f:
+                        yaml.dump(manifest_dict, f, allow_unicode=True, sort_keys=False)
+                else:
+                    dp_file = cache_node_dir / "datapackage.json"
+                    with open(dp_file, "w", encoding="utf-8") as f:
+                        json.dump(manifest_dict, f, indent=2, ensure_ascii=False)
+
+                idx_file = cache_node_dir / "index.md"
+                with open(idx_file, "w", encoding="utf-8") as f:
+                    f.write(index_md)
+
+                return manifest_dict, str(cache_node_dir)
+            except Exception:
+                continue
+
+        return None
+
     def resolve_triad_to_path(self, table_ref: str, *args: Any) -> Optional[str]:
         """Maps a canonical triad (or path) to a concrete local path or URL, or ``None``."""
         from datamesh.adapters.engine.duckdb_engine import slugify
@@ -215,6 +300,10 @@ class LocalWorkspaceResolver:
                         if not target_path:
                             continue
                         if target_path.startswith(("http://", "https://", "ftp://")):
+                            cached_file = self.find_cached_uri_file(target_path)
+                            if cached_file:
+                                return cached_file
+
                             base_fname = os.path.basename(urllib.parse.urlparse(target_path).path)
                             local_match = self.find_matching_local_file(dataset, base_fname)
                             if local_match:

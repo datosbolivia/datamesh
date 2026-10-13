@@ -83,6 +83,7 @@ def harvest_ckan(
     scope: Optional[str] = None,
     output_dir: Optional[str | Path] = None,
     probe_datastore_schema: bool = True,
+    package_id: Optional[str] = None,
 ) -> CKANHarvestResult:
     """Harvest datasets from a CKAN catalog and reconstruct OKF v0.2 knowledge packages."""
     return _runtime.harvest_ckan(
@@ -96,6 +97,7 @@ def harvest_ckan(
         scope=scope,
         output_dir=output_dir,
         probe_datastore_schema=probe_datastore_schema,
+        package_id=package_id,
     )
 
 def create_datapackage(
@@ -182,7 +184,13 @@ def explain_categories(
     )
 
 storage = _runtime.storage
+s3 = _runtime.s3
 config = _runtime.config_adapter
+
+from datamesh.aliases import to_df, datasets_a_df, organizaciones_a_df, recursos_a_df
+from datamesh.adapters.storage.s3_storage import S3StorageAdapter
+from datamesh.adapters.resolvers.s3 import S3Adapter
+from datamesh.adapters.publishers.ckan_publisher import CKANPublisherAdapter
 
 from datamesh.domain.models import (
     StorageConfig,
@@ -251,7 +259,12 @@ __all__ = [
     "link_concept",
     "explain_categories",
     "storage",
+    "s3",
     "config",
+    "to_df",
+    "datasets_a_df",
+    "organizaciones_a_df",
+    "recursos_a_df",
     "run_server",
     "DataMeshRuntime",
     "StorageConfig",
@@ -286,11 +299,14 @@ __all__ = [
     "WellKnownResolverPort",
     "CKANClientPort",
     "LocalStorageManager",
+    "S3StorageAdapter",
     "FileConfigAdapter",
     "LocalFileAdapter",
+    "S3Adapter",
     "GitHubAdapter",
     "KaggleAdapter",
     "HttpAdapter",
+    "CKANPublisherAdapter",
     "NoAuthAdapter",
     "APIKeyAuthAdapter",
     "BearerTokenAuthAdapter",

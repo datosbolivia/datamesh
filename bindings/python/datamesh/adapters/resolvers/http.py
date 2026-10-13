@@ -72,12 +72,22 @@ class HttpAdapter(ResourceAdapterPort):
         prev_sha = prev_meta.sha256 if prev_meta else None
 
         # 1. Remote-first: always re-fetch the endpoint and refresh temporal cache.
+        headers = {
+            "User-Agent": "datamesh-sdk/0.2 (Python/DuckDB)",
+            "Accept": "*/*",
+        }
+        auth_token = (
+            (context or {}).get("token")
+            or os.environ.get("CKAN_ACCESS_KEY", "").strip()
+            or os.environ.get("DATAMESH_AUTH_TOKEN", "").strip()
+        )
+        if auth_token:
+            # Inject Authorization header for authorized requests
+            headers["Authorization"] = auth_token
+
         req = urllib.request.Request(
             uri_or_path,
-            headers={
-                "User-Agent": "datamesh-sdk/0.2 (Python/DuckDB)",
-                "Accept": "*/*",
-            }
+            headers=headers,
         )
 
         try:

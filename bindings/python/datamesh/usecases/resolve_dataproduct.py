@@ -27,7 +27,23 @@ class ResolveDataProductUseCase:
         if go_result:
             return go_result
 
-        content = fetch_text(uri, timeout=2)
+        import os
+        from pathlib import Path
+        from datamesh.constants import get_cache_dir, get_datamesh_home
+
+        actual_uri = uri
+        if not (uri.startswith(("http://", "https://", "file://")) or os.path.exists(uri)):
+            clean = uri.strip()
+            for cand in [
+                f"knowledge/nodes/{clean}/index.md",
+                str(get_cache_dir() / "nodes" / clean / "index.md"),
+                str(get_datamesh_home() / "knowledge" / "nodes" / clean / "index.md"),
+            ]:
+                if os.path.exists(cand):
+                    actual_uri = cand
+                    break
+
+        content = fetch_text(actual_uri, timeout=2)
 
         parts = content.split("---", 2)
         if len(parts) < 3:

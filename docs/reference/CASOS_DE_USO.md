@@ -217,3 +217,33 @@
   4. **Elevación a ODKF:** todo manifiesto intermedio (capa Información) se normaliza a un `DataProduct` canónico (capa Conocimiento) validando invariantes OKF (título, tipo, dimensiones).
   5. **Exportación hub:** el `DataProduct` ODKF se exporta, puro en el dominio, a CKAN/Frictionless DataPackage JSON (`ToCKANDataPackageJSON`) y W3C DCAT JSON-LD (`ToDCATJSON`), para publicar en portales que no emiten well-known.
 - **Nota de autoridad:** la lógica de conversión vive exclusivamente en `core-go`; los bindings solo aportan adaptadores que implementan los puertos de red/lectura definidos en Go (ADR 0013).
+
+## CU-21: Almacenamiento y Resolución de Objetos S3 / MinIO Aistor (`S3StorageUseCase`)
+- **Actor:** Usuario final, analista de datos, motor DuckDB (`dm.sql`), o script ETL.
+- **Entrada:** URIs `s3://bucket/key`, `aistor://bucket/key`, prefijos o tríadas `mefp:dataset:recurso`.
+- **Comportamiento:**
+  1. Configura el cliente S3 conforme a variables de entorno institucionales (`AISTOR_ENDPOINT`, `S3_ENDPOINT`, `AISTOR_BUCKET`, `S3_BUCKET`, claves de acceso y región).
+  2. Resuelve prefijos y nombres estables de repositorio (`repo_prefix`).
+  3. Ejecuta operaciones seguras de almacenamiento: subida (`upload_file`, `put_object`), descarga, streaming, borrado y listado con orden cronológico (`fecha_desc`).
+  4. Resuelve y descarga automáticamente recursos `s3://` a la caché temporal local con verificación de integridad para su escaneo directo por DuckDB.
+
+## CU-22: Sincronización y Publicación en Portales CKAN con Metadatos Extendidos (`PublishCKANUseCase`)
+- **Actor:** Publicador de datos, script ETL, pipeline de CI/CD, o CLI (`dm.publish(..., targets=['ckan'])`).
+- **Entrada:** Ruta al paquete Frictionless / OKF v0.2 (`datapackage.json` o `datapackage.yaml`), archivos de datos, URL de CKAN, y token de acceso.
+- **Comportamiento:**
+  1. Lee y valida el manifiesto `datapackage` y el documento de descripción `README.md` o `index.md`.
+  2. Autentica y sincroniza el paquete en CKAN (`package_create` / `package_patch`), asegurando el `owner_org`.
+  3. Mapea exhaustivamente los campos de esquema tabular Frictionless a tipos nativos CKAN (`string` -> `text`, `integer` -> `int`, `number` -> `float`, `boolean` -> `bool`, etc.).
+  4. Preserva y propaga metadatos dimensionales y operativos del MEFP (filas, columnas, fecha_minima, fecha_maxima, frecuencia_actualizacion_dias, resource_family_id, `x-policy` y Lakequery).
+  5. Sube o actualiza los recursos tabulares asociados y DataStore cuando aplique.
+
+## CU-23: CKAN como Catálogo Federado y Reconstrucción Automática OKF en Caché (`CKANCatalogDiscoveryAndResolution`)
+- **Actor:** Analista de datos, Agente IA, motor SQL (`dm.sql`), o CLI.
+- **Entrada:** Tríada canónica `[catalogo:]dataset:resource`, identificador de dataset en CKAN (`dm.get(dataset)`), o URL directa de recurso en CKAN (`dm.sql("SELECT ... FROM '<url>'")`).
+- **Comportamiento:**
+  1. Auto-carga hermética de perfiles de entorno desde `datamesh.env` o `.env` (`CKAN_URL`, `CKAN_ACCESS_KEY`, etc.).
+  2. Al resolver tríadas o nombres de dataset ausentes en el workspace local, consulta dinámicamente el portal CKAN (`package_show`).
+  3. Reconstruye el paquete OKF v0.2 con esquema completo, metadatos dimensionales, políticas y linaje (`datapackage.yaml` e `index.md`).
+  4. Almacena el nodo en caché local (`<cache_dir>/nodes/<dataset>/`) para consultas subsecuentes offline de ultra-alta velocidad.
+  5. Pre-descarga recursos remotos protegidos con tokens de autenticación inyectados antes de DuckDB, evitando fallos en `read_csv_auto` y garantizando ejecución SQL instantánea.
+

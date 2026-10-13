@@ -375,3 +375,92 @@ def test_ckan_harvest_with_mefp_and_lakequery_metadata(tmp_path):
     assert res_entry["schema"]["fields"][1]["unit"] == "BOB"
 
 
+def test_workspace_resolver_harvests_ckan_to_cache(tmp_path, monkeypatch):
+    """Test that querying a CKAN dataset automatically reconstructs and caches the OKF bundle."""
+    from datamesh.adapters.workspace.local_workspace import LocalWorkspaceResolver
+
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setenv("DATAMESH_STORAGE_PATH", str(cache_dir))
+    monkeypatch.setenv("CKAN_URL", "http://mock-ckan.local/")
+
+    mock_client = MagicMock()
+    mock_pkg = CKANPackage(
+        id="pkg-123",
+        name="presupuesto_nacional",
+        title="Presupuesto General del Estado",
+        notes="Dataset de presupuesto",
+        resources=(
+            CKANResource(
+                id="res-1",
+                name="gastos",
+                url="http://mock-ckan.local/download/gastos.csv",
+                format="csv",
+            ),
+        ),
+    )
+    mock_client.get_package.return_value = mock_pkg
+
+    resolver = LocalWorkspaceResolver(catalog_discovery_fn=lambda: {"entries": []})
+
+    with patch("datamesh.adapters.catalog.ckan_client.CKANClientAdapter", return_value=mock_client):
+        # 1. First lookup probes CKAN and writes to cache
+        res = resolver.find_node_datapackage("presupuesto_nacional")
+        assert res is not None
+        manifest, base_loc = res
+        assert manifest["name"] == "presupuesto_nacional"
+        assert Path(base_loc).exists()
+        assert (Path(base_loc) / "datapackage.yaml").exists()
+        assert (Path(base_loc) / "index.md").exists()
+
+        # 2. Triad resolution maps to resource URL
+        resolved_path = resolver.resolve_triad_to_path("presupuesto_nacional:gastos")
+        assert resolved_path == "http://mock-ckan.local/download/gastos.csv"
+
+        # 3. Second lookup is served from local cache without calling get_package
+        mock_client.get_package.reset_mock()
+        res2 = resolver.find_node_datapackage("presupuesto_nacional")
+        assert res2 is not None
+        mock_client.get_package.assert_not_called()
+
+
+def test_discover_catalog_includes_ckan(monkeypatch):
+    """Test that DiscoverCatalogUseCase discovers datasets from a CKAN catalog."""
+    from datamesh.usecases.discover_catalog import DiscoverCatalogUseCase
+
+    mock_client = MagicMock()
+    mock_pkg = CKANPackage(
+        id="pkg-abc",
+        name="indicadores_banco_central",
+        title="Indicadores BCB",
+        notes="Reservas y liquidez",
+        resources=(
+            CKANResource(
+                id="r-1",
+                name="reservas_oro",
+                url="http://ckan.bcb.gob.bo/oro.csv",
+                format="csv",
+            ),
+        ),
+    )
+    mock_client.search_packages.return_value = ([mock_pkg], 1)
+
+    fetcher = MagicMock()
+    bridge = MagicMock()
+    bridge.call.return_value = None
+
+    discover = DiscoverCatalogUseCase(
+        bridge=bridge,
+        fetcher=fetcher,
+        urls_provider=lambda: ["https://ckan.example.gob.bo/"],
+    )
+
+    with patch("datamesh.adapters.catalog.ckan_client.CKANClientAdapter", return_value=mock_client):
+        res = discover.execute("https://ckan.example.gob.bo/")
+        assert "entries" in res
+        assert len(res["entries"]) == 1
+        entry = res["entries"][0]
+        assert entry["name"] == "indicadores_banco_central"
+        assert entry["type"] == "ckan_package"
+
+
+

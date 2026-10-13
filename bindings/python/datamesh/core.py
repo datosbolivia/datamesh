@@ -68,7 +68,7 @@ class DataMeshRuntime:
             S3Adapter(s3_storage=self._s3_storage),
             GitHubAdapter(),
             KaggleAdapter(),
-            HttpAdapter(),
+            HttpAdapter(config_adapter=self._config_adapter),
         ]
 
         self._bridge = GoCoreBridge(lib_path=lib_path)

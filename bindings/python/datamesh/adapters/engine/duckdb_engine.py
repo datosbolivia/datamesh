@@ -9,6 +9,11 @@ import uuid
 import duckdb
 
 from datamesh.constants import get_cache_dir, get_workspace_search_dirs
+from datamesh.domain.errors import (
+    AuthenticationRequiredError,
+    InvalidContentTypeError,
+    CatalogConnectionError,
+)
 from datamesh.ports.engine import QueryEnginePort
 
 # Matches table names in FROM and JOIN clauses (quoted or unquoted, including slashes and URLs)
@@ -97,6 +102,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         """
         # 1. Extract all table references in the query
         tables = self._extract_table_references(sql_query)
+        rewritten_sql = sql_query
 
         # 2. Resolve and register virtual views in DuckDB for each table reference
         for table_ref in tables:
@@ -118,6 +124,8 @@ class DuckDBQueryEngine(QueryEnginePort):
 
             if physical_path:
                 ok = self.register_table_aliases(table_ref, physical_path)
+                if f"'{table_ref}'" in rewritten_sql:
+                    rewritten_sql = rewritten_sql.replace(f"'{table_ref}'", f'"{table_ref}"')
                 # Self-heal (ADR 0013 robustness): a cached copy that fails to parse
                 # (e.g. a corrupt download) is evicted once and re-fetched from source.
                 if not ok and table_ref not in self._healed_refs and self._can_self_heal(physical_path):
@@ -131,7 +139,7 @@ class DuckDBQueryEngine(QueryEnginePort):
 
         # 3. Execute query with DuckDB
         try:
-            rel = self.conn.sql(sql_query)
+            rel = self.conn.sql(rewritten_sql)
             if rel is None:
                 return {"columns": [], "rows": [], "row_count": 0}
 
@@ -170,9 +178,8 @@ class DuckDBQueryEngine(QueryEnginePort):
         actual_path = file_path_or_url
         is_remote = actual_path.startswith(("http://", "https://"))
 
-        # Pre-fetch if remote URL requires auth or is from a secured portal
-        has_auth = bool(os.environ.get("CKAN_ACCESS_KEY") or os.environ.get("DATAMESH_AUTH_TOKEN"))
-        if is_remote and has_auth and (self.resolver_usecase or self.storage):
+        # Pre-fetch if remote URL to ensure authentication, catalog rules, and content-type validation
+        if is_remote and (self.resolver_usecase or self.storage):
             try:
                 resolved = None
                 if self.resolver_usecase:
@@ -185,6 +192,8 @@ class DuckDBQueryEngine(QueryEnginePort):
                     actual_path = str(resolved.local_path)
                     is_remote = False
                     read_expr = self._get_read_expression(actual_path)
+            except (AuthenticationRequiredError, InvalidContentTypeError, CatalogConnectionError) as explicit_err:
+                raise explicit_err
             except Exception as dl_err:
                 logger.debug("Pre-fetch of remote URL %s failed: %s", actual_path, dl_err)
 
@@ -219,6 +228,8 @@ class DuckDBQueryEngine(QueryEnginePort):
                                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
                                     self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {read_expr}')
                                 continue
+                        except (AuthenticationRequiredError, InvalidContentTypeError, CatalogConnectionError) as explicit_err:
+                            raise explicit_err
                         except Exception as dl_err:
                             self._view_errors[alias] = f"Remote view failed ({e}) and local cache fetch failed ({dl_err})"
                             continue

@@ -435,6 +435,104 @@ class CatalogMetadata:
 
 
 @dataclass(frozen=True)
+class CatalogPatternRule:
+    """Configured rule for URL matching, endpoint rewriting, and authentication."""
+    name: str
+    pattern: str
+    rewrite_to: Optional[str] = None
+    auth_type: str = "none"  # bearer | token | ckan | api_key | keycloak | basic | none
+    auth_header: str = "Authorization"
+    auth_prefix: Optional[str] = None
+    auth_token_env: Optional[str] = None
+    auth_token: Optional[str] = None
+    keycloak_token_endpoint: Optional[str] = None
+    keycloak_client_id: Optional[str] = None
+    keycloak_client_secret: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> CatalogPatternRule:
+        auth = data.get("auth", {}) if isinstance(data.get("auth"), dict) else {}
+        kc = auth.get("keycloak", {}) if isinstance(auth.get("keycloak"), dict) else {}
+        return cls(
+            name=name,
+            pattern=str(data.get("pattern") or data.get("url_prefix") or "*"),
+            rewrite_to=data.get("rewrite_to") or data.get("rewrite_url"),
+            auth_type=str(auth.get("type") or data.get("auth_type") or "none"),
+            auth_header=str(auth.get("header") or data.get("auth_header") or "Authorization"),
+            auth_prefix=auth.get("prefix") if "prefix" in auth else data.get("auth_prefix"),
+            auth_token_env=auth.get("token_env") or data.get("auth_token_env"),
+            auth_token=auth.get("token") or data.get("auth_token"),
+            keycloak_token_endpoint=kc.get("token_endpoint"),
+            keycloak_client_id=kc.get("client_id"),
+            keycloak_client_secret=kc.get("client_secret"),
+        )
+
+    def matches(self, url: str) -> bool:
+        """Check if URL matches this pattern rule."""
+        import fnmatch
+        import re
+        u = url.strip()
+        clean_pat = self.pattern.strip("*")
+        if clean_pat and clean_pat in u:
+            return True
+        if fnmatch.fnmatch(u, self.pattern):
+            return True
+        try:
+            if re.search(self.pattern, u):
+                return True
+        except re.error:
+            pass
+        return False
+
+    def rewrite(self, url: str) -> str:
+        """Apply rewrite if rewrite_to is defined."""
+        if not self.rewrite_to:
+            return url
+        clean_pat = self.pattern.strip("*")
+        target_base = self.rewrite_to.rstrip("/")
+        if clean_pat and clean_pat in url:
+            if "://" in clean_pat:
+                return url.replace(clean_pat, target_base)
+            import urllib.parse
+            parsed = urllib.parse.urlparse(url)
+            host_and_path = f"{parsed.netloc}{parsed.path}"
+            if clean_pat in host_and_path:
+                new_path = host_and_path.replace(clean_pat, "")
+                if not new_path.startswith("/"):
+                    new_path = f"/{new_path}"
+                rewritten = f"{target_base}{new_path}"
+                if parsed.query:
+                    rewritten += f"?{parsed.query}"
+                return rewritten
+        return url
+
+    def get_auth_token(self) -> Optional[str]:
+        if self.auth_token:
+            return self.auth_token.strip()
+        if self.auth_token_env and self.auth_token_env in os.environ:
+            val = os.environ[self.auth_token_env].strip()
+            if val:
+                return val
+        return None
+
+    def get_auth_headers(self) -> Dict[str, str]:
+        token = self.get_auth_token()
+        if not token:
+            return {}
+        if self.auth_prefix is not None:
+            prefix = self.auth_prefix.strip()
+            val = f"{prefix} {token}".strip() if prefix else token
+            return {self.auth_header: val}
+        a_type = self.auth_type.lower()
+        if a_type in ("token", "ckan", "raw", "api_key"):
+            return {self.auth_header: token}
+        if a_type == "bearer":
+            val = f"Bearer {token}" if not token.lower().startswith("bearer ") else token
+            return {self.auth_header: val}
+        return {self.auth_header: token}
+
+
+@dataclass(frozen=True)
 class WellKnownDiscovery:
     """Normalized /.well-known/datamesh.json document."""
     schema_version: str

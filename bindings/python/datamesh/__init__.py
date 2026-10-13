@@ -216,6 +216,13 @@ from datamesh.domain.models import (
     LineageNode,
     LineageEdge,
     LineageGraph,
+    CatalogPatternRule,
+)
+from datamesh.domain.errors import (
+    DataMeshError,
+    AuthenticationRequiredError,
+    InvalidContentTypeError,
+    CatalogConnectionError,
 )
 from datamesh.ports.storage import StoragePort
 from datamesh.ports.resolver import ResourceAdapterPort, ConfigPort
@@ -320,5 +327,10 @@ __all__ = [
     "DiscoverWellKnownUseCase",
     "HarvestCKANUseCase",
     "DatasetLineageUseCase",
+    "CatalogPatternRule",
+    "DataMeshError",
+    "AuthenticationRequiredError",
+    "InvalidContentTypeError",
+    "CatalogConnectionError",
 ]
 

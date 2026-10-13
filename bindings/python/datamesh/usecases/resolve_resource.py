@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional
 
 from datamesh.adapters.workspace.local_workspace import LocalWorkspaceResolver
+from datamesh.domain.errors import (
+    AuthenticationRequiredError,
+    InvalidContentTypeError,
+    CatalogConnectionError,
+)
 from datamesh.domain.models import ResolvedResource, ResourceDescriptor, CanonicalURI
 from datamesh.ports.resolver import ResourceAdapterPort
 from datamesh.ports.storage import StoragePort
+
+logger = logging.getLogger("datamesh.usecases.resolve_resource")
 
 def slugify(text: str) -> str:
     return re.sub(r'[^a-zA-Z0-9]+', '_', text).lower().strip('_')
@@ -98,7 +106,10 @@ class ResolveAndCacheResourceUseCase:
                     res = adapter.resolve_and_fetch(target_uri, self.storage, ctx)
                     if res:
                         return res
-                except Exception:
+                except (AuthenticationRequiredError, InvalidContentTypeError, CatalogConnectionError) as explicit_err:
+                    raise explicit_err
+                except Exception as e:
+                    logger.debug("Adapter %s failed to resolve %s: %s", adapter.name, target_uri, e)
                     continue
 
         # 4. Fallback search: try direct adapters on table_ref
@@ -108,7 +119,10 @@ class ResolveAndCacheResourceUseCase:
                     res = adapter.resolve_and_fetch(table_ref, self.storage, ctx)
                     if res:
                         return res
-                except Exception:
+                except (AuthenticationRequiredError, InvalidContentTypeError, CatalogConnectionError) as explicit_err:
+                    raise explicit_err
+                except Exception as e:
+                    logger.debug("Adapter %s failed to resolve fallback %s: %s", adapter.name, table_ref, e)
                     continue
 
         return None

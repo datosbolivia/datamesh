@@ -44,3 +44,7 @@ class ConfigPort(ABC):
     def save_config(self, config_data: Dict[str, Any]) -> None:
         """Saves configuration back to disk."""
         ...
+
+    def get_catalog_rules(self) -> List[Any]:
+        """Returns configured catalog recognition and pattern rewrite rules."""
+        return []

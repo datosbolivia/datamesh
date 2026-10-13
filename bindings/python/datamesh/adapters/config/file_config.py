@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 try:
     import yaml
 except ImportError:
     yaml = None
 import json
 
-from datamesh.domain.models import StorageConfig
+from datamesh.domain.models import StorageConfig, CatalogPatternRule
 from datamesh.ports.resolver import ConfigPort
 
 class FileConfigAdapter(ConfigPort):
@@ -89,3 +89,13 @@ class FileConfigAdapter(ConfigPort):
                     json.dump(config_data, f, indent=2, ensure_ascii=False)
         except Exception:
             pass
+
+    def get_catalog_rules(self) -> List[CatalogPatternRule]:
+        cfg = self.load_config()
+        catalogs_dict = cfg.get("catalogs", {})
+        rules: List[CatalogPatternRule] = []
+        if isinstance(catalogs_dict, dict):
+            for name, entry in catalogs_dict.items():
+                if isinstance(entry, dict):
+                    rules.append(CatalogPatternRule.from_dict(name, entry))
+        return rules

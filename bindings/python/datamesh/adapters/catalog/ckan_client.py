@@ -3,11 +3,19 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
+
+from datamesh.domain.errors import (
+    AuthenticationRequiredError,
+    InvalidContentTypeError,
+    CatalogConnectionError,
+)
 from datamesh.domain.models import CKANPackage, CKANResource
 from datamesh.ports.harvester import CKANClientPort, AuthProviderPort
+from datamesh.ports.resolver import ConfigPort
 
 logger = logging.getLogger("datamesh.catalog.ckan_client")
 
@@ -15,11 +23,18 @@ logger = logging.getLogger("datamesh.catalog.ckan_client")
 class CKANClientAdapter(CKANClientPort):
     """Client for CKAN Action API v3 with authentication support."""
 
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 15, config_adapter: Optional[ConfigPort] = None):
         self._timeout = timeout
+        self._config_adapter = config_adapter
 
     def _normalize_endpoint(self, base_url: str) -> str:
         url = base_url.strip().rstrip("/")
+        if self._config_adapter:
+            for rule in self._config_adapter.get_catalog_rules():
+                if rule.matches(url):
+                    url = rule.rewrite(url).rstrip("/")
+                    break
+
         if not url.endswith("/api/3/action"):
             if "/api/3" in url:
                 url = url.split("/api/3")[0] + "/api/3/action"
@@ -40,8 +55,18 @@ class CKANClientAdapter(CKANClientPort):
         }
         if auth_provider:
             headers.update(auth_provider.get_auth_headers())
-        elif os.environ.get("CKAN_ACCESS_KEY", "").strip():
-            headers["Authorization"] = os.environ.get("CKAN_ACCESS_KEY", "").strip()
+        else:
+            matched_auth = False
+            if self._config_adapter:
+                for rule in self._config_adapter.get_catalog_rules():
+                    if rule.matches(url):
+                        hdrs = rule.get_auth_headers()
+                        if hdrs:
+                            headers.update(hdrs)
+                            matched_auth = True
+                        break
+            if not matched_auth and os.environ.get("CKAN_ACCESS_KEY", "").strip():
+                headers["Authorization"] = os.environ.get("CKAN_ACCESS_KEY", "").strip()
 
         body_bytes = None
         if data is not None:
@@ -51,21 +76,52 @@ class CKANClientAdapter(CKANClientPort):
         req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                content_type = (resp.headers.get("Content-Type") or "").lower() if hasattr(resp, "headers") else ""
+                final_url = resp.geturl() if hasattr(resp, "geturl") else url
+                if "text/html" in content_type:
+                    err_msg = (
+                        f"CKAN Action API returned HTML webpage (Content-Type: '{content_type}') instead of JSON from '{url}'. "
+                        f"Endpoint redirected to '{final_url}'. Check authentication or portal URL."
+                    )
+                    logger.error(err_msg)
+                    raise InvalidContentTypeError(err_msg)
+
                 if resp.status == 200:
-                    payload = json.loads(resp.read().decode("utf-8"))
+                    raw_text = resp.read().decode("utf-8")
+                    try:
+                        payload = json.loads(raw_text)
+                    except json.JSONDecodeError as jde:
+                        raise InvalidContentTypeError(f"CKAN API returned non-JSON response from '{url}': {jde}") from jde
+
                     if isinstance(payload, dict) and payload.get("success"):
                         return payload.get("result")
                     else:
-                        logger.warning("CKAN API returned success=false from %s: %s", url, payload.get("error"))
+                        err_detail = payload.get("error") if isinstance(payload, dict) else "unknown error"
+                        logger.warning("CKAN API returned success=false from %s: %s", url, err_detail)
+                        raise CatalogConnectionError(f"CKAN Action API returned success=false from '{url}': {err_detail}")
         except urllib.error.HTTPError as he:
             # If POST failed with 400/405, and GET hasn't been tried, attempt fallback
             if method != "GET" and data is not None and he.code in (400, 404, 405):
                 params_str = urllib.parse.urlencode(data)
                 fallback_url = f"{url}?{params_str}" if "?" not in url else f"{url}&{params_str}"
                 return self._make_request(fallback_url, auth_provider, data=None, method="GET")
+
+            if he.code in (401, 403):
+                err_msg = f"CKAN API authentication failed (HTTP {he.code}) for '{url}'. Check credentials/token."
+                logger.error(err_msg)
+                raise AuthenticationRequiredError(err_msg) from he
+            elif he.code >= 500:
+                err_msg = f"CKAN API server error (HTTP {he.code}) for '{url}': {he}"
+                logger.error(err_msg)
+                raise CatalogConnectionError(err_msg) from he
+
             logger.error("CKAN request failed for %s (HTTP %d): %s", url, he.code, he)
+            raise CatalogConnectionError(f"CKAN request failed for '{url}' (HTTP {he.code}): {he}") from he
+        except (AuthenticationRequiredError, InvalidContentTypeError, CatalogConnectionError):
+            raise
         except Exception as e:
             logger.error("CKAN request failed for %s: %s", url, e)
+            raise CatalogConnectionError(f"CKAN request failed for '{url}': {e}") from e
         return None
 
     def search_packages(

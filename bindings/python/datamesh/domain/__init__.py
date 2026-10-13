@@ -7,9 +7,20 @@ from datamesh.domain.models import (
     StorageConfig,
 )
 
+from datamesh.domain.errors import (
+    DataMeshError,
+    AuthenticationRequiredError,
+    InvalidContentTypeError,
+    CatalogConnectionError,
+)
+
 __all__ = [
     "StorageConfig",
     "ResourceDescriptor",
     "CacheEntryMetadata",
     "ResolvedResource",
+    "DataMeshError",
+    "AuthenticationRequiredError",
+    "InvalidContentTypeError",
+    "CatalogConnectionError",
 ]

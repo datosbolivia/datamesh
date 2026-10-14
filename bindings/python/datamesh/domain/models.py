@@ -196,6 +196,7 @@ class ResolvedResource:
     format: str  # parquet, csv, tsv, json, jsonl
     is_cached: bool = False
     metadata: Optional[CacheEntryMetadata] = None
+    x_policy: Optional[str] = "allow_all"
 
 
 @dataclass(frozen=True)
@@ -1086,5 +1087,50 @@ class LineageGraph:
         }
 
 
+def evaluate_query_policy_fallback(
+    policy: str,
+    sql_query: str,
+    identity: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Evaluates access policy on a SQL query mirroring Go Core domain logic."""
+    norm = (policy or "allow_all").strip().lower()
+    if norm in ("allow_all", ""):
+        return {"allowed": True, "policy": "allow_all", "granted_permissions": ["read_raw", "read_aggregate", "export"]}
+    if norm == "deny":
+        is_admin = bool(identity and str(identity.get("role", "")).lower() == "admin")
+        return {
+            "allowed": is_admin,
+            "policy": "deny",
+            "reason": "" if is_admin else "Access explicitly denied by 'deny' policy. Requires administrative role.",
+            "granted_permissions": ["admin", "read_raw"] if is_admin else [],
+        }
+    if norm == "zero_microdata":
+        if identity:
+            role = str(identity.get("role", "")).lower()
+            trust = str(identity.get("trust_tier", "")).lower()
+            if role in ("admin", "analyst") or trust in ("official", "human-reviewed"):
+                return {"allowed": True, "policy": "zero_microdata", "granted_permissions": ["read_raw", "read_aggregate"]}
 
+        # Check aggregate intent vs raw row access
+        q = sql_query.strip()
+        has_agg = bool(re.search(r'\b(COUNT|SUM|AVG|MIN|MAX|MEDIAN|STDDEV|VARIANCE)\s*\(', q, re.I))
+        has_group = bool(re.search(r'\bGROUP\s+BY\b', q, re.I))
+        has_star = bool(re.search(r'\bSELECT\s+(?:DISTINCT\s+)?\*\s+FROM\b', q, re.I))
 
+        if (has_agg or has_group) and not has_star:
+            return {"allowed": True, "policy": "zero_microdata", "granted_permissions": ["read_aggregate"]}
+
+        return {
+            "allowed": False,
+            "policy": "zero_microdata",
+            "reason": (
+                "Dataset access restricted under 'zero_microdata' policy. "
+                "Raw individual row access (e.g. SELECT *) is prohibited for unverified identities. "
+                "Query must contain statistical aggregations (COUNT, SUM, AVG, MIN, MAX, GROUP BY) "
+                "or provide authorized digital credentials/signatures."
+            ),
+            "granted_permissions": [],
+            "requires_signature": True,
+        }
+
+    return {"allowed": False, "policy": norm, "reason": f"Unknown policy '{norm}'."}

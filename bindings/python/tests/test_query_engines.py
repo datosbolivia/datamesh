@@ -97,7 +97,8 @@ def test_runtime_unknown_engine_raises():
     with pytest.raises(ValueError, match="Unknown query engine 'unreal_engine'"):
         dm.sql("SELECT 1", engine="unreal_engine")
 
-def test_go_engine_unavailable_message():
-    go_eng = GoCoreQueryEngine(lib_handle=None)
+def test_go_engine_unavailable_message(monkeypatch):
+    monkeypatch.delenv("DATAMESH_LIB_PATH", raising=False)
+    go_eng = GoCoreQueryEngine(lib_path="nonexistent_library.so")
     with pytest.raises(RuntimeError, match="Go core shared library .* is not compiled or loaded"):
         go_eng.execute_sql("SELECT 1")

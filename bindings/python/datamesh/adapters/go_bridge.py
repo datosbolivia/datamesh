@@ -29,17 +29,39 @@ class GoCoreBridge:
         "DataMeshValidate": ([ctypes.c_char_p], ctypes.c_void_p),
         "DataMeshGetLineage": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
         "DataMeshLineageGraph": ([ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshEvaluatePolicy": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshVerifySignature": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
     }
 
     def __init__(self, lib_path: Optional[str] = None, lib_handle: Optional[Any] = None):
         self._lib = lib_handle
         if self._lib is None:
-            target_path = lib_path or os.environ.get("DATAMESH_LIB_PATH", "libdatamesh.so")
-            if os.path.exists(target_path):
-                try:
-                    self._lib = ctypes.CDLL(target_path)
-                except OSError:
-                    self._lib = None
+            if lib_path:
+                candidates = [lib_path]
+            elif "DATAMESH_LIB_PATH" in os.environ:
+                candidates = [os.environ["DATAMESH_LIB_PATH"]]
+            else:
+                candidates = []
+                pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                for name in ("libdatamesh.so", "libdatamesh.dylib", "datamesh.dll"):
+                    candidates.append(os.path.join(pkg_root, name))
+                    candidates.append(os.path.join(os.path.dirname(pkg_root), name))
+
+                candidates.extend([
+                    "libdatamesh.so",
+                    "core-go/libdatamesh.so",
+                    "../core-go/libdatamesh.so",
+                    "/usr/local/lib/libdatamesh.so",
+                ])
+
+            for target in candidates:
+                if target and os.path.exists(target):
+                    try:
+                        self._lib = ctypes.CDLL(target)
+                        if self._lib:
+                            break
+                    except OSError:
+                        self._lib = None
         if self._lib is not None:
             self._wire_symbols()
 
@@ -121,3 +143,11 @@ class GoCoreBridge:
                     free(raw)
         except Exception:
             return None
+
+    def evaluate_policy(self, policy: str, sql_query: str, identity: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Evaluates access policy on a SQL query using authoritative Go Core domain."""
+        return self.call("DataMeshEvaluatePolicy", policy, sql_query, json.dumps(identity or {}))
+
+    def verify_signature(self, public_key: str, message: str, signature: str) -> Optional[Dict[str, Any]]:
+        """Verifies Ed25519 digital signature using authoritative Go Core domain."""
+        return self.call("DataMeshVerifySignature", public_key, message, signature)

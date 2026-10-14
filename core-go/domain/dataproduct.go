@@ -157,15 +157,11 @@ func (dp *DataProduct) Validate() error {
 
 	validType := false
 	switch dp.Manifest.Type {
-	case "dataset", "model", "composite", "component", "requirement", "document", "concept", "playbook", "metric", "indicator", "service":
+	case "dataset", "model", "composite", "component", "requirement", "document", "concept", "playbook", "metric", "indicator", "service", "catalog":
 		validType = true
 	}
 	if !validType {
 		return ErrInvalidType
-	}
-
-	if len(dp.Manifest.Dimensions) == 0 {
-		return ErrMissingDimension
 	}
 
 	return nil

@@ -19,3 +19,13 @@ class InvalidContentTypeError(DataMeshError):
 class CatalogConnectionError(DataMeshError):
     """Raised when connection to a catalog fails or returns a server error."""
     pass
+
+
+class PolicyViolationError(DataMeshError):
+    """Raised when access to a resource is restricted or rejected by policy (e.g. zero_microdata or deny)."""
+    pass
+
+
+class GoCoreUnavailableError(DataMeshError):
+    """Raised when Go Core native authority is required but libdatamesh.so cannot be loaded."""
+    pass

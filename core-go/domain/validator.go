@@ -91,6 +91,7 @@ type ConceptFrontmatter struct {
 type ContractSpec struct {
 	Type string `yaml:"type" json:"type"`
 	Path string `yaml:"path" json:"path"`
+	Ref  string `yaml:"ref" json:"ref"`
 }
 
 type LineageSpec struct {
@@ -168,13 +169,17 @@ func ValidateConceptContent(content string, filePath string) *ValidationReport {
 			report.AddIssue("PE4-CONTRACT-UNKNOWN", SeverityWarning, fmt.Sprintf("Contract[%d] has non-standard type '%s'", idx, c.Type), filePath, 1)
 		}
 
-		if strings.TrimSpace(c.Path) == "" {
-			report.AddIssue("PE4-CONTRACT-PATH", SeverityError, fmt.Sprintf("Contract[%d] is missing 'path'", idx), filePath, 1)
-		} else if !strings.HasPrefix(c.Path, "http://") && !strings.HasPrefix(c.Path, "https://") && filePath != "" {
+		targetRef := strings.TrimSpace(c.Path)
+		if targetRef == "" {
+			targetRef = strings.TrimSpace(c.Ref)
+		}
+		if targetRef == "" {
+			report.AddIssue("PE4-CONTRACT-PATH", SeverityError, fmt.Sprintf("Contract[%d] is missing 'path' or 'ref'", idx), filePath, 1)
+		} else if !strings.HasPrefix(targetRef, "http://") && !strings.HasPrefix(targetRef, "https://") && filePath != "" {
 			baseDir := filepath.Dir(filePath)
-			targetFile := filepath.Join(baseDir, c.Path)
+			targetFile := filepath.Join(baseDir, targetRef)
 			if _, err := os.Stat(targetFile); os.IsNotExist(err) {
-				report.AddIssue("PE4-CONTRACT-LOCAL-NOT-FOUND", SeverityWarning, fmt.Sprintf("Local contract path '%s' not found at '%s'", c.Path, targetFile), filePath, 1)
+				report.AddIssue("PE4-CONTRACT-LOCAL-NOT-FOUND", SeverityWarning, fmt.Sprintf("Local contract path '%s' not found at '%s'", targetRef, targetFile), filePath, 1)
 			}
 		}
 	}

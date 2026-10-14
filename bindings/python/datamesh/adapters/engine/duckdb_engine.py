@@ -13,6 +13,7 @@ from datamesh.domain.errors import (
     AuthenticationRequiredError,
     InvalidContentTypeError,
     CatalogConnectionError,
+    PolicyViolationError,
 )
 from datamesh.ports.engine import QueryEnginePort
 
@@ -71,6 +72,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         catalog_resolver: Optional[Any] = None,
         resolver_usecase: Optional[Any] = None,
         storage: Optional[Any] = None,
+        bridge: Optional[Any] = None,
     ):
         self.conn = duckdb.connect(database=":memory:")
         try:
@@ -81,9 +83,29 @@ class DuckDBQueryEngine(QueryEnginePort):
         self.catalog_resolver = catalog_resolver
         self.resolver_usecase = resolver_usecase
         self.storage = storage
+        self.bridge = bridge
+        self._table_policies: Dict[str, str] = {}
         self._registered_views: Dict[str, str] = {}
         self._view_errors: Dict[str, str] = {}
         self._healed_refs: Set[str] = set()
+
+    def set_table_policy(self, table_ref: str, policy: str) -> None:
+        """Sets access policy (allow_all, zero_microdata, deny) for a registered table reference."""
+        if not policy:
+            return
+        aliases = self._generate_aliases(table_ref)
+        for a in aliases:
+            self._table_policies[a] = policy
+        self._table_policies[table_ref] = policy
+
+    def _evaluate_policy(self, policy: str, sql_query: str, identity: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Evaluates access policy using authoritative Go Core bridge, falling back to local domain."""
+        if self.bridge and hasattr(self.bridge, "available") and self.bridge.available:
+            res = self.bridge.evaluate_policy(policy, sql_query, identity)
+            if isinstance(res, dict):
+                return res
+        from datamesh.domain.models import evaluate_query_policy_fallback
+        return evaluate_query_policy_fallback(policy, sql_query, identity)
 
     @property
     def name(self) -> str:
@@ -110,6 +132,10 @@ class DuckDBQueryEngine(QueryEnginePort):
             resolved = None
             if table_mapping and table_ref in table_mapping:
                 physical_path = table_mapping[table_ref]
+            elif table_ref in self._registered_views:
+                if f"'{table_ref}'" in rewritten_sql:
+                    rewritten_sql = rewritten_sql.replace(f"'{table_ref}'", f'"{table_ref}"')
+                continue
             elif self.resolver_usecase:
                 resolved = self.resolver_usecase.resolve(table_ref)
                 if resolved:
@@ -123,6 +149,8 @@ class DuckDBQueryEngine(QueryEnginePort):
                 physical_path = self._resolve_table_locally(table_ref)
 
             if physical_path:
+                if resolved and hasattr(resolved, "x_policy") and resolved.x_policy:
+                    self.set_table_policy(table_ref, resolved.x_policy)
                 ok = self.register_table_aliases(table_ref, physical_path)
                 if f"'{table_ref}'" in rewritten_sql:
                     rewritten_sql = rewritten_sql.replace(f"'{table_ref}'", f'"{table_ref}"')
@@ -136,6 +164,23 @@ class DuckDBQueryEngine(QueryEnginePort):
                     f"DuckDB SQL execution error: Could not resolve table reference '{table_ref}' "
                     f"to any physical resource, local dataset file, or catalog manifest."
                 )
+
+        # 2.5 Policy Enforcement Check (Zero-Microdata, Deny, etc.)
+        identity = (table_mapping or {}).get("__identity__") if isinstance(table_mapping, dict) else None
+        for table_ref in tables:
+            policy = self._table_policies.get(table_ref)
+            if not policy:
+                for a in self._generate_aliases(table_ref):
+                    if a in self._table_policies:
+                        policy = self._table_policies[a]
+                        break
+            if policy and str(policy).lower() != "allow_all":
+                decision = self._evaluate_policy(policy, sql_query, identity)
+                if not decision.get("allowed", False):
+                    raise PolicyViolationError(
+                        decision.get("reason")
+                        or f"Query rejected: Access to '{table_ref}' denied under '{policy}' policy."
+                    )
 
         # 3. Execute query with DuckDB
         try:

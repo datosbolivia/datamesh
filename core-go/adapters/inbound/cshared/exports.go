@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unsafe"
@@ -70,17 +72,19 @@ func initRuntime(configJSON string) error {
 	unifiedReader := manifests.NewUnifiedMetadataReader(cfg.Base.CatalogURL, cfg.Base.Timeout)
 	catalogResolver := resolvers.NewLLMSTxtCatalogResolver(cfg.Base.Timeout)
 	nodeResolver := resolvers.NewNodeDataProductResolver(unifiedReader)
+	catalogUC = usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
+	validateUC = usecases.NewValidateUseCase(cfg.Base.Timeout)
+	lineageUC = usecases.NewLineageUseCase(cfg.Base.StoragePath, ".")
+
 	fileStorage, err := storage.NewFileStorage(cfg.Base.StoragePath)
 	if err != nil {
-		return err
+		fallbackPath := filepath.Join(os.TempDir(), "datamesh-cache")
+		fileStorage, _ = storage.NewFileStorage(fallbackPath)
 	}
 
-	catalogUC = usecases.NewDiscoverCatalogUseCase(catalogResolver, cfg)
 	dataProductUC = usecases.NewResolveDataProductUseCase(nodeResolver, fileStorage, cfg)
 	inmemEngine = engine.NewInMemTabularQueryEngine()
 	queryUC = usecases.NewQueryDataProductUseCase(inmemEngine, fileStorage, unifiedReader)
-	validateUC = usecases.NewValidateUseCase(cfg.Base.Timeout)
-	lineageUC = usecases.NewLineageUseCase(cfg.Base.StoragePath, ".")
 	return nil
 }
 
@@ -231,6 +235,48 @@ func DataMeshLineageGraph(optionsJSON *C.char) *C.char {
 
 	graph, err := lineageUC.BuildGraph(context.Background(), opts.SearchDirs, opts.CatalogURL)
 	return makeJSONResponse(graph, err)
+}
+
+//export DataMeshEvaluatePolicy
+func DataMeshEvaluatePolicy(policyStr *C.char, sqlQueryStr *C.char, identityJSON *C.char) *C.char {
+	ensureInit()
+	policy := ""
+	if policyStr != nil {
+		policy = C.GoString(policyStr)
+	}
+	sqlQuery := ""
+	if sqlQueryStr != nil {
+		sqlQuery = C.GoString(sqlQueryStr)
+	}
+
+	var identity domain.UserIdentity
+	if identityJSON != nil {
+		raw := C.GoString(identityJSON)
+		if strings.TrimSpace(raw) != "" {
+			_ = json.Unmarshal([]byte(raw), &identity)
+		}
+	}
+
+	decision := domain.EvaluateQueryAccess(policy, identity, sqlQuery)
+	return makeJSONResponse(decision, nil)
+}
+
+//export DataMeshVerifySignature
+func DataMeshVerifySignature(pubKeyHex *C.char, messageStr *C.char, signatureHex *C.char) *C.char {
+	ensureInit()
+	if pubKeyHex == nil || messageStr == nil || signatureHex == nil {
+		return makeJSONResponse(nil, errors.New("missing required arguments for signature verification"))
+	}
+
+	pubKey := C.GoString(pubKeyHex)
+	msg := []byte(C.GoString(messageStr))
+	sig := C.GoString(signatureHex)
+
+	valid, err := domain.VerifyEd25519Signature(pubKey, msg, sig)
+	if err != nil {
+		return makeJSONResponse(nil, err)
+	}
+	return makeJSONResponse(map[string]interface{}{"valid": valid}, nil)
 }
 
 //export DataMeshFreeString

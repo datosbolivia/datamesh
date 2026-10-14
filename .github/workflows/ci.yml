@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-build:
+    name: Build Go Core & Run Python Integration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: core-go/go.sum
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install CGO dependencies & GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libc6-dev
+
+      - name: Run Go Unit & Domain Tests
+        run: |
+          cd core-go
+          go test -v -race ./...
+
+      - name: Compile libdatamesh.so (C-Shared Library)
+        run: |
+          cd core-go
+          go build -buildmode=c-shared -o libdatamesh.so ./adapters/inbound/cshared/exports.go
+          ls -la libdatamesh.so libdatamesh.h
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./bindings/python
+          pip install pytest pytest-cov
+
+      - name: Run Python Tests with Native Go Core Authority
+        env:
+          DATAMESH_LIB_PATH: ${{ github.workspace }}/core-go/libdatamesh.so
+          PYTHONPATH: ${{ github.workspace }}/bindings/python
+        run: |
+          pytest bindings/python/tests -v --strict-markers

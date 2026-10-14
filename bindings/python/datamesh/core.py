@@ -91,6 +91,7 @@ class DataMeshRuntime:
             catalog_resolver=self._workspace.resolve_triad_to_path,
             resolver_usecase=self._resolver_usecase,
             storage=self._storage,
+            bridge=self._bridge,
         )
         self._inmem_engine = InMemTabularQueryEngine(
             catalog_resolver=self._workspace.resolve_triad_to_path,

@@ -150,6 +150,10 @@ func (r *UnifiedMetadataReader) ReadNode(ctx context.Context, uriOrPath string) 
 		}
 	}
 
+	if rawContent == "" && len(resources) == 0 {
+		return nil, fmt.Errorf("could not read node content or manifest from %s", uriOrPath)
+	}
+
 	if manifest.Title == "" {
 		if isURL {
 			parts := strings.Split(baseDir, "/")

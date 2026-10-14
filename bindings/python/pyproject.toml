@@ -29,3 +29,6 @@ datamesh = "datamesh.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["datamesh*"]
+
+[tool.setuptools.package-data]
+datamesh = ["*.so", "*.dylib", "*.dll"]

@@ -279,6 +279,71 @@ func DataMeshVerifySignature(pubKeyHex *C.char, messageStr *C.char, signatureHex
 	return makeJSONResponse(map[string]interface{}{"valid": valid}, nil)
 }
 
+//export DataMeshComputeEffectivePolicy
+func DataMeshComputeEffectivePolicy(policyJSON *C.char, identityJSON *C.char) *C.char {
+	ensureInit()
+	policyStr := ""
+	if policyJSON != nil {
+		policyStr = C.GoString(policyJSON)
+	}
+
+	var identity domain.UserIdentity
+	if identityJSON != nil {
+		raw := C.GoString(identityJSON)
+		if strings.TrimSpace(raw) != "" {
+			_ = json.Unmarshal([]byte(raw), &identity)
+		}
+	}
+
+	gp, err := domain.ParseGranularPolicy(policyStr)
+	if err != nil {
+		return makeJSONResponse(nil, err)
+	}
+
+	profile := domain.ComputeEffectivePolicy(gp, identity)
+	return makeJSONResponse(profile, nil)
+}
+
+//export DataMeshParseOpenSSHKey
+func DataMeshParseOpenSSHKey(sshKeyStr *C.char) *C.char {
+	ensureInit()
+	if sshKeyStr == nil {
+		return makeJSONResponse(nil, errors.New("empty SSH key string"))
+	}
+	rawStr := C.GoString(sshKeyStr)
+	_, hexKey, err := domain.ParseOpenSSHEd25519PublicKey(rawStr)
+	if err != nil {
+		return makeJSONResponse(nil, err)
+	}
+	return makeJSONResponse(map[string]interface{}{
+		"public_key_hex": hexKey,
+		"key_type":       "ssh-ed25519",
+	}, nil)
+}
+
+//export DataMeshVerifyGitHubIdentity
+func DataMeshVerifyGitHubIdentity(didStr *C.char, claimedPubKey *C.char, githubKeysRaw *C.char) *C.char {
+	ensureInit()
+	if didStr == nil || claimedPubKey == nil || githubKeysRaw == nil {
+		return makeJSONResponse(nil, errors.New("missing required arguments for GitHub identity verification"))
+	}
+	did := C.GoString(didStr)
+	claimed := C.GoString(claimedPubKey)
+	ghKeys := C.GoString(githubKeysRaw)
+
+	matched, username, hexKey, err := domain.VerifyGitHubDID(did, claimed, ghKeys)
+	if err != nil {
+		return makeJSONResponse(nil, err)
+	}
+
+	return makeJSONResponse(map[string]interface{}{
+		"matched":        matched,
+		"username":       username,
+		"public_key_hex": hexKey,
+		"did":            did,
+	}, nil)
+}
+
 //export DataMeshFreeString
 func DataMeshFreeString(ptr *C.char) {
 	if ptr != nil {

@@ -183,6 +183,35 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "name": "datamesh_handshake",
+        "description": "Performs identity handshake using OpenSSH GitHub DID (did:github:<user>) or Ed25519 digital signature, returning effective policy permissions and constraints (aggregate-only, hidden columns, hashed columns, row filters).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "did": {
+                    "type": "string",
+                    "description": "DID identity URI (e.g. 'did:github:username')."
+                },
+                "public_key": {
+                    "type": "string",
+                    "description": "OpenSSH public key string (e.g. 'ssh-ed25519 AAAAC3... user@host') or 64-char hex key."
+                },
+                "challenge": {
+                    "type": "string",
+                    "description": "Challenge string signed by the private key."
+                },
+                "signature": {
+                    "type": "string",
+                    "description": "Ed25519 digital signature of challenge in hex format."
+                },
+                "dataset_policy": {
+                    "type": "string",
+                    "description": "Optional policy name (e.g. 'zero_microdata') or JSON GranularPolicy to evaluate."
+                }
+            }
+        }
     }
 ]
 
@@ -465,6 +494,11 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     g = dm.lineage(catalog_url=catalog_url)
                     return make_tool_result(msg_id, g.to_dict())
+
+            elif tool_name == "datamesh_handshake":
+                from datamesh.server import process_handshake
+                data = process_handshake(args)
+                return make_tool_result(msg_id, data)
 
             else:
                 return {

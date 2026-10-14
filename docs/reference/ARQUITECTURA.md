@@ -390,3 +390,27 @@ Autoridad normativa: **ADR 0016**. La capa de entrada (HTTP REST, proxy CORS y M
 - `DATAMESH_PROXY_ALLOWED_HOSTS=host1,host2` — allowlist SSRF; si está definida, solo esos hosts.
 - `DATAMESH_PROXY_ALLOW_PRIVATE=1` — restaura destinos privados (federaciones de intranet).
 - `DATAMESH_CORS_ORIGIN=...` — origen CORS permitido (default `*`).
+
+## 14. Protocolo de Handshake, Identidad OpenSSH GitHub DID y Motor de Políticas Granulares (ADR 0026, ADR 0027)
+
+Autoridad normativa: **ADR 0026** y **ADR 0027**.
+
+### 14.1 Verificación de Identidad Descentralizada con OpenSSH
+- **Wire Format RFC 4253:** `core-go/domain/crypto.go` procesa llaves `ssh-ed25519` sin dependencias de C externas mediante `ParseOpenSSHEd25519PublicKey`.
+- **Esquema DID de GitHub:** `did:github:<usuario>` es validado sintácticamente y cotejado contra las claves públicas publicadas en `https://github.com/<usuario>.keys` (`MatchesGitHubSSHKey`, `VerifyGitHubDID`).
+- **Firmas Digitales de Desafío:** Verificación criptográfica con `VerifyEd25519Signature` sobre retos o nonces para autenticar sesiones activas y asignar nivel de confianza `machine-confirmed`.
+
+### 14.2 Protocolo de Handshake de Descubrimiento
+- **`GET /.well-known/datamesh.json`:** Descubrimiento de capacidades del servidor, esquemas de autenticación (`did:github`, `openssh`, `ed25519`) y endpoints.
+- **`POST /api/v1/handshake`:** Negociación dinámica. El cliente envía su identidad y recibe su `EffectivePolicyProfile` personalizado con el desglose de reglas que le aplican.
+- **Herramienta MCP `datamesh_handshake`:** Expone el handshake directamente a agentes de IA para inspección autónoma de permisos.
+
+### 14.3 Motor de Políticas Granulares y Vistas Virtuales Aseguradas
+- **`PolicyRule`:** Reglas estructuradas con `AppliesTo`, `AggregateOnly`, `HiddenColumns`, `HashedColumns`, `RowFilters` y `DenyAccess`.
+- **`EffectivePolicyProfile`:** Perfil resultante computado en Go Core (`ComputeEffectivePolicy`), desacoplado de copias físicas de datos.
+- **Enforcement en DuckDB:**
+  - `EXCLUDE (hidden_columns)`: Columnas restringidas excluidas del catálogo de la vista virtual.
+  - `REPLACE (sha256(CAST(col AS VARCHAR)) AS col)`: Columnas sensibles enmascaradas con hash criptográfico unidireccional.
+  - `WHERE <row_filters>`: Inyección transparente de restricciones de fecha o partición.
+  - Intercepción de consultas: Bloqueo inmediato de `SELECT *` para políticas `aggregate_only` y bloqueo ante consultas que invoquen columnas ocultas.
+

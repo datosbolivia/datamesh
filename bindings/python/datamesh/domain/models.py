@@ -1088,12 +1088,60 @@ class LineageGraph:
 
 
 def evaluate_query_policy_fallback(
-    policy: str,
+    policy: Any,
     sql_query: str,
     identity: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Evaluates access policy on a SQL query mirroring Go Core domain logic."""
-    norm = (policy or "allow_all").strip().lower()
+    raw_policy = policy
+    if isinstance(raw_policy, str) and raw_policy.strip().startswith("{"):
+        try:
+            raw_policy = json.loads(raw_policy)
+        except Exception:
+            pass
+
+    if isinstance(raw_policy, dict) and "rules" in raw_policy:
+        profile = compute_effective_policy_fallback(raw_policy, identity)
+        if not profile.get("allowed", True):
+            return {
+                "allowed": False,
+                "policy": "deny",
+                "reason": profile.get("reason", "Access denied by policy."),
+                "granted_permissions": [],
+            }
+        for col in profile.get("hidden_columns", []):
+            if re.search(r'\b' + re.escape(col) + r'\b', sql_query, re.I):
+                return {
+                    "allowed": False,
+                    "policy": "deny",
+                    "reason": f"Query rejected: Column '{col}' is hidden/restricted for your identity tier.",
+                    "granted_permissions": [],
+                }
+        if profile.get("aggregate_only"):
+            q = sql_query.strip()
+            has_agg = bool(re.search(r'\b(COUNT|SUM|AVG|MIN|MAX|MEDIAN|STDDEV|VARIANCE|APPROX_COUNT_DISTINCT)\s*\(', q, re.I))
+            has_group = bool(re.search(r'\bGROUP\s+BY\b', q, re.I))
+            has_star = bool(re.search(r'\bSELECT\s+(?:DISTINCT\s+)?\*\s+FROM\b', q, re.I))
+            if has_star or (not has_agg and not has_group):
+                return {
+                    "allowed": False,
+                    "policy": "zero_microdata",
+                    "reason": (
+                        "Dataset access restricted under 'zero_microdata' policy. "
+                        "Raw individual row access (e.g. SELECT *) is prohibited. "
+                        "Query must contain statistical aggregations (COUNT, SUM, AVG, MIN, MAX, GROUP BY) "
+                        "or provide authorized digital credentials/signatures."
+                    ),
+                    "granted_permissions": [],
+                    "requires_signature": True,
+                }
+        return {
+            "allowed": True,
+            "policy": "allow_all",
+            "granted_permissions": ["read_raw", "read_aggregate", "export"],
+        }
+
+    norm = str(policy or "allow_all").strip().lower()
     if norm in ("allow_all", ""):
         return {"allowed": True, "policy": "allow_all", "granted_permissions": ["read_raw", "read_aggregate", "export"]}
     if norm == "deny":
@@ -1134,3 +1182,92 @@ def evaluate_query_policy_fallback(
         }
 
     return {"allowed": False, "policy": norm, "reason": f"Unknown policy '{norm}'."}
+
+
+def compute_effective_policy_fallback(
+    policy: Any,
+    identity: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Computes effective policy profile mirroring Go Core domain logic."""
+    identity = identity or {}
+    user_did = str(identity.get("id") or "")
+    role = str(identity.get("role") or "public").strip().lower()
+    trust_tier = str(identity.get("trust_tier") or "unverified").strip().lower()
+    is_admin = role == "admin"
+
+    profile: Dict[str, Any] = {
+        "user_did": user_did,
+        "role": role,
+        "trust_tier": trust_tier,
+        "allowed": True,
+        "reason": "",
+        "aggregate_only": False,
+        "hidden_columns": [],
+        "hashed_columns": [],
+        "row_filters": [],
+        "active_rule_ids": [],
+    }
+
+    raw_policy = policy
+    if isinstance(raw_policy, str) and raw_policy.strip().startswith("{"):
+        try:
+            raw_policy = json.loads(raw_policy)
+        except Exception:
+            pass
+
+    if isinstance(raw_policy, dict) and "rules" in raw_policy:
+        rules = raw_policy.get("rules", [])
+        for rule in rules:
+            applies_to = [str(t).strip().lower() for t in rule.get("applies_to", [])]
+            applies = False
+            if not applies_to:
+                applies = True
+            else:
+                for target in applies_to:
+                    if target in ("all", "*", role, trust_tier):
+                        applies = True
+                        break
+
+            if not applies:
+                continue
+
+            rule_id = rule.get("id", "")
+            if rule_id:
+                profile["active_rule_ids"].append(rule_id)
+
+            if rule.get("deny_access"):
+                if not is_admin:
+                    profile["allowed"] = False
+                    profile["reason"] = f"Access denied by rule '{rule_id}': {rule.get('description', '')}"
+                    return profile
+
+            if rule.get("aggregate_only") and not is_admin:
+                profile["aggregate_only"] = True
+
+            if not is_admin:
+                for c in rule.get("hidden_columns", []):
+                    clean_c = str(c).strip()
+                    if clean_c and clean_c not in profile["hidden_columns"]:
+                        profile["hidden_columns"].append(clean_c)
+                for c in rule.get("hashed_columns", []):
+                    clean_c = str(c).strip()
+                    if clean_c and clean_c not in profile["hashed_columns"]:
+                        profile["hashed_columns"].append(clean_c)
+                for f in rule.get("row_filters", []):
+                    clean_f = str(f).strip()
+                    if clean_f and clean_f not in profile["row_filters"]:
+                        profile["row_filters"].append(clean_f)
+        return profile
+
+    norm = str(policy or "allow_all").strip().lower()
+    if norm == "deny":
+        if not is_admin:
+            profile["allowed"] = False
+            profile["reason"] = "Access explicitly denied by 'deny' policy. Requires administrative role."
+    elif norm == "zero_microdata":
+        if not is_admin and role != "analyst" and trust_tier not in ("official", "human-reviewed"):
+            profile["aggregate_only"] = True
+            profile["active_rule_ids"].append("rule_zero_microdata")
+
+    return profile
+

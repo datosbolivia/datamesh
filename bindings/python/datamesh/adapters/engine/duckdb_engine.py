@@ -89,8 +89,8 @@ class DuckDBQueryEngine(QueryEnginePort):
         self._view_errors: Dict[str, str] = {}
         self._healed_refs: Set[str] = set()
 
-    def set_table_policy(self, table_ref: str, policy: str) -> None:
-        """Sets access policy (allow_all, zero_microdata, deny) for a registered table reference."""
+    def set_table_policy(self, table_ref: str, policy: Any) -> None:
+        """Sets access policy (allow_all, zero_microdata, deny, or GranularPolicy dict) for a registered table reference."""
         if not policy:
             return
         aliases = self._generate_aliases(table_ref)
@@ -98,7 +98,7 @@ class DuckDBQueryEngine(QueryEnginePort):
             self._table_policies[a] = policy
         self._table_policies[table_ref] = policy
 
-    def _evaluate_policy(self, policy: str, sql_query: str, identity: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _evaluate_policy(self, policy: Any, sql_query: str, identity: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Evaluates access policy using authoritative Go Core bridge, falling back to local domain."""
         if self.bridge and hasattr(self.bridge, "available") and self.bridge.available:
             res = self.bridge.evaluate_policy(policy, sql_query, identity)
@@ -106,6 +106,57 @@ class DuckDBQueryEngine(QueryEnginePort):
                 return res
         from datamesh.domain.models import evaluate_query_policy_fallback
         return evaluate_query_policy_fallback(policy, sql_query, identity)
+
+    def _compute_effective_profile(self, policy: Any, identity: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Computes effective policy profile using authoritative Go Core bridge, falling back to local domain."""
+        if self.bridge and hasattr(self.bridge, "available") and self.bridge.available:
+            res = self.bridge.compute_effective_policy(policy, identity)
+            if isinstance(res, dict):
+                return res
+        from datamesh.domain.models import compute_effective_policy_fallback
+        return compute_effective_policy_fallback(policy, identity)
+
+    def _register_secured_view(self, table_ref: str, physical_path: str, profile: Dict[str, Any]) -> None:
+        """Rewrites virtual views in DuckDB to apply column hiding (EXCLUDE), masking (REPLACE sha256), and row filters."""
+        read_expr = self._get_read_expression(physical_path)
+        try:
+            actual_cols = self.conn.sql(f"SELECT * FROM {read_expr} LIMIT 0").columns
+        except Exception:
+            return
+
+        cols_lower_map = {c.lower(): c for c in actual_cols}
+        hidden_cols = [cols_lower_map[c.lower()] for c in (profile.get("hidden_columns") or []) if c.lower() in cols_lower_map]
+        hashed_cols = [
+            cols_lower_map[c.lower()]
+            for c in (profile.get("hashed_columns") or [])
+            if c.lower() in cols_lower_map and cols_lower_map[c.lower()] not in hidden_cols
+        ]
+        row_filters = profile.get("row_filters") or []
+
+        if not hidden_cols and not hashed_cols and not row_filters:
+            return
+
+        parts = ["SELECT *"]
+        if hidden_cols:
+            cols_joined = ", ".join(f'"{c}"' for c in hidden_cols)
+            parts.append(f"EXCLUDE ({cols_joined})")
+        if hashed_cols:
+            replace_clauses = [f'sha256(CAST("{c}" AS VARCHAR)) AS "{c}"' for c in hashed_cols]
+            parts.append(f"REPLACE ({', '.join(replace_clauses)})")
+
+        view_sql = f"{' '.join(parts)} FROM {read_expr}"
+        if row_filters:
+            view_sql += f" WHERE {' AND '.join(row_filters)}"
+
+        aliases = self._generate_aliases(table_ref)
+        for alias in aliases:
+            try:
+                self.conn.execute(f'CREATE OR REPLACE VIEW "{alias}" AS {view_sql}')
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', alias):
+                    self.conn.execute(f'CREATE OR REPLACE VIEW {alias} AS {view_sql}')
+            except Exception as e:
+                logger.debug("Secured view rewrite for %s failed: %s", alias, e)
+
 
     @property
     def name(self) -> str:
@@ -165,8 +216,11 @@ class DuckDBQueryEngine(QueryEnginePort):
                     f"to any physical resource, local dataset file, or catalog manifest."
                 )
 
-        # 2.5 Policy Enforcement Check (Zero-Microdata, Deny, etc.)
+        # 2.5 Policy Enforcement Check (Zero-Microdata, Deny, Granular Rules, etc.)
         identity = (table_mapping or {}).get("__identity__") if isinstance(table_mapping, dict) else None
+        if not identity and isinstance(table_mapping, dict) and "identity" in table_mapping:
+            identity = table_mapping["identity"]
+
         for table_ref in tables:
             policy = self._table_policies.get(table_ref)
             if not policy:
@@ -175,12 +229,33 @@ class DuckDBQueryEngine(QueryEnginePort):
                         policy = self._table_policies[a]
                         break
             if policy and str(policy).lower() != "allow_all":
-                decision = self._evaluate_policy(policy, sql_query, identity)
-                if not decision.get("allowed", False):
+                profile = self._compute_effective_profile(policy, identity)
+                if not profile.get("allowed", True):
                     raise PolicyViolationError(
-                        decision.get("reason")
-                        or f"Query rejected: Access to '{table_ref}' denied under '{policy}' policy."
+                        profile.get("reason")
+                        or f"Query rejected: Access to '{table_ref}' denied under policy."
                     )
+
+                # Check hidden columns
+                for col in profile.get("hidden_columns", []):
+                    if re.search(r'\b' + re.escape(col) + r'\b', sql_query, re.I):
+                        raise PolicyViolationError(
+                            f"Query rejected: Column '{col}' is hidden/restricted for your identity tier."
+                        )
+
+                # Check aggregate only
+                if profile.get("aggregate_only"):
+                    decision = self._evaluate_policy(policy, sql_query, identity)
+                    if not decision.get("allowed", False):
+                        raise PolicyViolationError(
+                            decision.get("reason")
+                            or f"Query rejected: Access to '{table_ref}' requires aggregation under policy."
+                        )
+
+                # Apply secured view rewrite for column hashing, hiding, and row filtering
+                phys_p = self._registered_views.get(table_ref) or (table_mapping.get(table_ref) if table_mapping else None)
+                if phys_p:
+                    self._register_secured_view(table_ref, phys_p, profile)
 
         # 3. Execute query with DuckDB
         try:

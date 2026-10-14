@@ -31,6 +31,9 @@ class GoCoreBridge:
         "DataMeshLineageGraph": ([ctypes.c_char_p], ctypes.c_void_p),
         "DataMeshEvaluatePolicy": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
         "DataMeshVerifySignature": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshComputeEffectivePolicy": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshParseOpenSSHKey": ([ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshVerifyGitHubIdentity": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
     }
 
     def __init__(self, lib_path: Optional[str] = None, lib_handle: Optional[Any] = None):
@@ -151,3 +154,26 @@ class GoCoreBridge:
     def verify_signature(self, public_key: str, message: str, signature: str) -> Optional[Dict[str, Any]]:
         """Verifies Ed25519 digital signature using authoritative Go Core domain."""
         return self.call("DataMeshVerifySignature", public_key, message, signature)
+
+    def compute_effective_policy(
+        self,
+        policy: str | dict,
+        identity: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Computes the effective policy profile for an identity using authoritative Go Core domain."""
+        policy_str = json.dumps(policy) if isinstance(policy, dict) else (policy or "")
+        return self.call("DataMeshComputeEffectivePolicy", policy_str, json.dumps(identity or {}))
+
+    def parse_openssh_key(self, ssh_key_line: str) -> Optional[Dict[str, Any]]:
+        """Parses an OpenSSH formatted public key string using authoritative Go Core domain."""
+        return self.call("DataMeshParseOpenSSHKey", ssh_key_line)
+
+    def verify_github_identity(
+        self,
+        did: str,
+        claimed_pub_key: str,
+        github_keys_raw: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Verifies a did:github:<user> claim against GitHub public keys using authoritative Go Core domain."""
+        return self.call("DataMeshVerifyGitHubIdentity", did, claimed_pub_key, github_keys_raw)
+

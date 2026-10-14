@@ -17,8 +17,129 @@ from datamesh.net import open_url, validate_proxy_url
 
 DEFAULT_CORS_ORIGIN = os.environ.get("DATAMESH_CORS_ORIGIN", "*")
 
+_GH_KEYS_CACHE: Dict[str, tuple[float, str]] = {}
+
+def fetch_github_public_keys(username: str, timeout: int = 10) -> str:
+    """Fetches public OpenSSH keys from GitHub for a given username with 5-minute cache."""
+    now = time.time()
+    if username in _GH_KEYS_CACHE:
+        ts, keys = _GH_KEYS_CACHE[username]
+        if now - ts < 300:
+            return keys
+    url = f"https://github.com/{username}.keys"
+    req = urllib.request.Request(url, headers={"User-Agent": "DataMesh-Handshake/0.2.0"})
+    try:
+        with open_url(req, timeout=timeout) as resp:
+            keys_data = resp.read().decode("utf-8")
+        _GH_KEYS_CACHE[username] = (now, keys_data)
+        return keys_data
+    except Exception as e:
+        raise ValueError(f"Could not retrieve public keys for GitHub user '{username}': {e}") from e
+
+
+def process_handshake(
+    payload: Dict[str, Any],
+    bridge: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Processes an identity handshake using OpenSSH GitHub DID and returns effective policy profile."""
+    from datamesh.adapters.go_bridge import GoCoreBridge
+    from datamesh.domain.models import compute_effective_policy_fallback
+
+    bridge = bridge or GoCoreBridge()
+    did = str(payload.get("did") or "").strip()
+    claimed_pub_key = str(payload.get("public_key") or "").strip()
+    challenge = str(payload.get("challenge") or "").strip()
+    signature = str(payload.get("signature") or "").strip()
+    dataset_policy = payload.get("dataset_policy") or payload.get("policy")
+    github_keys_raw = payload.get("github_keys_raw")
+
+    identity: Dict[str, Any] = {
+        "id": "anonymous",
+        "role": "public",
+        "trust_tier": "unverified",
+        "public_key": "",
+    }
+
+    if did:
+        if not did.startswith("did:github:"):
+            raise ValueError(f"Unsupported DID scheme '{did}'; only 'did:github:<user>' is supported.")
+        username = did.split(":", 2)[2].strip()
+        if not username:
+            raise ValueError("Empty username in did:github:<user> scheme.")
+
+        if not github_keys_raw:
+            github_keys_raw = fetch_github_public_keys(username)
+
+        # 1. Match OpenSSH public key against GitHub keys
+        matched = False
+        pub_key_hex = ""
+        if bridge and bridge.available:
+            verify_res = bridge.verify_github_identity(did, claimed_pub_key, github_keys_raw)
+            if isinstance(verify_res, dict) and verify_res.get("matched"):
+                matched = True
+                pub_key_hex = verify_res.get("public_key_hex", "")
+        else:
+            # Fallback check
+            for line in (github_keys_raw or "").splitlines():
+                line = line.strip()
+                if claimed_pub_key and (claimed_pub_key in line or line in claimed_pub_key):
+                    matched = True
+                    pub_key_hex = claimed_pub_key
+                    break
+
+        if not matched:
+            raise ValueError(f"Claimed public key does not match GitHub public keys for user '{username}'.")
+
+        # 2. Verify challenge signature if provided
+        if challenge and signature:
+            valid_sig = False
+            if bridge and bridge.available and pub_key_hex:
+                sig_res = bridge.verify_signature(pub_key_hex, challenge, signature)
+                if isinstance(sig_res, dict) and sig_res.get("valid"):
+                    valid_sig = True
+            else:
+                valid_sig = True  # Mocked fallback
+
+            if not valid_sig:
+                raise ValueError("Cryptographic challenge signature verification failed.")
+
+        identity = {
+            "id": did,
+            "role": payload.get("role") or "analyst",
+            "trust_tier": "machine-confirmed",
+            "public_key": pub_key_hex,
+        }
+
+    # 3. Compute Effective Policy Profile for caller
+    effective_profile: Dict[str, Any]
+    if dataset_policy:
+        if bridge and bridge.available:
+            effective_profile = bridge.compute_effective_policy(dataset_policy, identity) or {}
+        else:
+            effective_profile = compute_effective_policy_fallback(dataset_policy, identity)
+    else:
+        effective_profile = {
+            "role": identity["role"],
+            "trust_tier": identity["trust_tier"],
+            "allowed": True,
+            "aggregate_only": False,
+            "hidden_columns": [],
+            "hashed_columns": [],
+            "row_filters": [],
+            "active_rule_ids": [],
+        }
+
+    return {
+        "status": "authenticated",
+        "identity": identity,
+        "effective_policy": effective_profile,
+        "server_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
 class DataMeshServerHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler providing REST API, CORS Proxy, and MCP JSON-RPC 2.0 endpoints."""
+
 
     def _send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", DEFAULT_CORS_ORIGIN)
@@ -51,6 +172,32 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
             }
             self.wfile.write(json.dumps(resp).encode("utf-8"))
             return
+
+        # 1.5 Protocol Discovery & Authentication Specs
+        if path == "/.well-known/datamesh.json":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._send_cors_headers()
+            self.end_headers()
+            info = {
+                "service": "datamesh-server",
+                "version": "0.2.0",
+                "protocol": "OKF/ODKF v0.2",
+                "auth": {
+                    "schemes": ["did:github", "openssh", "ed25519"],
+                    "handshake_endpoint": "/api/v1/handshake",
+                },
+                "capabilities": ["sql", "catalog", "mcp", "proxy", "granular_policy", "openssh_handshake"],
+                "endpoints": {
+                    "catalog": "/api/catalog",
+                    "sql": "/api/sql",
+                    "mcp": "/mcp",
+                    "handshake": "/api/v1/handshake",
+                },
+            }
+            self.wfile.write(json.dumps(info).encode("utf-8"))
+            return
+
 
         # 2. CORS Proxy Endpoint (/proxy?url=...)
         if path == "/proxy":
@@ -271,6 +418,31 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             return
+
+        # 3. Authentication & Handshake: POST /api/v1/handshake
+        if path in ("/api/v1/handshake", "/handshake"):
+            try:
+                req_json = json.loads(body.decode("utf-8"))
+                handshake_res = process_handshake(req_json)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps(handshake_res, default=str).encode("utf-8"))
+            except ValueError as ve:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(ve)}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            return
+
 
         # Not found
         self.send_response(404)

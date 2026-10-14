@@ -247,3 +247,30 @@
   4. Almacena el nodo en caché local (`<cache_dir>/nodes/<dataset>/`) para consultas subsecuentes offline de ultra-alta velocidad.
   5. Pre-descarga recursos remotos protegidos con tokens de autenticación inyectados antes de DuckDB, evitando fallos en `read_csv_auto` y garantizando ejecución SQL instantánea.
 
+## CU-24: Handshake de Reconocimiento y Verificación de Identidad OpenSSH con DID de GitHub (`ServerHandshakeUseCase`)
+- **Actor:** Cliente DataMesh, Agente MCP (`datamesh_handshake`), o consumidor de API REST (`POST /api/v1/handshake`).
+- **Entrada:** `did` (`did:github:<usuario>`), `public_key` (formato OpenSSH `ssh-ed25519` o hex), `challenge` y `signature` opcionales, y `dataset_policy`.
+- **Comportamiento:**
+  1. Cliente descubre el servidor mediante `GET /.well-known/datamesh.json`, obteniendo esquemas de autenticación soportados (`did:github`, `openssh`, `ed25519`).
+  2. Valida la estructura del DID (`did:github:<usuario>`) mediante Go Core `VerifyGitHubDID`.
+  3. Recupera y cachea las llaves públicas del usuario desde `https://github.com/<usuario>.keys`.
+  4. Realiza el emparejamiento con `MatchesGitHubSSHKey`, extrayendo la clave pública Ed25519.
+  5. Si se provee desafío y firma, valida la autoría con `VerifyEd25519Signature`.
+  6. Asigna el `UserIdentity` (rol, nivel de confianza `machine-confirmed`) y computa el perfil de política efectivo (`ComputeEffectivePolicy`).
+  7. Retorna la sesión autenticada con las reglas efectivas asignadas al usuario.
+
+## CU-25: Gobernanza Dinámica y Motor de Políticas Granulares en DuckDB (`GranularPolicyEnforcementUseCase`)
+- **Actor:** Motor de consultas DuckDB (`DuckDBQueryEngine`), analista o consumidor de datos.
+- **Entrada:** `sql_query`, `table_mapping` con `__identity__` opcional, y políticas asociadas al dataset (`PolicyRule` / `GranularPolicy`).
+- **Comportamiento:**
+  1. Evalúa el perfil de política efectivo para la identidad del llamante mediante Go Core `ComputeEffectivePolicy`.
+  2. Si el acceso está denegado (`allowed=false`), rechaza la ejecución inmediatamente con `PolicyViolationError`.
+  3. **Protección de microdatos:** Si `aggregate_only=true`, clasifica la intención de la consulta SQL y rechaza volcados sin agregar (`SELECT *`).
+  4. **Columnas ocultas:** Si la consulta hace referencia explícita a columnas restringidas (`hidden_columns`), aborta con `PolicyViolationError`.
+  5. **Vistas virtuales aseguradas en DuckDB:**
+     - Aplica cláusula `EXCLUDE (hidden_columns)` al crear la vista, ocultando los campos del catálogo virtual.
+     - Aplica cláusula `REPLACE (sha256(CAST(col AS VARCHAR)) AS col)` a columnas enmascaradas (`hashed_columns`).
+     - Inyecta predicados de filtrado de filas (`WHERE <row_filters>`) en la definición de la vista virtual.
+  6. Garantiza privacidad y cumplimiento normativo transparente sin copias de datos en disco.
+
+

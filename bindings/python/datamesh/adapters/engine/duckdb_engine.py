@@ -187,6 +187,8 @@ class DuckDBQueryEngine(QueryEnginePort):
                 if f"'{table_ref}'" in rewritten_sql:
                     rewritten_sql = rewritten_sql.replace(f"'{table_ref}'", f'"{table_ref}"')
                 continue
+            elif os.path.exists(table_ref) and os.path.isfile(table_ref):
+                physical_path = os.path.abspath(table_ref)
             elif self.resolver_usecase:
                 resolved = self.resolver_usecase.resolve(table_ref)
                 if resolved:

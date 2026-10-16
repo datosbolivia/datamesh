@@ -1,0 +1,79 @@
+---
+title: "Políticas Granulares y Privacidad Zero-Microdata"
+subtitle: "Gobernanza activa, enmascaramiento con hash y vistas virtuales protegidas en DuckDB"
+---
+
+El estándar **OKF v0.2** introduce mecanismos avanzados de gobernanza de datos para equilibrar la apertura con la protección estricta de la privacidad y el secreto estadístico.
+
+## 1. La Política `zero_microdata`
+
+La política `zero_microdata` prohíbe que identidades públicas o no autorizadas extraigan registros individuales directos (ej. `SELECT *` o identificadores personales), pero permite libremente consultas estadísticas agregadas (`COUNT`, `SUM`, `AVG`, `GROUP BY`).
+
+```python
+import datamesh as dm
+from datamesh.domain.errors import PolicyViolationError
+
+# Configurar política zero_microdata sobre un dataset sensible
+engine = dm.get_engine("duckdb")
+engine.set_table_policy("censo:poblacion", "zero_microdata")
+
+# 1. Consulta agregada permitida
+res_agg = dm.sql("""
+    SELECT departamento, COUNT(*) as total_habitantes
+    FROM 'censo:poblacion'
+    GROUP BY departamento
+""")
+print("Conteo agregado permitido:", res_agg["rows"])
+
+# 2. Intento de volcado directo rechazado
+try:
+    dm.sql("SELECT * FROM 'censo:poblacion' LIMIT 10")
+except PolicyViolationError as e:
+    print(f"Bloqueo normativo exitoso: {e}")
+```
+
+## 2. Definición de Políticas Granulares Dinámicas
+
+Una política granular (`GranularPolicy`) está compuesta por una o varias reglas (`PolicyRule`), especificando:
+- **`applies_to`**: Roles afectados (ej. `["public", "unverified"]`).
+- **`aggregate_only`**: Si se exige agregación estadística.
+- **`hidden_columns`**: Columnas excluidas totalmente del esquema (`EXCLUDE`).
+- **`hashed_columns`**: Columnas enmascaradas con hash criptográfico unidireccional SHA-256 (`REPLACE`).
+- **`row_filters`**: Predicados de partición o fecha aplicados a las filas (`WHERE`).
+
+```python
+granular_policy = {
+    "name": "censo_bolivia_privacidad",
+    "rules": [
+        {
+            "id": "rule_anonimizacion_publica",
+            "description": "Oculta cédulas de identidad, enmascara correos y filtra datos anteriores a 2026",
+            "applies_to": ["public", "unverified"],
+            "hidden_columns": ["ci", "nombres_completos"],
+            "hashed_columns": ["email", "telefono"],
+            "row_filters": ["gestion >= 2026"],
+            "aggregate_only": False
+        }
+    ]
+}
+
+engine.set_table_policy("censo:poblacion", granular_policy)
+```
+
+## 3. Vistas Virtuales Aseguradas en DuckDB
+
+Cuando se ejecuta una consulta, el motor DuckDB reescribe reactivamente la vista virtual:
+
+```sql
+CREATE OR REPLACE VIEW "censo:poblacion" AS 
+SELECT * 
+EXCLUDE ("ci", "nombres_completos") 
+REPLACE (sha256(CAST("email" AS VARCHAR)) AS "email", sha256(CAST("telefono" AS VARCHAR)) AS "telefono") 
+FROM read_csv_auto('...') 
+WHERE gestion >= 2026
+```
+
+Esto garantiza:
+1. Las columnas ocultas ni siquiera aparecen en `df.columns` ni en consultas `SELECT *`.
+2. Si un usuario intenta consultar `SELECT ci FROM ...`, el motor aborta antes de la ejecución con `PolicyViolationError: Column 'ci' is hidden/restricted`.
+3. Cero duplicación física de datos: la protección se ejecuta en streaming en memoria columnar.

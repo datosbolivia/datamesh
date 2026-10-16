@@ -1,0 +1,145 @@
+---
+title: "Linaje Epistémico y Publicación Semántica Multicanal"
+subtitle: "Grafos de procedencia DAG (Mermaid/ASCII), alineación conceptual SKOS y publicación federada (Local, Portal, Kaggle, CKAN)"
+---
+
+El estándar **OKF v0.2** define la procedencia epistémica y la semántica como ciudadanos de primera clase. Cada nodo y recurso puede documentar de qué fuentes deriva, qué transformaciones ejecutó y a qué conceptos ontológicos mapean sus campos.
+
+## 1. Definición de Linaje Epistémico en Manifiestos OKF
+
+El linaje puede expresarse tanto en el archivo `datapackage.yaml` como en el encabezado YAML (*frontmatter*) del archivo `index.md` de un nodo.
+
+```yaml
+# datapackage.yaml o frontmatter de index.md
+name: p2p-bob-exchange
+title: Cotizaciones Binance P2P USDT/BOB
+lineage:
+  source:
+    - dataset: binance_raw_stream
+      url: https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search
+      hash: sha256:d8c5...
+  transformations:
+    - tool: scripts/calculate_exchange.py
+      type: script
+      hash: sha256:e3b0c44...
+      description: Pipeline analítico que calcula tipo de cambio paralelo promedio y mediana diaria
+  version: 0.2.0
+```
+
+### Creación programática con linaje
+
+La fachada `dm.create_datapackage` permite registrar el linaje de forma directa:
+
+```python
+import datamesh as dm
+from pathlib import Path
+
+dm.create_datapackage(
+    name="indicadores_paralelo",
+    title="Indicador Diario del Tipo de Cambio Paralelo",
+    files=[Path("data/paralelo_binance_p2p.csv")],
+    sources=["p2p-bob-exchange"],
+    transformations=[
+        {
+            "tool": "scripts/calculate_exchange.py",
+            "type": "script",
+            "description": "Cálculo de media y mediana con filtrado de límites superior e inferior",
+        }
+    ],
+    output_file=Path("knowledge/nodes/p2p-bob-exchange/datapackage.yaml"),
+)
+```
+
+## 2. Inspección y Renderizado de Grafos DAG de Linaje
+
+DataMesh SDK construye automáticamente un grafo acíclico dirigido (`LineageGraph`) escaneando el ecosistema de catálogos y directorios de conocimiento:
+
+```python
+import datamesh as dm
+
+# 1. Escanear grafo completo en directorios locales o nodos soberanos
+graph = dm.lineage(search_dirs=["knowledge/nodes", "catalogs"])
+
+# 2. Consultar relaciones upstream y downstream
+info = dm.get_lineage("indicadores_paralelo", search_dirs=["knowledge/nodes"])
+print("Fuentes ascendentes (Upstream):", info["upstream"])
+print("Derivados descendentes (Downstream):", info["downstream"])
+
+# 3. Renderizar diagrama Mermaid para documentación o UI
+mermaid_code = graph.to_mermaid(highlight_id="indicadores_paralelo")
+print(mermaid_code)
+
+# 4. Renderizar árbol jerárquico ASCII para terminal
+ascii_tree = graph.to_ascii("indicadores_paralelo")
+print(ascii_tree)
+```
+
+Salida típica generada en Mermaid:
+
+```{mermaid}
+flowchart LR
+    p2p-bob-exchange["Cotizaciones Binance P2P"] -->|calculate_exchange.py| indicadores_paralelo["Indicador Diario Paralelo"]
+    style indicadores_paralelo fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
+```
+
+## 3. Mapeo Semántico y Normalización Conceptual
+
+OKF v0.2 soporta mapeos de conceptos ontológicos (SKOS, Wikidata, códigos departamentales o monetarios):
+
+```python
+from datamesh.domain.models import SemanticFieldMapping
+from datamesh.usecases.semantic_alignment import SemanticAlignmentUseCase
+
+schema = {
+    "fields": [
+        {
+            "name": "departamento_raw",
+            "type": "string",
+            "concept": "concepts/departamentos.md",
+            "value_mapping": {
+                "LPZ": "concept:departamentos:la_paz",
+                "02": "concept:departamentos:la_paz",
+                "SCZ": "concept:departamentos:santa_cruz",
+            },
+        }
+    ]
+}
+
+mappings = SemanticAlignmentUseCase.extract_mappings(schema)
+case_sql = SemanticAlignmentUseCase.generate_case_expression(mappings[0], table_prefix="t")
+print("Expresión SQL generada para normalización:")
+print(case_sql)
+```
+
+## 4. Publicación Multicanal Unificada (`dm.publish`)
+
+El caso de uso `PublishDatasetUseCase` abstrae la exportación y sincronización de datasets hacia múltiples destinos federados con una sola llamada:
+
+```python
+import datamesh as dm
+
+# Publicar bundle local empaquetado para distribución OKF
+results = dm.publish(
+    "knowledge/nodes/p2p-bob-exchange/datapackage.yaml",
+    targets=["local"],
+    options={"destination": "dist/bundles/p2p-bob-exchange"},
+)
+
+# Publicación a Kaggle Datasets (genera dataset-metadata.json y sincroniza)
+dm.publish(
+    "knowledge/nodes/p2p-bob-exchange/datapackage.yaml",
+    targets=["kaggle"],
+    options={"username": "datosbolivia", "slug": "bolivia-parallel-exchange-rates"},
+)
+
+# Publicación a portal institucional CKAN
+dm.publish(
+    "knowledge/nodes/p2p-bob-exchange/datapackage.yaml",
+    targets=["ckan"],
+    options={
+        "url": "https://datos.gob.bo",
+        "api_key": "CKAN_API_KEY",
+        "package_id": "tipo-de-cambio-paralelo-bolivia",
+    },
+)
+```

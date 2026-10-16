@@ -1,0 +1,61 @@
+---
+title: "Handshake Criptográfico e Identidad con GitHub DID"
+subtitle: "Autenticación soberana sin contraseñas mediante llaves OpenSSH y did:github:<user>"
+---
+
+El DataMesh SDK descentraliza la autenticación reemplazando las cuentas de usuario y contraseñas tradicionales por **identidades criptográficas soberanas basadas en llaves OpenSSH** y DIDs de GitHub (`did:github:<usuario>`).
+
+## 1. El Esquema `did:github:<usuario>`
+
+En lugar de registrarse en cada nodo o servidor, los analistas y agentes de IA utilizan su par de claves SSH (`ssh-ed25519`). La clave pública registrada en GitHub (`https://github.com/<usuario>.keys`) actúa como el registro de verdad descentralizado.
+
+```python
+from datamesh.server import process_handshake
+
+# Petición de handshake con DID de GitHub
+payload = {
+    "did": "did:github:octocat",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... octocat@github",
+    "challenge": "nonce_autenticacion_20261015",
+    "signature": "3b4f...a81c",  # Firma Ed25519 del reto
+    "dataset_policy": "zero_microdata"
+}
+
+# Negociar sesión autenticada con Go Core
+res = process_handshake(payload)
+
+print(f"Estado: {res['status']}")
+print(f"Identidad verificada: {res['identity']['id']}")
+print(f"Nivel de confianza: {res['identity']['trust_tier']}") # 'machine-confirmed'
+print(f"Permisos efectivos: {res['effective_policy']}")
+```
+
+## 2. Descubrimiento de Servidor (`/.well-known/datamesh.json`)
+
+Al conectarse a un nodo o servidor DataMesh desconocido, el cliente consulta el endpoint estándar de descubrimiento:
+
+```bash
+curl -s http://localhost:8000/.well-known/datamesh.json | jq .
+```
+
+Respuesta:
+```json
+{
+  "service": "datamesh-server",
+  "version": "0.2.0",
+  "protocol": "OKF/ODKF v0.2",
+  "auth": {
+    "schemes": ["did:github", "openssh", "ed25519"],
+    "handshake_endpoint": "/api/v1/handshake"
+  },
+  "capabilities": ["sql", "catalog", "mcp", "proxy", "granular_policy", "openssh_handshake"]
+}
+```
+
+## 3. Protocolo de Handshake HTTP (`POST /api/v1/handshake`)
+
+1. El cliente envía su `did`, `public_key` y la firma de un reto o timestamp.
+2. El servidor recupera y cachea las llaves públicas de GitHub para ese usuario.
+3. El motor de Go Core (`VerifyGitHubDID` y `MatchesGitHubSSHKey`) valida la correspondencia exacta de la llave en Go stdlib puro (RFC 4253 wire format).
+4. Si la firma Ed25519 es válida, el servidor eleva la identidad a rol privilegiado (`analyst`) y computa su `EffectivePolicyProfile`.
+5. Si la clave no coincide, el servidor rechaza la conexión con código HTTP 401 Unauthorized.

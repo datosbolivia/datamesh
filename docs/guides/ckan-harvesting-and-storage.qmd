@@ -1,0 +1,93 @@
+---
+title: "Cosecha CKAN e Integración con Almacenamiento S3"
+subtitle: "Ingesta as-is de portales CKAN y persistencia en objetos S3/MinIO con DataMesh SDK"
+---
+
+El DataMesh SDK permite interactuar de forma transparente tanto con portales abiertos y gubernamentales basados en CKAN como con sistemas de almacenamiento de objetos compatibles con S3 (MinIO, AWS S3, Aistor).
+
+## 1. Consulta Directa a Datasets de CKAN con Tríada Canónica
+
+Cuando un portal CKAN está configurado en `datamesh.yaml` o mediante variables de entorno (`CKAN_URL`, `CKAN_ACCESS_KEY`), puedes consultar cualquier recurso publicado usando la tríada canónica o su URL directa:
+
+```python
+import datamesh as dm
+
+# Consulta SQL con tríada canónica sobre dataset CKAN institucional
+res = dm.sql("""
+    SELECT 
+        FISCAL_SECTOR,
+        TIME_PERIOD,
+        ACCOUNT_LABEL,
+        OBS_VALUE,
+        CURRENCY
+    FROM 'indicadores_macro_fmi:req_13_a'
+    WHERE ACCOUNT_LABEL IN ('Egresos', 'Bienes y servicios')
+    ORDER BY TIME_PERIOD DESC
+    LIMIT 5
+""")
+
+df = dm.to_df(res)
+print(df)
+```
+
+El SDK inyecta automáticamente los tokens Bearer necesarios y descarga el recurso a la caché local con verificación de integridad antes de registrar la vista virtual en DuckDB.
+
+## 2. Ingesta As-Is y Cosecha Completa de Catálogos CKAN (`dm.harvest_ckan`)
+
+Para reconstruir automáticamente paquetes conformantes con OKF v0.2 a partir de portales CKAN existentes:
+
+```python
+import datamesh as dm
+
+# Cosechar datasets que coincidan con un criterio de búsqueda
+harvest_res = dm.harvest_ckan(
+    ckan_url="https://portales.economiayfinanzas.gob.bo/datahub/",
+    query="indicadores",
+    limit=10,
+    output_dir="./knowledge/harvested/"
+)
+
+print(f"Catálogo origen: {harvest_res.catalog_url}")
+print(f"Paquetes cosechados: {len(harvest_res.harvested_packages)}")
+
+for pkg in harvest_res.harvested_packages:
+    print(f"- {pkg['name']}: {pkg['title']} ({len(pkg['resources'])} recursos)")
+```
+
+Este proceso:
+1. Extrae esquemas de DataStore y diccionarios de datos.
+2. Preserva dimensiones temporales, espaciales y frecuencia de actualización.
+3. Genera el manifiesto `datapackage.yaml` y el documento epistemológico `index.md`.
+
+## 3. Almacenamiento de Objetos en S3 y MinIO
+
+El SDK soporta direccionamiento universal `s3://` y `aistor://`:
+
+```python
+import datamesh as dm
+
+# Consulta directa sobre archivo Parquet en bucket S3
+res_s3 = dm.sql("""
+    SELECT fecha, cotizacion, volumen 
+    FROM 's3://datos-soberanos/economia/tipo_cambio_2026.parquet'
+    LIMIT 10
+""")
+
+print(res_s3["rows"])
+```
+
+Para operaciones de subida, streaming y borrado directo:
+
+```python
+storage = dm.storage()
+
+# Subir un dataset local al bucket S3
+storage.upload_file(
+    local_path="./data/serie_historica.csv",
+    remote_path="economia/paralelo_historico.csv"
+)
+
+# Listar recursos ordenados cronológicamente
+archivos = storage.list_files(prefix="economia/", order_by="fecha_desc")
+print("Archivos en el data lake:", archivos)
+```

@@ -3,7 +3,7 @@ title: "Guías sobre Casos de Uso"
 subtitle: "Tutoriales prácticos y patrones de uso avanzado en DataMesh SDK"
 ---
 
-Esta sección contiene tutoriales detallados para resolver necesidades analíticas reales utilizando DataMesh SDK.
+Esta sección contiene tutoriales detallados para resolver necesidades analíticas reales utilizando DataMesh SDK y el estándar OKF v0.2.
 
 ::: {.feature-grid}
 ::: {.feature-card}
@@ -13,7 +13,7 @@ Aprende a federar múltiples orígenes descentralizados basados en `llms.txt` y 
 
 ::: {.feature-card}
 ### [Consultas SQL con DuckDB](duckdb-sql.qmd)
-Aprende a ejecutar consultas analíticas sobre tríadas canónicas (`catalogo:dataset:recurso` o `catalogo/dataset/recurso`).
+Aprende a ejecutar consultas analíticas sobre tríadas canónicas (`catalogo:dataset:recurso`).
 :::
 
 ::: {.feature-card}
@@ -22,7 +22,32 @@ Cruza tablas en formato CSV, Parquet y JSON almacenadas en servidores remotos si
 :::
 
 ::: {.feature-card}
+### [Cosecha CKAN y Almacenamiento S3](ckan-harvesting-and-storage.qmd)
+Descarga y cataloga datasets gubernamentales "as is" y sincroniza bundles con MinIO o AWS S3.
+:::
+
+::: {.feature-card}
+### [Políticas Granulares y Privacidad](granular-policies-and-privacy.qmd)
+Aplica enmascaramiento con SHA-256, exclusión de columnas y gobernanza Zero-Microdata en DuckDB.
+:::
+
+::: {.feature-card}
+### [Handshake Criptográfico y DID](cryptographic-handshake-and-did.qmd)
+Autenticación descentralizada mediante llaves OpenSSH y DIDs de GitHub (`did:github:<user>`).
+:::
+
+::: {.feature-card}
+### [Linaje Epistémico y Publicación](lineage-and-semantic-publishing.qmd)
+Genera grafos DAG (Mermaid/ASCII) de procedencia y publica bundles hacia Local, Kaggle y CKAN.
+:::
+
+::: {.feature-card}
 ### [Integración con Agentes MCP](mcp-agent-integration.qmd)
-Conecta el servidor MCP de DataMesh con Claude Desktop, Cursor, Gemini o asistentes autónomos con guardrails antialucinación.
+Conecta el servidor MCP con Claude Desktop, Cursor, Gemini o agentes autónomos con guardrails.
+:::
+
+::: {.feature-card}
+### [Servidor Soberano y Proxy CORS](sovereign-server.qmd)
+Despliega `datamesh serve` con gateway REST, proxy CORS para DuckDB-Wasm y servidor de IA unificado.
 :::
 :::

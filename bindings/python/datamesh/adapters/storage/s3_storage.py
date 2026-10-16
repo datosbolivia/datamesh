@@ -12,9 +12,16 @@ import subprocess
 import urllib.parse
 from typing import Any, BinaryIO, Dict, Iterator, List, Optional, Set, Union
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
+try:
+    import boto3
+    from botocore.config import Config
+    from botocore.exceptions import ClientError
+    _BOTO3_AVAILABLE = True
+except ImportError:
+    boto3 = None  # type: ignore
+    Config = None  # type: ignore
+    ClientError = Exception  # type: ignore
+    _BOTO3_AVAILABLE = False
 
 
 def leer_env(nombre: str, default: Optional[str] = None, requerido: bool = True) -> str:
@@ -93,6 +100,8 @@ class S3StorageAdapter:
         }
 
     def get_client(self, config: Optional[Dict[str, str]] = None, url: Optional[str] = None, bucket: Optional[str] = None) -> Any:
+        if not _BOTO3_AVAILABLE:
+            raise RuntimeError("boto3 is required for S3/MinIO operations. Install with: pip install boto3 botocore")
         if self._client is not None and not url and not bucket:
             return self._client
 

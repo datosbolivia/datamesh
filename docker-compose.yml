@@ -1,0 +1,28 @@
+services:
+  datamesh-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: datosbolivia/datamesh-server:latest
+    container_name: datamesh-sovereign-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATAMESH_CORS_ORIGIN=*
+      - DATAMESH_INSECURE_TLS=0
+      - DATAMESH_TIMEOUT=30
+      - DATAMESH_LOG_LEVEL=info
+      - DATAMESH_STORAGE_PATH=/home/datamesh/.datamesh/cache
+    volumes:
+      - datamesh_cache:/home/datamesh/.datamesh/cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  datamesh_cache:
+    driver: local

@@ -74,6 +74,8 @@ datamesh/
 ## Documentación Técnica
 
 - [Guía de Inicio Rápido (QUICKSTART.md)](QUICKSTART.md)
+- [Políticas de Contribución y Colaboración (CONTRIBUTING.md)](CONTRIBUTING.md)
+- [Política y Guía de Despliegue (DEPLOYMENT.md)](DEPLOYMENT.md)
 - [Arquitectura Hexagonal (ARQUITECTURA.md)](docs/reference/ARQUITECTURA.md)
 - [Casos de Uso del SDK (CASOS_DE_USO.md)](docs/reference/CASOS_DE_USO.md)
 - [Referencia de Comandos CLI (CLI.md)](docs/reference/CLI.md)

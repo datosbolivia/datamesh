@@ -11,8 +11,17 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Union
 
-from ckanapi import CKANAPIError, NotAuthorized, NotFound, RemoteCKAN
-from requests.exceptions import RequestException
+try:
+    from ckanapi import CKANAPIError, NotAuthorized, NotFound, RemoteCKAN
+    from requests.exceptions import RequestException
+    _CKAN_AVAILABLE = True
+except ImportError:
+    CKANAPIError = Exception  # type: ignore
+    NotAuthorized = Exception  # type: ignore
+    NotFound = Exception  # type: ignore
+    RemoteCKAN = Any  # type: ignore
+    RequestException = Exception  # type: ignore
+    _CKAN_AVAILABLE = False
 
 from datamesh.domain.models import PublicationTargetResult
 from datamesh.ports.publisher import PublisherPort
@@ -106,6 +115,8 @@ class CKANPublisherAdapter(PublisherPort):
         return t in ("ckan", "portal_ckan") or t.startswith(("ckan://", "http://", "https://"))
 
     def get_ckan_client(self, options: Optional[Dict[str, Any]] = None) -> RemoteCKAN:
+        if not _CKAN_AVAILABLE:
+            raise RuntimeError("ckanapi is required for CKAN publishing. Install with: pip install ckanapi requests")
         options = options or {}
         url = options.get("url") or options.get("ckan_url") or os.environ.get("CKAN_URL", "").strip()
         if not url:

@@ -1,0 +1,137 @@
+---
+title: "Servidor Soberano, Proxy CORS y Protocolo MCP"
+subtitle: "Despliegue unificado de datamesh serve: Gateway REST, proxy CORS para DuckDB-Wasm y servidor de agentes de IA"
+---
+
+El comando `datamesh serve` provee una pasarela (*gateway*) soberana integral que expone todas las capacidades del SDK hacia navegadores web, paneles analíticos, clientes remotos y modelos de lenguaje grande (LLMs).
+
+## 1. Arquitectura y Capacidades
+
+A diferencia de un servidor HTTP tradicional, el servidor soberano de DataMesh SDK reúne cuatro responsabilidades esenciales:
+
+1. **Pasarela REST Analítica**: Ejecución de consultas DuckDB sobre tríadas federadas (`/api/sql`) y resolución de catálogos (`/api/catalog`).
+2. **Proxy CORS y Puente de Protocolos (`/proxy`)**: Permite que navegadores web y motores compilados en WebAssembly (como DuckDB-Wasm) descarguen recursos remotos sorteando bloqueos de CORS, extrayendo archivos ZIP al vuelo y convirtiendo formatos tabulares.
+3. **Endpoint MCP para Agentes de IA (`/mcp` o `/rpc`)**: Implementa el protocolo estándar *Model Context Protocol* sobre JSON-RPC 2.0 vía HTTP, permitiendo orquestación multi-agente con guardrails antialucinación.
+4. **Verificación de Identidad Criptográfica (`/api/v1/handshake`)**: Autenticación de usuarios descentralizados mediante llaves OpenSSH y DIDs de GitHub (`did:github:<user>`).
+
+## 2. Puesta en Marcha
+
+### Vía CLI Local
+
+```bash
+# Iniciar servidor en el puerto 8000
+datamesh serve --host 0.0.0.0 --port 8000
+```
+
+### Vía Docker y Docker Compose
+
+```yaml
+# docker-compose.yml
+services:
+  datamesh-server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATAMESH_CORS_ORIGIN=*
+      - DATAMESH_ENGINE=duckdb
+    restart: unless-stopped
+```
+
+```bash
+docker-compose up -d datamesh-server
+```
+
+## 3. Catálogo de Endpoints HTTP
+
+### Healthcheck
+
+```http
+GET /health HTTP/1.1
+```
+
+Respuesta:
+```json
+{
+  "status": "ok",
+  "version": "0.2.0"
+}
+```
+
+### Consultas SQL Federadas
+
+Permite consultar cualquier recurso o tríada canónica mediante DuckDB:
+
+```http
+GET /api/sql?q=SELECT+COUNT(*)+FROM+'p2p:cotizaciones'+LIMIT+10 HTTP/1.1
+```
+
+Respuesta:
+```json
+{
+  "columns": ["count_star()"],
+  "rows": [[2314502]]
+}
+```
+
+### Descubrimiento de Catálogos
+
+```http
+GET /api/catalog?url=https://raw.githubusercontent.com/datasets-bolivia/index/main/llms.txt HTTP/1.1
+```
+
+### Proxy CORS con Protección SSRF
+
+Diseñado específicamente para visualizadores web (Observable Notebooks, DuckDB-Wasm, Streamlit). Valida URLs upstream contra redes privadas protegidas para prevenir SSRF y permite extraer recursos tabulares contenidos en archivos ZIP:
+
+```http
+GET /proxy?url=https://raw.githubusercontent.com/datos/censo.csv&format=csv HTTP/1.1
+```
+
+### Protocolo MCP (Model Context Protocol)
+
+Los asistentes y agentes de IA pueden enviar solicitudes JSON-RPC 2.0 estándar:
+
+```http
+POST /mcp HTTP/1.1
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "datamesh_sql_query",
+    "arguments": {
+      "query": "SELECT asset, price FROM 'p2p:cotizaciones' LIMIT 2"
+    }
+  }
+}
+```
+
+### Handshake de Identidad Criptográfica
+
+Valida el par de llaves OpenSSH del usuario contra GitHub y emite el perfil de acceso y políticas efectivas:
+
+```http
+POST /api/v1/handshake HTTP/1.1
+Content-Type: application/json
+
+{
+  "did": "did:github:andreschirinos",
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...",
+  "challenge": "challenge_token_string",
+  "signature": "sig_ed25519_hex...",
+  "dataset_policy": {
+    "name": "censo_policy",
+    "rules": [
+      {
+        "id": "r1",
+        "applies_to": ["public", "unverified"],
+        "hidden_columns": ["ci"],
+        "aggregate_only": true
+      }
+    ]
+  }
+}
+```

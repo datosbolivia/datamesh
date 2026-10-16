@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from datamesh.core import DataMeshRuntime
 
+__version__ = "0.2.0"
+
 _runtime = DataMeshRuntime()
 
 def discover(catalog_url: Optional[str] = None) -> Dict[str, Any]:
@@ -248,6 +250,7 @@ from datamesh.usecases.dataset_lineage import DatasetLineageUseCase
 from datamesh.server import run_server
 
 __all__ = [
+    "__version__",
     "discover",
     "discover_endpoint",
     "search",

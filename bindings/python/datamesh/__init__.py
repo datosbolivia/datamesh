@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from datamesh.core import DataMeshRuntime
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 _runtime = DataMeshRuntime()
 

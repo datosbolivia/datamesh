@@ -92,3 +92,51 @@ def test_publish_usecase_local(tmp_path: Path):
     pub_index = out_dir / "sample-dataset" / "index.md"
     assert pub_index.exists()
     assert "type: dataset" in pub_index.read_text(encoding="utf-8")
+
+def test_publish_usecase_with_lineage_and_dependencies(tmp_path: Path):
+    sample_manifest = {
+        "name": "indicadores-macro-fmi",
+        "title": "Monitoreo FMI",
+        "description": "Publicación con trazabilidad multinivel",
+        "lineage": {
+            "version": "0.2.0",
+            "was_derived_from": ["fmi-bcb:tabla_rin_componentes"],
+            "sources": [{"name": "fmi-bcb:tabla_rin_componentes", "dataset": "fmi-bcb"}],
+            "transformations": [{"tool": "transform.py", "description": "Normalización SDMX"}]
+        },
+        "was_derived_from": ["fmi-bcb:tabla_rin_componentes"],
+        "resources": [
+            {
+                "name": "req_01_a",
+                "path": "req_01_a.csv",
+                "format": "csv",
+                "lineage": {
+                    "was_derived_from": ["fmi-bcb:tabla_rin_componentes"],
+                },
+                "was_derived_from": ["fmi-bcb:tabla_rin_componentes"],
+                "transformation": "Normalización dimensional y validación SDMX"
+            }
+        ],
+    }
+    src_file = tmp_path / "datapackage.yaml"
+    import yaml
+    src_file.write_text(yaml.dump(sample_manifest), encoding="utf-8")
+
+    out_dir = tmp_path / "published_bundle"
+    results = dm.publish(str(src_file), targets=["local"], options={"destination": str(out_dir)})
+    assert len(results) == 1
+    assert results[0]["success"] is True
+
+    pub_dp = out_dir / "indicadores-macro-fmi" / "datapackage.yaml"
+    assert pub_dp.exists()
+    loaded_dp = yaml.safe_load(pub_dp.read_text(encoding="utf-8"))
+    assert loaded_dp["lineage"]["version"] == "0.2.0"
+    assert loaded_dp["was_derived_from"] == ["fmi-bcb:tabla_rin_componentes"]
+    assert loaded_dp["resources"][0]["was_derived_from"] == ["fmi-bcb:tabla_rin_componentes"]
+
+    pub_index = out_dir / "indicadores-macro-fmi" / "index.md"
+    assert pub_index.exists()
+    content = pub_index.read_text(encoding="utf-8")
+    assert "was_derived_from:" in content
+    assert "fmi-bcb:tabla_rin_componentes" in content
+

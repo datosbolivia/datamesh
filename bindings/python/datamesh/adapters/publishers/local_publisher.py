@@ -50,6 +50,14 @@ class LocalBundlePublisherAdapter(PublisherPort):
                 dp_content["temporal"] = manifest_data["temporal"]
             if "quality" in manifest_data:
                 dp_content["quality"] = manifest_data["quality"]
+            if "lineage" in manifest_data:
+                dp_content["lineage"] = manifest_data["lineage"]
+            if "was_derived_from" in manifest_data:
+                dp_content["was_derived_from"] = manifest_data["was_derived_from"]
+            if "sources" in manifest_data:
+                dp_content["sources"] = manifest_data["sources"]
+            if "transformations" in manifest_data:
+                dp_content["transformations"] = manifest_data["transformations"]
             if "resources" in manifest_data:
                 dp_content["resources"] = manifest_data["resources"]
 
@@ -73,6 +81,10 @@ class LocalBundlePublisherAdapter(PublisherPort):
                 fm_data["spatial"] = manifest_data["spatial"]
             if "temporal" in manifest_data:
                 fm_data["temporal"] = manifest_data["temporal"]
+            if "lineage" in manifest_data:
+                fm_data["lineage"] = manifest_data["lineage"]
+            if "was_derived_from" in manifest_data:
+                fm_data["was_derived_from"] = manifest_data["was_derived_from"]
 
             body = manifest_data.get("body") or f"# {manifest_data.get('title', slug)}\n\n{manifest_data.get('description', '')}\n"
 

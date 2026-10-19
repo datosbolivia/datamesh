@@ -328,13 +328,17 @@ export function parseCanonicalUri(raw) {
         return null;
     // 1. datamesh:// or odkf:// scheme
     if (trimmed.startsWith("datamesh://") || trimmed.startsWith("odkf://")) {
-        const clean = trimmed.split("://")[1];
-        const parts = clean.split("/").map((p) => p.trim()).filter(Boolean);
+        const rawClean = trimmed.split("://")[1].split("?")[0].split("#")[0];
+        const parts = rawClean.split("/").map((p) => p.trim()).filter(Boolean);
         if (parts.length >= 3) {
-            return { catalog: parts[0], dataset: parts[1], resource: parts[2] };
+            const cat = parts[parts.length - 3];
+            const ds = parts[parts.length - 2];
+            const resRaw = parts[parts.length - 1].split(":")[0];
+            return { catalog: cat, dataset: ds, resource: resRaw };
         }
         else if (parts.length === 2) {
-            return { dataset: parts[0], resource: parts[1] };
+            const resRaw = parts[1].split(":")[0];
+            return { dataset: parts[0], resource: resRaw };
         }
         return null;
     }
@@ -1501,3 +1505,4 @@ export class DataMeshMcpClient {
     }
 }
 export const datameshMcp = new DataMeshMcpClient();
+export * from "./lineage.js";

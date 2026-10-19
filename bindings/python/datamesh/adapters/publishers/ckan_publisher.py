@@ -159,6 +159,20 @@ class CKANPublisherAdapter(PublisherPort):
             if manifest_data.get("keywords"):
                 pkg_metadata["tags"] = [{"name": tag} for tag in manifest_data["keywords"]]
 
+            # Inject lineage into CKAN package extras
+            extras = []
+            if manifest_data.get("lineage"):
+                lin = manifest_data["lineage"]
+                extras.append({"key": "lineage", "value": json.dumps(lin) if isinstance(lin, (dict, list)) else str(lin)})
+            if manifest_data.get("was_derived_from"):
+                wdf = manifest_data["was_derived_from"]
+                extras.append({"key": "was_derived_from", "value": json.dumps(wdf) if isinstance(wdf, (dict, list)) else str(wdf)})
+            if manifest_data.get("sources"):
+                srcs = manifest_data["sources"]
+                extras.append({"key": "sources", "value": json.dumps(srcs) if isinstance(srcs, (dict, list)) else str(srcs)})
+            if extras:
+                pkg_metadata["extras"] = extras
+
             # 2. Crear o actualizar paquete en CKAN
             try:
                 existing_pkg = ckan.action.package_show(id=pkg_metadata["name"])
@@ -213,6 +227,18 @@ class CKANPublisherAdapter(PublisherPort):
                     meta_res["schema"] = res["schema"]
                     if not meta_res.get("columnas") and "fields" in res["schema"]:
                         meta_res["columnas"] = len(res["schema"]["fields"])
+
+                # Inject lineage / dependencies metadata into CKAN resource
+                if res.get("lineage"):
+                    meta_res["lineage"] = json.dumps(res["lineage"]) if isinstance(res["lineage"], (dict, list)) else str(res["lineage"])
+                if res.get("was_derived_from"):
+                    meta_res["was_derived_from"] = json.dumps(res["was_derived_from"]) if isinstance(res["was_derived_from"], (dict, list)) else str(res["was_derived_from"])
+                if res.get("transformation"):
+                    meta_res["transformation"] = res["transformation"]
+                elif res.get("transformations"):
+                    meta_res["transformation"] = json.dumps(res["transformations"]) if isinstance(res["transformations"], (dict, list)) else str(res["transformations"])
+                if res.get("sources"):
+                    meta_res["sources"] = json.dumps(res["sources"]) if isinstance(res["sources"], (dict, list)) else str(res["sources"])
 
                 if archivo_fisico and archivo_fisico.is_file():
                     stats = estadisticas_archivo(archivo_fisico)

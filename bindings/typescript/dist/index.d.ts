@@ -81,18 +81,37 @@ export interface DataPackage {
 }
 export interface Contract {
     type: string;
-    path: string;
+    path?: string;
+    ref?: string;
+    inline?: Record<string, any>;
+}
+export interface EpistemicActor {
+    by: string;
+    at?: string;
+    role?: string;
+    verdict?: "verified" | "refuted" | "pending" | string;
+    trust_tier?: "unverified" | "machine-confirmed" | "human-reviewed" | string;
+    signature?: Record<string, any>;
+    metadata?: Record<string, any>;
 }
 export interface Manifest {
     type: string;
     title: string;
     dimensions: string[];
+    nature?: "structured" | "semi-structured" | "unstructured" | string;
+    status?: "draft" | "stable" | "verified" | "refuted" | "deprecated" | string;
+    supersedes?: string;
     contracts?: Contract[];
     lineage: {
         sources?: string[];
         version: string;
         updated_at?: string;
+        ref?: string;
+        emitter?: EpistemicActor;
+        attester?: EpistemicActor;
     };
+    emitter?: EpistemicActor;
+    attester?: EpistemicActor;
 }
 export interface DataProduct {
     id: string;
@@ -424,3 +443,4 @@ export declare class DataMeshMcpClient {
     }>>;
 }
 export declare const datameshMcp: DataMeshMcpClient;
+export * from "./lineage.js";

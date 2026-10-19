@@ -1852,4 +1852,4 @@ export class DataMeshMcpClient {
 
 export const datameshMcp = new DataMeshMcpClient();
 
-
+export * from "./lineage.js";

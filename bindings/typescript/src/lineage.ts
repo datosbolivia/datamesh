@@ -98,16 +98,7 @@ export interface LineageResult {
   };
 }
 
-export function humanizePortalTitle(urlOrName: string): string {
-  const u = String(urlOrName || '').toLowerCase();
-  if (u.includes('bcb.gob.bo')) return 'Banco Central de Bolivia (BCB) — Portal Oficial';
-  if (u.includes('sigep') || u.includes('economiayfinanzas')) return 'Ministerio de Economía y Finanzas Públicas (SIGEP / MEFP) — Portal Oficial';
-  if (u.includes('binance')) return 'Binance P2P — Mercado Cambiario';
-  if (u.includes('asfi')) return 'Autoridad de Supervisión del Sistema Financiero (ASFI) — Portal Oficial';
-  if (u.includes('ine.gob.bo')) return 'Instituto Nacional de Estadística (INE) — Portal Oficial';
-  if (u.includes('ypfb')) return 'Yacimientos Petrolíferos Fiscales Bolivianos (YPFB) — Portal Oficial';
-  return urlOrName;
-}
+
 
 /**
  * Directed Acyclic Graph (DAG) for dataset lineage and derivation analysis.
@@ -221,7 +212,7 @@ export class LineageGraph {
       chain.push({
         level: currentLevel,
         id: parentId,
-        title: isPortal ? humanizePortalTitle(parentId) : (parentNode?.title || parentRec?.title || parentId),
+        title: parentNode?.title || parentRec?.title || parentId,
         format,
         url: parentNode?.url || (isPortal ? parentId : ''),
         download_url: parentNode?.download_url || parentNode?.url || '',
@@ -483,7 +474,7 @@ export class DatasetLineageUseCase {
           const isPortal = parentId.startsWith('http');
           nodes.set(parentId, {
             id: parentId,
-            title: isPortal ? humanizePortalTitle(parentId) : parentId,
+            title: parentId,
             type: isPortal ? 'portal' : 'external_source',
             url: isPortal ? parentId : undefined,
             is_raw: isPortal || parentId.includes('raw_'),

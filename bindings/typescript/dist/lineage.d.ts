@@ -89,7 +89,6 @@ export interface LineageResult {
         edges: LineageEdge[];
     };
 }
-export declare function humanizePortalTitle(urlOrName: string): string;
 /**
  * Directed Acyclic Graph (DAG) for dataset lineage and derivation analysis.
  */

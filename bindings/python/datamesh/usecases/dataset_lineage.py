@@ -95,6 +95,45 @@ class DatasetLineageUseCase:
                 pass
         return None
 
+    def extract_records_from_file(self, file_path: Union[str, Path]) -> List[LineageInfo]:
+        """Extracts primary and resource-level LineageInfo records from a manifest file."""
+        path_obj = Path(file_path)
+        if not path_obj.exists() or not path_obj.is_file():
+            return []
+
+        fname = path_obj.name.lower()
+        parent_name = path_obj.parent.name
+        results: List[LineageInfo] = []
+
+        if fname.endswith((".yaml", ".yml", ".json")):
+            try:
+                content = path_obj.read_text(encoding="utf-8")
+                data = yaml.safe_load(content) if yaml and fname.endswith((".yaml", ".yml")) else json.loads(content)
+                if isinstance(data, dict):
+                    ds_id = str(data.get("name") or data.get("id") or parent_name)
+                    primary = self.extract_from_dict(data, default_id=ds_id)
+                    results.append(primary)
+
+                    # Extract resource-level lineage records if defined
+                    for r in data.get("resources", []):
+                        if isinstance(r, dict):
+                            r_name = r.get("name")
+                            if r_name and (r.get("lineage") or r.get("was_derived_from") or r.get("sources")):
+                                r_triad = f"{ds_id}:{r_name}"
+                                r_info = self.extract_from_dict(r, default_id=r_triad)
+                                results.append(r_info)
+                                r_info_short = self.extract_from_dict(r, default_id=r_name)
+                                results.append(r_info_short)
+            except Exception:
+                return []
+
+        elif fname.endswith(".md"):
+            primary = self.extract_from_file(path_obj)
+            if primary:
+                results.append(primary)
+
+        return results
+
     def scan_directory(self, dir_path: Union[str, Path]) -> List[LineageInfo]:
         """Scans a directory tree for DataPackages and OKF index.md files with lineage."""
         root = Path(dir_path)
@@ -111,10 +150,11 @@ class DatasetLineageUseCase:
                 # Avoid hidden or cache directories
                 if any(part.startswith((".", "node_modules", "venv", "__pycache__")) for part in p.parts):
                     continue
-                rec = self.extract_from_file(p)
-                if rec and rec.dataset_id and rec.dataset_id not in seen_ids:
-                    records.append(rec)
-                    seen_ids.add(rec.dataset_id)
+                file_recs = self.extract_records_from_file(p)
+                for rec in file_recs:
+                    if rec and rec.dataset_id and rec.dataset_id not in seen_ids:
+                        records.append(rec)
+                        seen_ids.add(rec.dataset_id)
 
         return records
 
@@ -176,7 +216,7 @@ class DatasetLineageUseCase:
             parents: Set[str] = set()
 
             for src in rec.sources:
-                p_name = src.dataset or src.name
+                p_name = src.name if (src.name and ":" in src.name) else (f"{src.dataset}:{src.resource}" if (src.dataset and src.resource) else (src.dataset or src.name))
                 if p_name and p_name != ds_id:
                     parents.add(p_name)
                     # If parent node doesn't exist yet, register it as external source or dataset
@@ -193,7 +233,9 @@ class DatasetLineageUseCase:
                 if p != ds_id:
                     parents.add(p)
                     if p not in nodes:
-                        nodes[p] = LineageNode(id=p, title=p, type="dataset")
+                        is_url = p.startswith(("http://", "https://", "file://"))
+                        node_type = "external_source" if is_url else "dataset"
+                        nodes[p] = LineageNode(id=p, title=p, type=node_type)
 
             # Associate edge labels with transformations if available
             label = None

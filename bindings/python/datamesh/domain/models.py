@@ -18,10 +18,18 @@ class StorageConfig:
 
     @classmethod
     def default(cls) -> StorageConfig:
-        from datamesh.constants import get_datamesh_home, get_cache_dir
+        from datamesh.constants import get_datamesh_home, get_cache_dir, ENV_DATAMESH_CONFIG_FILE
         home = get_datamesh_home()
         cache = get_cache_dir()
-        config_path = home / "config.yaml"
+        env_cfg = os.environ.get(ENV_DATAMESH_CONFIG_FILE)
+        if env_cfg:
+            config_path = Path(env_cfg).expanduser().resolve()
+        elif (Path.cwd() / "datamesh.yml").exists():
+            config_path = (Path.cwd() / "datamesh.yml").resolve()
+        elif (Path.cwd() / "datamesh.yaml").exists():
+            config_path = (Path.cwd() / "datamesh.yaml").resolve()
+        else:
+            config_path = home / "config.yaml"
         return cls(
             home_dir=home,
             cache_dir=cache,
@@ -867,7 +875,7 @@ class LineageInfo:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], dataset_id: str = "") -> LineageInfo:
-        did = str(data.get("dataset_id") or data.get("name") or data.get("id") or dataset_id or "unnamed")
+        did = str(dataset_id or data.get("dataset_id") or data.get("name") or data.get("id") or "unnamed")
         title = data.get("title")
 
         # Extract lineage section or top-level fields
@@ -906,7 +914,7 @@ class LineageInfo:
 
         # Also deduce derived_from from sources having a dataset name
         for s in sources:
-            parent = s.dataset or s.name
+            parent = s.name if (s.name and ":" in s.name) else (f"{s.dataset}:{s.resource}" if (s.dataset and s.resource) else (s.dataset or s.name))
             if parent and parent not in derived and parent != did:
                 derived.append(parent)
 
@@ -1027,7 +1035,7 @@ class LineageGraph:
         return "\n".join(lines)
 
     def to_ascii(self, root_id: Optional[str] = None) -> str:
-        """Renders an ASCII tree showing derivations upstream or downstream."""
+        """Renders an ASCII tree showing derivations upstream or downstream with depth levels."""
         out = []
         targets = [root_id] if root_id else list(self.nodes.keys())
         for tid in targets:
@@ -1037,31 +1045,38 @@ class LineageGraph:
             down = self.downstream(tid)
             out.append(f"Dataset: {tid} ({title})")
             if up:
-                out.append("  ▲ Upstream (Fuentes/Insumos):")
-                for u in up:
-                    u_node = self.nodes.get(u)
-                    u_title = f" ({u_node.title})" if u_node and u_node.title != u else ""
-                    # find edge label
-                    lbl = ""
-                    for e in self.edges:
-                        if e.source == u and e.target == tid and e.label:
-                            lbl = f" via [{e.label}]"
-                            break
-                    out.append(f"    - {u}{u_title}{lbl}")
+                out.append("  ▲ Upstream (Procedencia hasta RAW):")
+
+                def print_upstream_tree(curr_id: str, indent: str, level: int, visited_path: set) -> None:
+                    incoming = [e for e in self.edges if e.target == curr_id and e.source not in visited_path and e.source != tid]
+                    for edge in incoming:
+                        s_id = edge.source
+                        s_node = self.nodes.get(s_id)
+                        s_title = f" ({s_node.title})" if s_node and s_node.title != s_id else ""
+                        lbl = f" via [{edge.label}]" if edge.label else ""
+                        is_raw = (s_node and s_node.type == "external_source") or s_id.startswith(("http://", "https://", "file://")) or "raw" in s_id.lower()
+                        raw_tag = " [RAW]" if is_raw else ""
+                        out.append(f"{indent}└─ Level {level}{raw_tag}: {s_id}{s_title}{lbl}")
+                        print_upstream_tree(s_id, indent + "    ", level + 1, visited_path | {s_id})
+
+                print_upstream_tree(tid, "    ", 1, set())
             else:
-                out.append("  ▲ Upstream: (Fuente primaria / raíz)")
+                out.append("  ▲ Upstream: (Fuente primaria / RAW)")
 
             if down:
                 out.append("  ▼ Downstream (Derivados / Resultados):")
-                for d in down:
-                    d_node = self.nodes.get(d)
-                    d_title = f" ({d_node.title})" if d_node and d_node.title != d else ""
-                    lbl = ""
-                    for e in self.edges:
-                        if e.source == tid and e.target == d and e.label:
-                            lbl = f" via [{e.label}]"
-                            break
-                    out.append(f"    - {d}{d_title}{lbl}")
+
+                def print_downstream_tree(curr_id: str, indent: str, level: int, visited_path: set) -> None:
+                    outgoing = [e for e in self.edges if e.source == curr_id and e.target not in visited_path and e.target != tid]
+                    for edge in outgoing:
+                        t_id = edge.target
+                        t_node = self.nodes.get(t_id)
+                        t_title = f" ({t_node.title})" if t_node and t_node.title != t_id else ""
+                        lbl = f" via [{edge.label}]" if edge.label else ""
+                        out.append(f"{indent}└─ Level {level}: {t_id}{t_title}{lbl}")
+                        print_downstream_tree(t_id, indent + "    ", level + 1, visited_path | {t_id})
+
+                print_downstream_tree(tid, "    ", 1, set())
             out.append("")
         return "\n".join(out).strip()
 

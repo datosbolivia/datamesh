@@ -184,6 +184,16 @@ class HarvestCKANUseCase:
             "description": description,
             "resources": resources_list,
         }
+
+        # Extract package-level lineage from CKAN extras if available
+        pkg_lineage = pkg.extras.get("lineage") or pkg.extras.get("was_derived_from") or pkg.extras.get("provenance")
+        if isinstance(pkg_lineage, str) and pkg_lineage.strip().startswith(("{", "[")):
+            try:
+                pkg_lineage = json.loads(pkg_lineage)
+            except Exception:
+                pass
+        if pkg_lineage:
+            dp_dict["lineage"] = pkg_lineage if isinstance(pkg_lineage, dict) else {"was_derived_from": pkg_lineage}
         if pkg.version:
             dp_dict["version"] = pkg.version
         if spatial_cov:

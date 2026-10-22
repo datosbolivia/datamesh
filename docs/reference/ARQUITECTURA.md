@@ -414,3 +414,28 @@ Autoridad normativa: **ADR 0026** y **ADR 0027**.
   - `WHERE <row_filters>`: Inyección transparente de restricciones de fecha o partición.
   - Intercepción de consultas: Bloqueo inmediato de `SELECT *` para políticas `aggregate_only` y bloqueo ante consultas que invoquen columnas ocultas.
 
+## 15. Dependencia Normativa Upstream de Open Knowledge Format (OKF v0.2) y Arquitectura de Conectores (ADR 0028)
+
+Autoridad normativa: **ADR 0028** y [`open-knowledge-format/SPEC.md`](/home/andreschirinos/Proyectos/open-knowledge-format/SPEC.md).
+
+### 15.1 Relación Jerárquica entre Especificación y Runtime
+- **`open-knowledge-format` (Upstream / Single Source of Truth):** Define la ontología del conocimiento, el contenedor universal, el meta-índice de estándares internacionales (W3C DCAT v3, Frictionless, W3C PROV-O, SKOS) y la gramática del DNS Soberano (`dataset.recurso@catalogo`).
+- **`datamesh-sdk` (Downstream Reference Runtime):** Implementa los puertos abstractos del estándar mediante adaptadores de infraestructura de alto rendimiento (DuckDB zero-copy, Apache Arrow streaming, Go Core C-ABI, extracción selectiva de ZIPs por HTTP Range y cliente Kademlia DHT).
+
+### 15.2 Catálogo de Conectores y Puertos Hexagonales
+
+| Puerto Normativo (OKF v0.2) | Adaptador Concreto (DataMesh SDK) | Función Arquitectónica |
+| :--- | :--- | :--- |
+| **`StoragePort`** | `LocalFileAdapter`, `HttpRangeAdapter`, `S3StorageAdapter` | Lectura y escritura en sistemas de archivos locales, servidores HTTP con soporte RFC 7233 y almacenamiento de objetos S3/MinIO. |
+| **`StoragePort (Compuesto)`** | `ZipExtractorAdapter` (`extract_zip_tabular_resource`) | Extracción selectiva y resolución de fragment identifiers (`#subpath.parquet`) sin volcado total en memoria. |
+| **`CatalogResolverPort`** | `GitStaticCatalogAdapter`, `LocalDirCatalogAdapter`, `CKANCatalogAdapter`, `KademliaDHTAdapter` | Resolución concurrente de catálogos ultraligeros (`llms.txt`), directorios locales, portales CKAN gubernamentales y enrutamiento P2P. |
+| **`DataProductResolverPort`** | `ResolveDataProductUseCase`, `UnifiedMetadataReader` | Normalización agnóstica de manifiestos OKF Markdown/YAML, JSON Schema y Frictionless Data Packages. |
+| **`QueryEnginePort`** | `DuckDBQueryEngine`, `ArrowFlightSQLEngine` | Ejecución federada ANSI SQL y streaming distribuido de telemetría dinámica (`dcat:DataService`). |
+| **`TrustVerifierPort`** | `SSHKeyTrustAdapter`, `GitHubDIDVerifier`, `HashlibChecksumAdapter` | Verificación criptográfica de integridad SHA-256 y autenticidad soberana mediante claves OpenSSH / GitHub DID. |
+
+### 15.3 Bundles de Validación FAIR Bolivianos
+El SDK incorpora 4 bundles canónicos en `examples/bundles/` como banco de pruebas empírico:
+1. **`air_quality_bolivia`:** Recurso estático tabular con compresión Parquet Snappy, esquema Frictionless y anclaje semántico a Wikidata (`wd:Q5624508`).
+2. **`cndc_despacho_electrico`:** Recurso dinámico `dcat:DataService` con telemetría horaria del SIN, linaje W3C PROV-O y consultas SQL analíticas.
+3. **`censo_2024_cartografia`:** Recurso compuesto en archivo ZIP con fragment identifiers RFC 3986 y lectura selectiva departamental.
+4. **`udabol_salud_syndicated`:** Sindicación multicatálogo Many-to-Many con co-referencia `owl:sameAs` y resolución de dirección soberana `dengue_2024.series_tiempo@udabol_salud`.

@@ -1,0 +1,108 @@
+{
+  "name": "air_quality_bolivia",
+  "title": "Red Nacional de Monitoreo de Calidad del Aire de Bolivia",
+  "description": "Compilación armonizada de mediciones de material particulado y gases atmosféricos en La Paz, Cochabamba y Santa Cruz (Red MoniCA).",
+  "version": "1.0.0",
+  "keywords": [
+    "calidad-aire",
+    "bolivia",
+    "medio-ambiente",
+    "salud-publica",
+    "pm25",
+    "monica"
+  ],
+  "license": "CC-BY-4.0",
+  "spatial": {
+    "country": "BO",
+    "regions": [
+      "BO-L",
+      "BO-C",
+      "BO-S"
+    ],
+    "bbox": [
+      -69.64,
+      -22.9,
+      -57.45,
+      -9.67
+    ]
+  },
+  "temporal": {
+    "start": "2024-06-01T08:00:00Z",
+    "end": "2024-06-01T12:00:00Z",
+    "frequency": "hourly"
+  },
+  "resources": [
+    {
+      "name": "calidad_aire_parquet",
+      "path": "data/calidad_aire_2024.parquet",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "bytes": 6773,
+      "hash": "sha256:4fbe382aa7e6c93502b33d37a67663209228293d6ab26c5b9670ac758477c619",
+      "schema": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "datetime",
+            "format": "%Y-%m-%dT%H:%M:%SZ"
+          },
+          {
+            "name": "estacion",
+            "type": "string"
+          },
+          {
+            "name": "ciudad",
+            "type": "string"
+          },
+          {
+            "name": "departamento",
+            "type": "string",
+            "concept": "https://datos.gob.bo/concept/departamentos"
+          },
+          {
+            "name": "lat",
+            "type": "number"
+          },
+          {
+            "name": "lon",
+            "type": "number"
+          },
+          {
+            "name": "pm25",
+            "type": "number",
+            "rdfType": "wd:Q5624508",
+            "unit": "ug/m3",
+            "description": "Material particulado fino menor a 2.5 micras"
+          },
+          {
+            "name": "pm10",
+            "type": "number",
+            "rdfType": "wd:Q207551",
+            "unit": "ug/m3",
+            "description": "Material particulado respirable menor a 10 micras"
+          },
+          {
+            "name": "no2",
+            "type": "number",
+            "rdfType": "wd:Q207843",
+            "unit": "ppb",
+            "description": "Dióxido de nitrógeno"
+          },
+          {
+            "name": "aqi",
+            "type": "integer",
+            "description": "Índice de Calidad del Aire (Air Quality Index)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "calidad_aire_csv",
+      "path": "data/calidad_aire_2024.csv",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "bytes": 641,
+      "hash": "sha256:6b18332b587b7fdc2a024b50a6440a22660975ba358aaa9ade994d5cad62e6fa"
+    }
+  ]
+}

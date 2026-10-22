@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import pytest
 import datamesh as dm
 
-TESTDATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "core-go", "testdata"))
+TESTDATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "testdata"))
 
 def test_mock_catalog_discovery():
     cat_path = os.path.join(TESTDATA_DIR, "mock_catalog_primary.txt")

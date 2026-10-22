@@ -97,6 +97,11 @@ class LocalFileAdapter(ResourceAdapterPort):
     def _search_local_paths(self, dataset: str, resource: str) -> Optional[str]:
         # 1. Direct relative testdata paths
         possible = [
+            f"testdata/{resource}.csv",
+            f"testdata/{resource}.parquet",
+            f"testdata/{resource}.json",
+            f"testdata/mock_data_{dataset}.csv",
+            f"testdata/mock_data_{resource}.parquet",
             f"core-go/testdata/{resource}.csv",
             f"core-go/testdata/{resource}.parquet",
             f"core-go/testdata/{resource}.json",

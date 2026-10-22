@@ -32,27 +32,23 @@ Bienvenido al proyecto **DataMesh SDK**. Este documento define las políticas t�
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/datosbolivia/datamesh.git
-cd datamesh
+git clone https://github.com/datosbolivia/datamesh-sdk.git
+cd datamesh-sdk
 
-# 2. Compilar la biblioteca compartida nativa de Go Core (C-Shared)
-cd core-go
-go build -buildmode=c-shared -o libdatamesh.so ./adapters/inbound/cshared/exports.go
-cd ..
-
-# 3. Configurar entorno virtual de Python
+# 2. Configurar entorno virtual de Python (3.10+)
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 4. Instalar dependencias y bindings de Python en modo editable
+# 3. Instalar SDK y dependencias de testing en modo editable
 pip install --upgrade pip
 pip install -e bindings/python
 pip install pytest pytest-cov
 
-# 5. Ejecutar la suite completa de pruebas
-go test -v -race ./core-go/...
-DATAMESH_LIB_PATH="$(pwd)/core-go/libdatamesh.so" pytest bindings/python/tests -v
+# 4. Ejecutar la suite completa de pruebas automatizadas (121+ tests herméticos)
+PYTHONPATH=bindings/python pytest bindings/python/tests -v --strict-markers
 ```
+
+> **Nota sobre el motor de especificación Go:** El motor canónico del estándar Open Knowledge Format (OKF v0.2) y su CLI residen en el repositorio independiente [`open-knowledge-format`](https://github.com/datosbolivia/open-knowledge-format). Este SDK consume directamente sus especificaciones y bundles de forma desacoplada.
 
 ---
 
@@ -128,3 +124,16 @@ Antes de enviar un Pull Request, confirma la siguiente lista de verificación:
 - [ ] ADR formal registrado en `docs/decisions/` si aplica una decisión arquitectónica.
 - [ ] Mensajes de commit conformes a Conventional Commits.
 - [ ] Sin credenciales, tokens ni secretos embebidos en el código ni en fixtures de prueba.
+
+
+---
+
+## 7. Políticas de Versionado y Ciclo de Lanzamiento
+
+El SDK sigue estrictamente **Semantic Versioning 2.0 (SemVer)**:
+- **Versión Mayor (`MAJOR`):** Breaking changes en API pública (`dm.sql`, `dm.read`), eliminación de puertos o aumento de versión mínima de Python.
+- **Versión Menor (`MINOR`):** Nuevos adaptadores, resolutores de almacenamiento o funciones de catálogo retrocompatibles.
+- **Versión de Parche (`PATCH`):** Corrección de bugs y parches de seguridad retrocompatibles.
+- **Versiones de Prueba (`-alpha.N`, `-beta.N`, `-rc.N`):** Pre-releases automáticos en GitHub Releases al subir tags anotados.
+
+Consulta la especificación completa en [`docs/reference/VERSIONADO_Y_LANZAMIENTOS.md`](docs/reference/VERSIONADO_Y_LANZAMIENTOS.md).

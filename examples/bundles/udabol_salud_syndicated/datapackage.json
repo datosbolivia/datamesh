@@ -1,0 +1,49 @@
+{
+  "name": "udabol_salud_syndicated",
+  "title": "Vigilancia Epidemiológica de Arbovirosis en Bolivia (UDABOL - Ministerio de Salud)",
+  "description": "Estudio epidemiológico sindicado de co-referencia interinstitucional entre UDABOL, UMSA y SNIS.",
+  "version": "2.0.0",
+  "license": "CC-BY-NC-4.0",
+  "spatial": {
+    "country": "BO",
+    "regions": [
+      "BO-S",
+      "BO-B",
+      "BO-N"
+    ]
+  },
+  "sovereign_dns": {
+    "fqdn": "dengue_2024.series_tiempo@udabol_salud",
+    "kademlia_key": "okf:bo:salud:dengue:2024:1e3d08745ed63184"
+  },
+  "syndication": {
+    "origin_catalog": "https://datos.udabol.edu.bo/salud/catalog.json",
+    "catalog_records": [
+      {
+        "catalog_id": "udabol_investigacion",
+        "issued": "2024-05-15T12:00:00Z",
+        "role": "originator"
+      },
+      {
+        "catalog_id": "umsa_medicina",
+        "issued": "2024-05-18T09:30:00Z",
+        "sameAs": "https://datos.umsa.bo/epidemiologia/dengue_2024",
+        "role": "syndicated_subscriber"
+      },
+      {
+        "catalog_id": "minsalud_snis",
+        "issued": "2024-05-20T14:00:00Z",
+        "sameAs": "https://snis.minsalud.gob.bo/datasets/arbovirosis_2024",
+        "role": "syndicated_aggregator"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "name": "dengue_parquet",
+      "path": "data/dengue_bolivia_2024.parquet",
+      "format": "parquet",
+      "hash": "sha256:1e3d08745ed6318430da1f2892b4a9fe57db6b1152c2015db406e3f77bcec3e3"
+    }
+  ]
+}

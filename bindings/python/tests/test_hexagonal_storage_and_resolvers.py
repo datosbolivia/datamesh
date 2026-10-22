@@ -19,7 +19,7 @@ from datamesh.adapters.resolvers.kaggle import KaggleAdapter
 from datamesh.adapters.resolvers.http import HttpAdapter
 from datamesh.usecases.resolve_resource import ResolveAndCacheResourceUseCase
 
-TESTDATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "core-go", "testdata"))
+TESTDATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "testdata"))
 CSV_PATH = os.path.join(TESTDATA_DIR, "mock_data_elecciones.csv")
 
 def test_storage_config_and_local_storage_manager():

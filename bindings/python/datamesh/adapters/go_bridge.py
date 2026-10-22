@@ -52,8 +52,6 @@ class GoCoreBridge:
 
                 candidates.extend([
                     "libdatamesh.so",
-                    "core-go/libdatamesh.so",
-                    "../core-go/libdatamesh.so",
                     "/usr/local/lib/libdatamesh.so",
                 ])
 

@@ -1,0 +1,41 @@
+{
+  "name": "censo_2024_cartografia",
+  "title": "Cartografía Censal Digitalizada Bolivia 2024 (INE)",
+  "description": "Geometría y métricas demográficas agregadas por manzana para el Censo Nacional de Población y Vivienda 2024.",
+  "version": "1.0.0",
+  "license": "CC-BY-4.0",
+  "spatial": {
+    "country": "BO",
+    "bbox": [
+      -69.64,
+      -22.9,
+      -57.45,
+      -9.67
+    ]
+  },
+  "resources": [
+    {
+      "name": "cartografia_completa_zip",
+      "path": "data/censo_cartografia.zip",
+      "format": "zip",
+      "packageFormat": "application/zip",
+      "bytes": 4537,
+      "hash": "sha256:b346bcbda2bc4a74076862a5626828024f16ac57d4d9513d953dab67d11158b0",
+      "supports_http_range": true,
+      "internal_resources": [
+        {
+          "name": "manzanas_santa_cruz",
+          "subpath": "scz_manzanas.parquet",
+          "format": "parquet",
+          "uri_fragment": "data/censo_cartografia.zip#scz_manzanas.parquet"
+        },
+        {
+          "name": "manzanas_la_paz",
+          "subpath": "lpz_manzanas.parquet",
+          "format": "parquet",
+          "uri_fragment": "data/censo_cartografia.zip#lpz_manzanas.parquet"
+        }
+      ]
+    }
+  ]
+}

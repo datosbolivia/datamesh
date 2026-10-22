@@ -7,7 +7,7 @@ import pytest
 import datamesh as dm
 from datamesh.mcp_server import handle_jsonrpc
 
-TESTDATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "core-go", "testdata"))
+TESTDATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "testdata"))
 CSV_PATH = os.path.join(TESTDATA_DIR, "mock_data_elecciones.csv")
 PARQUET_PATH = os.path.join(TESTDATA_DIR, "mock_data_presupuesto.parquet")
 

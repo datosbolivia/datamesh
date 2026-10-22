@@ -10,7 +10,7 @@ import pytest
 import urllib.error
 import urllib.request
 
-TESTDATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "core-go" / "testdata"
+TESTDATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "testdata"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from datamesh.net import (

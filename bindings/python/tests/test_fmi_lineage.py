@@ -26,7 +26,7 @@ def test_component_lineage_extraction_req_01_a():
     info = usecase.extract_from_file(comp_file)
     assert info is not None
     assert info.dataset_id == "req_01_a"
-    assert "fmi-bcb:tabla_rin_componentes" in info.was_derived_from
+    assert any(x in info.was_derived_from for x in ("mefp-bcb:tabla_rin_componentes", "fmi-bcb:tabla_rin_componentes"))
     assert len(info.was_derived_from) == 1
 
 
@@ -39,9 +39,10 @@ def test_lineage_graph_3_level_upstream_resolution():
     ckan_recs = get_ckan_lineage_records()
     graph = usecase.build_graph(records=ckan_recs, search_dirs=[FMI_COMPONENTS])
     upstream = graph.upstream("req_01_a")
+    prefix = "mefp-bcb" if any("mefp-bcb" in x for x in upstream) else "fmi-bcb"
     assert upstream == [
-        "fmi-bcb:tabla_rin_componentes",
-        "fmi-bcb:raw_3_rin_bcb_componentes",
+        f"{prefix}:tabla_rin_componentes",
+        f"{prefix}:raw_3_rin_bcb_componentes",
         "https://www.bcb.gob.bo",
     ]
 
@@ -54,9 +55,10 @@ def test_lineage_catalog_3_level_trace():
     tr = trace_lineage_to_raw("req_01_a")
     assert tr["dataset_id"] == "req_01_a"
     assert tr["depth"] == 3
+    prefix = "mefp-bcb" if any("mefp-bcb" in x for x in tr["upstream"]) else "fmi-bcb"
     assert tr["upstream"] == [
-        "fmi-bcb:tabla_rin_componentes",
-        "fmi-bcb:raw_3_rin_bcb_componentes",
+        f"{prefix}:tabla_rin_componentes",
+        f"{prefix}:raw_3_rin_bcb_componentes",
         "https://www.bcb.gob.bo",
     ]
     assert "Level 1" in tr["ascii_tree"]

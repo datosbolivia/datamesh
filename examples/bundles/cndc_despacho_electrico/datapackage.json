@@ -1,0 +1,49 @@
+{
+  "name": "cndc_despacho_electrico",
+  "title": "Despacho y Operación en Tiempo Real del Sistema Interconectado Nacional (CNDC)",
+  "description": "Servicio de datos dinámico de telemetría eléctrica para supervisión del SIN boliviano.",
+  "version": "1.2.0",
+  "keywords": [
+    "energia",
+    "electricidad",
+    "cndc",
+    "sin",
+    "telemetria",
+    "bolivia"
+  ],
+  "license": "ODbL-1.0",
+  "spatial": {
+    "country": "BO",
+    "bbox": [
+      -69.64,
+      -22.9,
+      -57.45,
+      -9.67
+    ]
+  },
+  "provenance": {
+    "wasGeneratedBy": "urn:cndc:scada:collector_service_v3",
+    "wasAttributedTo": "urn:cndc:bolivia:operaciones",
+    "generatedAt": "2024-06-01T10:00:00Z"
+  },
+  "resources": [
+    {
+      "name": "telemetria_stream",
+      "type": "dcat:DataService",
+      "endpointURL": "grpc://telemetria.cndc.bo:443/arrow.flight.FlightService",
+      "endpointDescription": "https://cndc.bo/api/v1/openapi.json",
+      "format": "arrow-flight-sql",
+      "refresh_interval_seconds": 60,
+      "cache_policy": {
+        "ttl_seconds": 300,
+        "strategy": "sliding_window"
+      }
+    },
+    {
+      "name": "snapshot_despacho",
+      "path": "data/snapshot_despacho.parquet",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet"
+    }
+  ]
+}

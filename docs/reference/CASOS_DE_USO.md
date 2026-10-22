@@ -273,4 +273,41 @@
      - Inyecta predicados de filtrado de filas (`WHERE <row_filters>`) en la definición de la vista virtual.
   6. Garantiza privacidad y cumplimiento normativo transparente sin copias de datos en disco.
 
+## CU-26: Extracción y Consulta de Fragmentos en Recursos Compuestos ZIP (`ZipFragmentResolutionUseCase`)
+- **Actor:** Analista de datos, motor SQL DuckDB, o pipeline ETL.
+- **Entrada:** URI con fragment identifier RFC 3986 (e.g. `censo_cartografia.zip#scz_manzanas.parquet`) o referencia a recurso ZIP compuesto (`dcat:packageFormat: application/zip`).
+- **Comportamiento:**
+  1. Identifica si el recurso destino es un paquete compuesto comprimido.
+  2. Si el recurso está en un servidor HTTP remoto con soporte `Range: bytes`, lee únicamente la cabecera central de directorios al final del archivo ZIP sin descargar el cuerpo completo.
+  3. Desempaqueta o transfiere en streaming exclusivamente el subarchivo especificado tras el delimitador `#` hacia la caché local o un buffer en memoria.
+  4. Registra el formato detectado (`parquet`, `csv`, `json`) y vincula el archivo extraído como tabla virtual en DuckDB.
+  5. Retorna la referencia física lista para ejecución analítica instantánea.
 
+## CU-27: Consulta Dinámica y Telemetría en Servicios de Datos (`DataServiceQueryUseCase`)
+- **Actor:** Analista de telemetría, sistema SCADA, o consumidor de streaming analítico.
+- **Entrada:** URI o identificador de `dcat:DataService` (e.g. `cndc_despacho_electrico`), parámetros de filtro o sentencia SQL.
+- **Comportamiento:**
+  1. Resuelve el manifiesto y valida la declaración de tipo `dcat:DataService`.
+  2. Inspecciona el protocolo de transporte anunciado (`flight-sql`, `openapi`, `websocket`).
+  3. Conecta al servicio de streaming utilizando el cliente Apache Arrow Flight SQL o la API REST declarada.
+  4. Transmite streams de `RecordBatch` directamente a DuckDB sin serializaciones intermedias en disco.
+  5. Si el endpoint remoto no responde o la red se encuentra particionada, conmuta automáticamente a la réplica local o snapshot en caché (`data/snapshot_despacho.parquet`) aplicando la política de expiración TTL.
+
+## CU-28: Sindicación y Co-referencia Multicatálogo (`MultiCatalogSyndicationUseCase`)
+- **Actor:** Catálogo federado, nodo de investigación (UDABOL, UMSA, MinSalud), o motor de búsqueda semántica.
+- **Entrada:** Identificador de recurso sindicado, registro `dcat:CatalogRecord`, o consulta con predicado `owl:sameAs`.
+- **Comportamiento:**
+  1. Rastrea las referencias cruzadas Many-to-Many entre catálogos independientes.
+  2. Deduplica los registros de datos en el cliente basándose en el identificador de contenido inmutable (CID SHA-256).
+  3. Si el usuario ya descargó el recurso desde un catálogo upstream (e.g. UDABOL), las consultas a catálogos sindicados downstream (e.g. UMSA o MinSalud) reutilizan el blob local verificado sin descargas redundantes.
+  4. Preserva y documenta la procedencia de cada catálogo suscriptor en el grafo de linaje de metadatos.
+
+## CU-29: Resolución y Descubrimiento en DNS Soberano P2P (`SovereignDNSResolutionUseCase`)
+- **Actor:** Agente de IA, analista con cliente `okf-dig`, o CLI `datamesh`.
+- **Entrada:** Dirección soberana con gramática `<dataset>.<recurso>@<catalogo>` (e.g. `dengue_2024.series_tiempo@udabol_salud`).
+- **Comportamiento:**
+  1. Parsea la dirección gramatical aislando el nombre del catálogo, el dataset y el recurso subyacente.
+  2. Calcula la clave XOR de 256 bits para el catálogo y consulta la tabla de enrutamiento DHT Kademlia.
+  3. Localiza el nodo soberano emisor y recupera los registros criptográficos tipados (`SOA`, `CAT`, `RES`, `SCH`, `LIN`, `SRV`).
+  4. Valida la firma Ed25519 del registro SOA contra la clave pública o lista blanca federada.
+  5. Selecciona el transporte óptimo (red de área local mDNS > conexión directa QUIC/TCP > fallback HTTP) y retorna la tabla conectada al runtime.

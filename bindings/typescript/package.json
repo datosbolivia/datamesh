@@ -22,7 +22,16 @@
     "url": "git+https://github.com/datosbolivia/datamesh.git",
     "directory": "bindings/typescript"
   },
-  "keywords": ["datamesh", "okf", "odkf", "wasm", "opendata"],
+  "keywords": [
+    "datamesh",
+    "okf",
+    "odkf",
+    "wasm",
+    "opendata"
+  ],
   "author": "Datos Bolivia",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
 }

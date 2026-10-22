@@ -1,4 +1,4 @@
-name: Release Python Package
+name: Release Packages & Artifacts
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v0.2.1)'
+        description: 'Release version tag (e.g. v0.2.1)'
         required: true
         default: 'v0.2.1'
 
@@ -16,41 +16,85 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build Python Wheel & GitHub Release
+    name: Build Multi-Language SDK & Publish GitHub Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip build twine wheel
-
-      - name: Build Wheel & Sdist
-        run: |
-          cd bindings/python
-          python -m build --outdir ../../dist/
-
-      - name: Generate Checksums
-        run: |
-          cd dist
-          sha256sum * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          fetch-depth: 0
 
       - name: Determine Version
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            RAW_TAG="${{ github.event.inputs.version }}"
           else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          CLEAN_VER="${RAW_TAG#v}"
+          echo "tag=${RAW_TAG}" >> $GITHUB_OUTPUT
+          echo "clean_version=${CLEAN_VER}" >> $GITHUB_OUTPUT
+          echo "Releasing tag: ${RAW_TAG} (SemVer: ${CLEAN_VER})"
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      # --- 1. Python Build ---
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python build tools
+        run: |
+          python -m pip install --upgrade pip build twine wheel
+
+      - name: Sync Python Version
+        run: |
+          CLEAN_VER="${{ steps.version.outputs.clean_version }}"
+          sed -i "s/version = .*/version = \"${CLEAN_VER}\"/" bindings/python/pyproject.toml
+          head -n 10 bindings/python/pyproject.toml
+
+      - name: Build Python Wheel & Sdist
+        run: |
+          cd bindings/python
+          python -m build --outdir ../../dist/
+          python -m twine check ../../dist/*
+
+      # --- 2. TypeScript Build ---
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build & Pack TypeScript Client SDK
+        run: |
+          CLEAN_VER="${{ steps.version.outputs.clean_version }}"
+          cd bindings/typescript
+          npm version "${CLEAN_VER}" --no-git-tag-version --allow-same-version || true
+          npm install
+          npm run build
+          npm pack --pack-destination ../../dist/
+
+      # --- 3. R Package Tarball ---
+      - name: Package R Binding
+        run: |
+          CLEAN_VER="${{ steps.version.outputs.clean_version }}"
+          if [ -f bindings/r/DESCRIPTION ]; then
+            sed -i "s/^Version: .*/Version: ${CLEAN_VER}/" bindings/r/DESCRIPTION
+            tar -czf "dist/datamesh-r-${CLEAN_VER}.tar.gz" -C bindings r
           fi
 
+      # --- 4. Cryptographic Checksums ---
+      - name: Generate SHA256 Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          echo "=== SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+
+      # --- 5. GitHub Release ---
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

@@ -10,67 +10,54 @@ El proyecto adopta rigurosamente [Semantic Versioning 2.0.0](https://semver.org/
 
 $$\text{v}\langle\text{MAJOR}\rangle.\langle\text{MINOR}\rangle.\langle\text{PATCH}\rangle$$
 
-- **MAJOR (v1.0.0):** Cambios incompatibles en la API pública de 1 línea, el protocolo C-ABI (`exports.go`), o en la especificación normativa OKF/ODKF.
+- **MAJOR (v1.0.0):** Cambios incompatibles en la API pública de 1 línea, el protocolo MCP JSON-RPC o en los modelos centrales de datos.
 - **MINOR (v0.3.0):** Nuevos casos de uso, adaptadores de catálogo/almacenamiento, o nuevas herramientas MCP manteniendo compatibilidad retrospectiva.
 - **PATCH (v0.2.1):** Corrección de defectos, mejoras de rendimiento o parches de seguridad.
-
-### 1.1 Regla de Doble Tagging para Monorepos en Go
-Debido a que el módulo de Go se ubica en el subdirectorio `core-go/` (`module github.com/datosbolivia/datamesh-sdk/core-go`), cada versión debe emitir **dos etiquetas git sincronizadas**:
-1. `vX.Y.Z` — Tag raíz que dispara los workflows de GitHub Actions para release general, Python wheels, WASM y binarios.
-2. `core-go/vX.Y.Z` — Tag requerido por el proxy y gestor de dependencias de Go (`go get github.com/datosbolivia/datamesh-sdk/core-go@vX.Y.Z`).
 
 ---
 
 ## 2. Matriz de Artefactos de Release
 
-El pipeline automatizado en [`.github/workflows/release.yml`](.github/workflows/release.yml) compila y genera los siguientes artefactos en cada release oficial:
+El pipeline automatizado en [`.github/workflows/release.yml`](.github/workflows/release.yml) se dispara automáticamente al emitir etiquetas `v*` (ej. `v0.2.1`) y genera los siguientes artefactos en cada release oficial:
 
-| Tipo | Artefacto | Plataforma / Destino | Descripción |
+| Tipo | Artefacto | Ecosistema / Destino | Descripción |
 | --- | --- | --- | --- |
-| **CLI Go Nativo** | `datamesh-linux-amd64` | Linux x86_64 | Binario estático compilado con `-ldflags="-s -w"` |
-| **CLI Go Nativo** | `datamesh-darwin-arm64` | macOS Apple Silicon | Binario nativo para arquitecturas ARM64 |
-| **CLI Go Nativo** | `datamesh-windows-amd64.exe` | Windows x86_64 | Binario ejecutable para Windows |
-| **C-Shared Library** | `libdatamesh.so` | Linux (CGO) | Biblioteca compartida C-ABI para Python y C |
-| **C-Shared Library** | `libdatamesh.dylib` | macOS (CGO) | Biblioteca dinámica nativa para macOS |
-| **C-Shared Library** | `datamesh.dll` | Windows (CGO) | Biblioteca compartida para Windows |
-| **WebAssembly** | `datamesh.wasm` | Browser / Node.js | Módulo WASM para clientes web y TypeScript |
-| **Python Wheel** | `datamesh_sdk-*.whl` | PyPI / pip | Paquete Python con `libdatamesh.so` incrustada |
-| **Integridad** | `SHA256SUMS.txt` | Universal | Firmas criptográficas SHA-256 de todos los artefactos |
+| **Python Wheel** | `datamesh_sdk-*.whl` | PyPI / pip | Paquete binario universal Python 3.9+ |
+| **Python Sdist** | `datamesh_sdk-*.tar.gz` | PyPI / pip | Distribución de código fuente Python con tests y adaptadores |
+| **TypeScript / NPM** | `datosbolivia-datamesh-client-*.tgz` | npm / Node.js | Cliente SDK compilado en TypeScript para navegador y server |
+| **R Binding** | `datamesh-r-*.tar.gz` | R / CRAN | Paquete fuente R estructurado para data science |
+| **Integridad Criptográfica** | `SHA256SUMS.txt` | Universal | Firmas criptográficas SHA-256 de todos los artefactos de la release |
 
 ---
 
-## 3. Procedimiento para Publicar un Nuevo Release
+## 3. Procedimiento para Publicar un Nuevo Release por Tags
 
 ### Paso 1: Verificación Local Pre-Release
-Asegurar que todas las pruebas pasen al 100%:
+Asegurar que toda la suite de pruebas pase al 100%:
 ```bash
-go test -v -race ./core-go/...
-DATAMESH_LIB_PATH="$(pwd)/core-go/libdatamesh.so" pytest bindings/python/tests -v
+pytest bindings/python/tests -v
 ```
 
-### Paso 2: Actualizar Versiones en Metadatos
-Sincronizar el número de versión en:
-- `bindings/python/pyproject.toml` (`version = "X.Y.Z"`)
-- `bindings/typescript/package.json` (`"version": "X.Y.Z"`)
-- `bindings/python/datamesh/server.py` (`SERVER_VERSION = "X.Y.Z"`)
-- `bindings/python/datamesh/mcp_server.py` (`SERVER_VERSION = "X.Y.Z"`)
+### Paso 2: Crear y Publicar el Tag de Versión
+El pipeline de GitHub Actions se encarga de sincronizar dinámicamente el número de versión en `pyproject.toml`, `package.json` y `DESCRIPTION` a partir del tag:
 
-### Paso 3: Crear y Publicar los Tags
 ```bash
 VERSION="v0.2.1"
 
-# 1. Crear tag raíz
-git tag -a "$VERSION" -m "Release $VERSION: Go Core authority and granular policy engine"
+# 1. Crear tag anotado
+git tag -a "$VERSION" -m "Release $VERSION: Curation commands, semantic MCP tools, and multi-catalog support"
 
-# 2. Crear tag del submódulo Go
-git tag -a "core-go/$VERSION" -m "Go Core Module Release $VERSION"
-
-# 3. Publicar tags en el repositorio remoto
+# 2. Publicar tag en el repositorio remoto
 git push origin "$VERSION"
-git push origin "core-go/$VERSION"
 ```
 
-El pipeline de GitHub Actions se disparará automáticamente, compilando la matriz, empaquetando el wheel de Python y publicando el release en GitHub con sus checksums.
+Al subir la etiqueta, GitHub Actions:
+1. Extrae el número SemVer limpio (`0.2.1`).
+2. Sincroniza metadatos de empaquetado en Python, TypeScript y R.
+3. Compila los paquetes (`wheel`, `sdist`, `npm pack`, `tar.gz`).
+4. Valida los metadatos con `twine check`.
+5. Calcula los checksums criptográficos `SHA256SUMS.txt`.
+6. Crea el **GitHub Release** oficial con notas de cambios automáticas (`generate_release_notes: true`) y adjunta todos los paquetes compilados.
 
 ---
 
@@ -109,9 +96,3 @@ Para entornos expuestos a Internet o redes corporativas, configurar las siguient
 2. **`DATAMESH_CORS_ORIGIN`**: Restringir el origen permitido (ej. `https://portal.datosbolivia.org`) en lugar de `*`.
 3. **`DATAMESH_PROXY_ALLOWED_HOSTS`**: Allowlist explícita de dominios soberanos autorizados para el proxy (ej. `datosbolivia.github.io,datos.gob.bo`).
 4. **Protección Perimetral:** En despliegues públicos, colocar un proxy inverso (Nginx, Traefik o Caddy) al frente para terminación TLS HTTPS (puerto 443) y limitación de tasa de peticiones (rate limiting).
-
----
-
-## 5. Publicación de la Documentación Técnica
-
-La documentación técnica generada con **Quarto** se compila y publica automáticamente en GitHub Pages mediante el workflow [`.github/workflows/quarto-publish.yml`](.github/workflows/quarto-publish.yml) ante cualquier cambio en el directorio `docs/`.

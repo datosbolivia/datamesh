@@ -28,7 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ./bindings/python
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov pandas
 
       - name: Run Test Suite
         env:

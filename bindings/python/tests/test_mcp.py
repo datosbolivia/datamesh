@@ -83,3 +83,28 @@ def test_mcp_guardrails_instructions_and_prompts():
     msg_text = get_resp["result"]["messages"][0]["content"]["text"]
     assert "STRICT GUARDRAILS" in msg_text
     assert "Never hallucinate numbers" in msg_text
+def test_mcp_semantic_tools_presence_and_call():
+    # 1. Verify tools listed
+    req = {"jsonrpc": "2.0", "id": 10, "method": "tools/list", "params": {}}
+    resp = handle_jsonrpc(req)
+    tool_names = [t["name"] for t in resp["result"]["tools"]]
+    assert "datamesh_read_concept_body" in tool_names
+    assert "datamesh_get_knowledge_graph" in tool_names
+
+    # 2. Call datamesh_get_knowledge_graph
+    kg_req = {
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": {
+            "name": "datamesh_get_knowledge_graph",
+            "arguments": {}
+        }
+    }
+    kg_resp = handle_jsonrpc(kg_req)
+    assert "result" in kg_resp, f"kg_resp has no result: {kg_resp}"
+    assert kg_resp["id"] == 11
+    assert not kg_resp["result"]["isError"], kg_resp["result"]["content"][0]["text"]
+    data = json.loads(kg_resp["result"]["content"][0]["text"])
+    assert "nodes" in data
+    assert "edges" in data

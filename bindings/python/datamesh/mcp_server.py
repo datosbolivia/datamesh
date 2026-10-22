@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from typing import Any, Dict
 
@@ -209,6 +210,33 @@ TOOLS = [
                 "dataset_policy": {
                     "type": "string",
                     "description": "Optional policy name (e.g. 'zero_microdata') or JSON GranularPolicy to evaluate."
+                }
+            }
+        }
+    },
+{
+        "name": "datamesh_read_concept_body",
+        "description": "Reads the Markdown body and operational documentation of an OKF concept (excluding frontmatter), containing domain guidance, methodology, and example queries for agents.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uri": {
+                    "type": "string",
+                    "description": "Concept triad (catalog:dataset) or URL to resolve."
+                }
+            },
+            "required": ["uri"]
+        }
+    },
+    {
+        "name": "datamesh_get_knowledge_graph",
+        "description": "Extracts the semantic knowledge graph (nodes, cross-links, and external references) of concepts within a sovereign catalog or bundle for agentic topological navigation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "catalog_url": {
+                    "type": "string",
+                    "description": "Optional catalog URL or triad. If omitted, traverses the configured catalogs."
                 }
             }
         }
@@ -495,7 +523,54 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                     g = dm.lineage(catalog_url=catalog_url)
                     return make_tool_result(msg_id, g.to_dict())
 
+            elif tool_name == "datamesh_read_concept_body":
+                uri = args.get("uri", "")
+                data = dm.get(uri)
+                if not data:
+                    return make_tool_error(msg_id, f"Concept '{uri}' not found.")
+                body = data.get("raw_content", "") or data.get("description", "")
+                parts = body.split("---")
+                if len(parts) >= 3:
+                    body = "---".join(parts[2:]).strip()
+                return make_tool_result(msg_id, {
+                    "uri": uri,
+                    "title": data.get("title", ""),
+                    "markdown_body": body
+                })
+
+            elif tool_name == "datamesh_get_knowledge_graph":
+                catalog_url = args.get("catalog_url")
+                catalog = dm.discover(catalog_url)
+                nodes = []
+                edges = []
+                link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+                entries = catalog.get("entries", [])
+                for entry in entries:
+                    node_id = entry.get("resolved_url") or entry.get("title", "")
+                    raw = entry.get("description", "")
+                    nodes.append({
+                        "id": node_id,
+                        "title": entry.get("title", ""),
+                        "description": raw,
+                        "catalog_source": entry.get("catalog_source", "")
+                    })
+                    for match in link_pattern.finditer(raw):
+                        anchor_text, target = match.groups()
+                        edges.append({
+                            "source": node_id,
+                            "target": target,
+                            "label": anchor_text
+                        })
+                return make_tool_result(msg_id, {
+                    "catalog_title": catalog.get("title", "Federated Catalog"),
+                    "nodes": nodes,
+                    "edges": edges,
+                    "total_nodes": len(nodes),
+                    "total_edges": len(edges)
+                })
+
             elif tool_name == "datamesh_handshake":
+
                 from datamesh.server import process_handshake
                 data = process_handshake(args)
                 return make_tool_result(msg_id, data)

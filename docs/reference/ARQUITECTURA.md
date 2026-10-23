@@ -56,20 +56,38 @@
 ```
 
 
-### 1.1 Puerto y Adaptador de Persistencia de Linaje Operacional (SQLite)
+### 1.1 Memoria Operacional y Almacén Unificado de Cliente SQLite (`metadata.db`)
+El SDK unifica la memoria de procedencia con el gestor de caché temporal en una única base de datos SQLite embebida de cliente en `$DATAMESH_HOME/metadata.db` (autoridad normativa: **ADR 0032**, **SPEC §18**):
+
+- **Partición Arquitectónica:**
+  - *Intención Declarativa (YAML):* `config.yaml` o `datamesh.yaml` para preferencias del usuario, timeouts, URLs semilla de catálogos y anclas raíz de confianza (`trusted_identities`). Borrar la base de datos jamás altera la configuración del usuario.
+  - *Estado Operacional y Caché (SQLite):* `metadata.db` para datos de alta frecuencia, efímeros o derivados. Auto-reparable ante borrado accidental.
+- **Esquema Relacional Unificado:**
+  - `cache_entries`: Índice de recursos descargados (clave hash, URI original, ruta física, SHA-256, ETag, último acceso `last_accessed`).
+  - `dns_cache`: Resolución y probing de nodos soberanos (`/.well-known/datamesh.json`, endpoints CKAN, capacidades, latencia y estado con TTL).
+  - `keys_cache`: Caché de claves públicas criptográficas de autores (OpenSSH/Ed25519) sincronizadas remotamente.
+  - `executions`: Eventos de ejecución de pipelines y scripts monitoreados (ID de corrida, tríada, duración, código de salida).
+  - `lineage_sources`: Fuentes de entrada, con `cache_key` foránea hacia `cache_entries.key`.
+  - `lineage_transformations`: Actividades lógicas, herramienta y hash SHA-256 del código ejecutor.
+  - `artifacts`: Salidas y datasets generados, con `cache_key` foránea hacia `cache_entries.key`.
 - **Puerto de Salida:** `LineageStorePort` (`datamesh/ports/lineage_store.py`)
   - `record_execution(record: Dict[str, Any]) -> str`
   - `get_execution(execution_id: str) -> Optional[Dict[str, Any]]`
   - `list_executions(target: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]`
   - `record_artifact(execution_id: str, artifact_path: str, format_name: Optional[str] = None) -> Dict[str, Any]`
+  - `find_executions_for_cache_key(cache_key: str) -> List[Dict[str, Any]]`
   - `get_lineage_for_target(target: str) -> Dict[str, Any]`
-- **Adaptador Concreto:** `SQLiteLineageStore` (`datamesh/adapters/storage/sqlite_lineage.py`)
-  - Persistencia embebida en `.datamesh/lineage.db` mediante `sqlite3` estándar.
-  - Tablas: `executions`, `lineage_sources`, `lineage_transformations`, `artifacts`.
+- **Adaptadores Concretos:**
+  - `LocalStorageManager` (`datamesh/adapters/storage/local_storage.py`): Administra `cache_entries` en `metadata.db` con sincronización y migración automática transparente desde `metadata.json`.
+  - `SQLiteLineageStore` (`datamesh/adapters/storage/sqlite_lineage.py`): Administra las tablas de linaje y resuelve `cache_key` automáticamente.
+- **Invariantes Operacionales:**
+  - Modo WAL (`PRAGMA journal_mode = WAL;`) para concurrencia segura sin bloqueos entre CLI, agentes MCP y notebooks Jupyter.
+  - Desalojo LRU (Least Recently Used) sobre `cache_entries` ordenado por `last_accessed` al exceder `max_cache_size_bytes`.
+  - Revalidación HTTP 304 condicional con `ETag` y auto-sanación si un archivo local es purgado en disco.
 - **Componente de Ejecución y Monitoreo:** `datamesh/track.py`
-  - `@track_lineage`: Decorador de funciones analíticas.
-  - `track_execution`: Context manager para bloques de código.
-  - `run_script`: Ejecutor de procesos monitoreados en subproceso con cálculo de huellas SHA-256.
+  - `@track_lineage`: Decorador de funciones analíticas con cómputo de hash de código.
+  - `track_execution`: Context manager para bloques de procesamiento interactivo.
+  - `run_script`: Ejecutor de scripts externos en subproceso con telemetría automática.
 
 ## 2. Esquema de Configuración
 

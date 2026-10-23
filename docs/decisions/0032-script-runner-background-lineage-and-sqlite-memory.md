@@ -22,15 +22,19 @@ Se proveen dos vías canónicas de captura de procedencia:
 - **Envoltorio de Funciones / SDK (`@dm.track_lineage`):**
   Decorador de funciones en Python que intercepta la ejecución, captura los argumentos, mide latencias y asocia los artefactos generados al identificador del dataset destino.
 
-### 2. Memoria Operacional Unificada en SQLite (`metadata.db`)
-Se implementa el puerto `LineageStorePort` y el adaptador `SQLiteLineageStore` unificando la memoria de procedencia con el gestor de almacenamiento local `LocalStorageManager` dentro de la base de datos de metadatos y caché del cliente (`metadata.db`):
-- **Ubicación Canónica:** `$DATAMESH_HOME/metadata.db` (por defecto `~/.datamesh/metadata.db` o configurable vía variable de entorno `DATAMESH_METADATA_DB`).
+### 2. Memoria Operacional Unificada en SQLite (`metadata.db`) y Partición Declarativa
+Se adopta la separación estricta entre intención humana declarativa y estado operacional efímero:
+- **Partición Declarativa (YAML):** Preferencias humanas, catálogo semilla, timeouts y anclas de confianza raíz (`trusted_identities`) residen en `config.yaml` / `datamesh.yaml`. Son auditables por git y editables en texto plano. Su borrado nunca ocurre por purgas de caché.
+- **Ubicación Canónica de Memoria:** `$DATAMESH_HOME/metadata.db` (por defecto `~/.datamesh/metadata.db` o configurable vía `DATAMESH_METADATA_DB`).
 - **Esquema Relacional Unificado:**
-  - `cache_entries`: índice de recursos remotos descargados y cacheados localmente (clave hash, URI original, ruta en disco, sha256, etag, último acceso).
+  - `cache_entries`: índice de recursos remotos descargados y cacheados localmente (clave hash, URI original, ruta en disco, sha256, etag, último acceso `last_accessed`).
+  - `dns_cache`: caché de resolución y sondeo de nodos federados (`/.well-known/datamesh.json`, endpoints CKAN, latencias y capacidades con TTL).
+  - `keys_cache`: caché de claves públicas criptográficas de autores (OpenSSH Ed25519) sincronizadas remotamente.
   - `executions`: eventos de ejecución de scripts o funciones (ID de corrida, tríada destino, script, punto de entrada, código de salida, usuario y duración).
-  - `lineage_sources`: orígenes de datos consumidos, con columna `cache_key` enlazada a `cache_entries.key`.
+  - `lineage_sources`: orígenes de datos consumidos, con columna `cache_key` foránea hacia `cache_entries.key`.
   - `lineage_transformations`: etapas lógicas de transformación, herramienta y hash criptográfico del código ejecutado.
-  - `artifacts`: archivos y datasets derivados generados, con columna `cache_key` enlazada a `cache_entries.key`.
+  - `artifacts`: archivos y datasets derivados generados, con columna `cache_key` foránea hacia `cache_entries.key`.
+- **Invariantes Técnicas:** Modo WAL (`PRAGMA journal_mode = WAL;`) para concurrencia multi-proceso, desalojo LRU por `last_accessed`, revalidación HTTP 304 con `ETag` y auto-sanación si un archivo local es purgado.
 - **Compatibilidad y Migración Transparente:** `LocalStorageManager` migra automáticamente cualquier archivo histórico `cache/metadata.json` a la tabla SQLite `cache_entries` preservando la sincronización bidireccional.
 - **Principio KISS/YAGNI:** Cero servicios de bases de datos externos, utilización exclusiva de la biblioteca estándar de Python `sqlite3`.
 

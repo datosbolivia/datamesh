@@ -15,6 +15,11 @@ class StorageConfig:
     config_file: Path
     max_cache_size_bytes: int = 10 * 1024 * 1024 * 1024  # 10 GB
     default_ttl_seconds: int = 86400 * 7  # 7 days
+    metadata_db_path: Optional[Path] = None
+
+    def __post_init__(self) -> None:
+        if self.metadata_db_path is None:
+            object.__setattr__(self, "metadata_db_path", self.home_dir / "metadata.db")
 
     @classmethod
     def default(cls) -> StorageConfig:
@@ -30,10 +35,13 @@ class StorageConfig:
             config_path = (Path.cwd() / "datamesh.yaml").resolve()
         else:
             config_path = home / "config.yaml"
+        env_db = os.environ.get("DATAMESH_METADATA_DB")
+        db_path = Path(env_db).expanduser().resolve() if env_db else home / "metadata.db"
         return cls(
             home_dir=home,
             cache_dir=cache,
             config_file=config_path,
+            metadata_db_path=db_path,
         )
 
 def normalize_triad_segment(val: Optional[str]) -> Optional[str]:

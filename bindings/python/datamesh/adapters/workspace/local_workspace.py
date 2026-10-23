@@ -64,6 +64,22 @@ class LocalWorkspaceResolver:
                         return os.path.abspath(lp)
             except Exception:
                 pass
+
+        # Also query unified metadata.db if available
+        db_file = get_datamesh_home() / "metadata.db"
+        if db_file.exists():
+            try:
+                import sqlite3
+                with sqlite3.connect(str(db_file), timeout=2.0) as conn:
+                    row = conn.execute(
+                        "SELECT local_path FROM cache_entries WHERE key = ? OR original_uri = ? LIMIT 1",
+                        (k, uri)
+                    ).fetchone()
+                    if row and row[0] and os.path.isfile(row[0]) and os.path.getsize(row[0]) > 0:
+                        return os.path.abspath(row[0])
+            except Exception:
+                pass
+
         return None
 
     def find_node_datapackage(self, dataset: str) -> Optional[Tuple[Dict[str, Any], Optional[str]]]:

@@ -6,16 +6,20 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import tempfile
 from typing import Any, BinaryIO, Dict, Optional, Union
 
 from datamesh.domain.models import CacheEntryMetadata, StorageConfig
 from datamesh.ports.storage import StoragePort
 
+
 class LocalStorageManager(StoragePort):
-    """
-    Implements StoragePort managing the generic configuration directory ~/datamesh/
+    """Implements StoragePort managing the generic configuration directory ~/datamesh/
     and temporal cache storage directory ~/datamesh/cache/.
+
+    Persists cache entries in the unified SQLite client metadata database (metadata.db)
+    and maintains synchronization with legacy cache/metadata.json for backward compatibility.
     """
 
     def __init__(self, config: Optional[StorageConfig] = None):
@@ -29,6 +33,10 @@ class LocalStorageManager(StoragePort):
     def config(self) -> StorageConfig:
         return self._config
 
+    @property
+    def metadata_db_path(self) -> Path:
+        return self._config.metadata_db_path or (self._config.home_dir / "metadata.db")
+
     def _ensure_directories(self) -> None:
         """Creates ~/datamesh and ~/datamesh/cache if they do not exist."""
         try:
@@ -41,9 +49,38 @@ class LocalStorageManager(StoragePort):
                 home_dir=fallback_home,
                 cache_dir=fallback_home / "cache",
                 config_file=fallback_home / "config.yaml",
+                metadata_db_path=fallback_home / "metadata.db",
             )
             self._config.home_dir.mkdir(parents=True, exist_ok=True)
             self._config.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _get_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.metadata_db_path), timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self) -> None:
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS cache_entries (
+                    key TEXT PRIMARY KEY,
+                    original_uri TEXT NOT NULL,
+                    local_path TEXT NOT NULL,
+                    format TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    cached_at TEXT NOT NULL,
+                    etag TEXT,
+                    sha256 TEXT,
+                    source_service TEXT,
+                    update_frequency TEXT,
+                    last_accessed TEXT
+                );
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_cache_uri ON cache_entries(original_uri);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_cache_path ON cache_entries(local_path);")
+        except Exception:
+            pass
 
     def get_cache_dir(self) -> Path:
         return self._config.cache_dir
@@ -52,14 +89,69 @@ class LocalStorageManager(StoragePort):
         return hashlib.sha256(key_or_uri.encode("utf-8")).hexdigest()[:24]
 
     def _load_metadata(self) -> None:
+        self._init_db()
+        self._metadata_cache = {}
+
+        # 1. Load from SQLite metadata.db
+        try:
+            with self._get_connection() as conn:
+                rows = conn.execute("SELECT * FROM cache_entries").fetchall()
+                for r in rows:
+                    self._metadata_cache[r["key"]] = dict(r)
+        except Exception:
+            pass
+
+        # 2. Check for legacy metadata.json migration
         if self._metadata_path.exists():
             try:
                 with open(self._metadata_path, "r", encoding="utf-8") as f:
-                    self._metadata_cache = json.load(f)
+                    legacy_data = json.load(f)
+                if isinstance(legacy_data, dict):
+                    migrated = False
+                    for k, entry in legacy_data.items():
+                        if k not in self._metadata_cache and isinstance(entry, dict):
+                            self._metadata_cache[k] = entry
+                            self._upsert_db_entry(entry)
+                            migrated = True
             except Exception:
-                self._metadata_cache = {}
-        else:
-            self._metadata_cache = {}
+                pass
+
+        # 3. Synchronize initial state to json if db has records not yet in json
+        if self._metadata_cache and not self._metadata_path.exists():
+            self._save_metadata()
+
+    def _upsert_db_entry(self, entry: Dict[str, Any]) -> None:
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO cache_entries
+                    (key, original_uri, local_path, format, size_bytes, cached_at, etag, sha256, source_service, update_frequency, last_accessed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry.get("key"),
+                        entry.get("original_uri"),
+                        entry.get("local_path"),
+                        entry.get("format", "bin"),
+                        entry.get("size_bytes", 0),
+                        entry.get("cached_at", datetime.now(timezone.utc).isoformat()),
+                        entry.get("etag"),
+                        entry.get("sha256"),
+                        entry.get("source_service", "unknown"),
+                        entry.get("update_frequency"),
+                        entry.get("last_accessed", datetime.now(timezone.utc).isoformat()),
+                    ),
+                )
+        except Exception:
+            pass
+
+    def _delete_db_entry(self, key: str) -> None:
+        try:
+            with self._get_connection() as conn:
+                conn.execute("DELETE FROM cache_entries WHERE key = ?", (key,))
+        except Exception:
+            pass
 
     def _save_metadata(self) -> None:
         try:
@@ -101,7 +193,7 @@ class LocalStorageManager(StoragePort):
         ext = extension or ".bin"
         if not ext.startswith("."):
             ext = f".{ext}"
-        
+
         target_path = self._config.cache_dir / f"{k}{ext}"
         sha = hashlib.sha256()
 
@@ -129,19 +221,23 @@ class LocalStorageManager(StoragePort):
 
         size = target_path.stat().st_size
         fmt = ext.lstrip(".").lower()
+        now_iso = datetime.now(timezone.utc).isoformat()
         meta = CacheEntryMetadata(
             key=k,
             original_uri=key_or_uri,
             local_path=str(target_path.resolve()),
             format=fmt,
             size_bytes=size,
-            cached_at=datetime.now(timezone.utc).isoformat(),
+            cached_at=now_iso,
             etag=etag,
             sha256=sha.hexdigest(),
             source_service=source_service,
             update_frequency=update_frequency,
         )
-        self._metadata_cache[k] = meta.to_dict()
+        entry_dict = meta.to_dict()
+        entry_dict["last_accessed"] = now_iso
+        self._metadata_cache[k] = entry_dict
+        self._upsert_db_entry(entry_dict)
         self._save_metadata()
         return target_path
 
@@ -171,24 +267,30 @@ class LocalStorageManager(StoragePort):
             while chunk := f.read(65536):
                 sha.update(chunk)
 
+        now_iso = datetime.now(timezone.utc).isoformat()
         meta = CacheEntryMetadata(
             key=k,
             original_uri=key_or_uri,
             local_path=str(target_path.resolve()),
             format=ext.lstrip(".").lower(),
             size_bytes=target_path.stat().st_size,
-            cached_at=datetime.now(timezone.utc).isoformat(),
+            cached_at=now_iso,
             sha256=sha.hexdigest(),
             source_service=source_service,
             update_frequency=update_frequency,
         )
-        self._metadata_cache[k] = meta.to_dict()
+        entry_dict = meta.to_dict()
+        entry_dict["last_accessed"] = now_iso
+        self._metadata_cache[k] = entry_dict
+        self._upsert_db_entry(entry_dict)
         self._save_metadata()
         return target_path
 
     def get_metadata(self, key_or_uri: str) -> Optional[CacheEntryMetadata]:
-        k = self._hash_key(key_or_uri)
-        data = self._metadata_cache.get(k)
+        data = self._metadata_cache.get(key_or_uri)
+        if not data:
+            k = self._hash_key(key_or_uri)
+            data = self._metadata_cache.get(k)
         if data:
             return CacheEntryMetadata.from_dict(data)
         return None
@@ -199,6 +301,7 @@ class LocalStorageManager(StoragePort):
     def _evict_key(self, k: str) -> bool:
         if k in self._metadata_cache:
             entry = self._metadata_cache.pop(k)
+            self._delete_db_entry(k)
             p = Path(entry.get("local_path", ""))
             if p.exists():
                 try:
@@ -252,6 +355,7 @@ class LocalStorageManager(StoragePort):
 
         for k in keys_to_remove:
             self._metadata_cache.pop(k, None)
+            self._delete_db_entry(k)
 
         self._save_metadata()
         return removed

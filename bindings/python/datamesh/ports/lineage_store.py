@@ -36,3 +36,8 @@ class LineageStorePort(ABC):
     def get_lineage_for_target(self, target: str) -> Dict[str, Any]:
         """Reconstructs synthesized W3C PROV-O lineage dictionary for a target dataset."""
         pass
+    @abstractmethod
+    def find_executions_for_cache_key(self, cache_key: str) -> List[Dict[str, Any]]:
+        """Finds executions that produced or consumed the given cached entry key."""
+        pass
+

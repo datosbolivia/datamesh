@@ -152,3 +152,110 @@ print(f"Processed args: {sys.argv[1:]}")
         rec = store.get_execution(execs[0]["id"])
         assert rec["status"] == "SUCCESS"
         assert rec["script_path"] == str(Path(script_path).resolve())
+
+def test_unified_metadata_db_and_cache_cross_referencing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        home_dir = Path(tmpdir) / "datamesh"
+        cache_dir = home_dir / "cache"
+        cfg_file = home_dir / "config.yaml"
+        db_file = home_dir / "metadata.db"
+
+        cfg = dm.StorageConfig(
+            home_dir=home_dir,
+            cache_dir=cache_dir,
+            config_file=cfg_file,
+            metadata_db_path=db_file,
+        )
+        storage = dm.LocalStorageManager(cfg)
+        store = SQLiteLineageStore(str(db_file))
+
+        # 1. Save an external dataset into cache
+        cached_file = storage.save(
+            key_or_uri="https://ine.gob.bo/censo2024.csv",
+            content="departamento,poblacion\nLa Paz,3022566\nSanta Cruz,3115386\n",
+            extension="csv",
+            source_service="http",
+        )
+        assert cached_file.exists()
+        cache_key = storage._hash_key("https://ine.gob.bo/censo2024.csv")
+        assert storage.is_cached("https://ine.gob.bo/censo2024.csv")
+
+        # 2. Record execution that consumes this cached resource
+        out_art = Path(tmpdir) / "resumen_poblacion.parquet"
+        with open(out_art, "wb") as f:
+            f.write(b"PARQUET_PROCESSED_DATA")
+
+        exec_id = store.record_execution({
+            "target_triad": "ine:censo:resumen",
+            "entrypoint": "etl_censo:process",
+            "sources": [
+                {"name": "censo2024.csv", "uri": "https://ine.gob.bo/censo2024.csv"}
+            ],
+            "transformations": [
+                {"step": "agrupar_por_depto", "tool": "duckdb", "code_hash": "c0d3h4sh"}
+            ],
+            "artifacts": [
+                str(out_art)
+            ],
+        })
+
+        # 3. Verify cross-referencing to cache_entries in the unified DB
+        rec = store.get_execution(exec_id)
+        assert rec is not None
+        assert len(rec["sources"]) == 1
+        assert rec["sources"][0]["cache_key"] == cache_key
+
+        # 4. Find executions by cache_key
+        related = store.find_executions_for_cache_key(cache_key)
+        assert len(related) == 1
+        assert related[0]["id"] == exec_id
+        assert related[0]["target_triad"] == "ine:censo:resumen"
+
+
+def test_local_storage_manager_sqlite_and_json_migration():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        home_dir = Path(tmpdir) / "datamesh"
+        cache_dir = home_dir / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        db_file = home_dir / "metadata.db"
+        json_file = cache_dir / "metadata.json"
+
+        # Pre-create legacy metadata.json
+        import hashlib, json
+        raw_uri = "https://example.org/legacy.csv"
+        k = hashlib.sha256(raw_uri.encode("utf-8")).hexdigest()[:24]
+        legacy_data = {
+            k: {
+                "key": k,
+                "original_uri": raw_uri,
+                "local_path": str(cache_dir / "legacy.csv"),
+                "format": "csv",
+                "size_bytes": 100,
+                "cached_at": "2026-01-01T00:00:00Z",
+                "source_service": "http",
+            }
+        }
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump(legacy_data, f)
+
+        # Initialize LocalStorageManager - should migrate legacy.json to SQLite
+        cfg = dm.StorageConfig(
+            home_dir=home_dir,
+            cache_dir=cache_dir,
+            config_file=home_dir / "config.yaml",
+            metadata_db_path=db_file,
+        )
+        storage = dm.LocalStorageManager(cfg)
+
+        # Verify entry loaded into memory and DB
+        assert k in storage._metadata_cache
+        meta = storage.get_metadata(raw_uri)
+        assert meta is not None
+        assert meta.key == k
+
+        # Verify SQLite has the record
+        import sqlite3
+        with sqlite3.connect(str(db_file)) as conn:
+            row = conn.execute("SELECT * FROM cache_entries WHERE key = ?", (k,)).fetchone()
+            assert row is not None
+

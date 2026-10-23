@@ -24,6 +24,7 @@ from datamesh.adapters.resolvers.kaggle import KaggleAdapter
 from datamesh.adapters.resolvers.local_file import LocalFileAdapter
 from datamesh.adapters.resolvers.s3 import S3Adapter
 from datamesh.adapters.storage.local_storage import LocalStorageManager
+from datamesh.adapters.storage.sqlite_lineage import SQLiteLineageStore
 from datamesh.adapters.storage.s3_storage import S3StorageAdapter
 from datamesh.domain.models import (
     StorageConfig,
@@ -61,6 +62,7 @@ class DataMeshRuntime:
 
     def __init__(self, lib_path: Optional[str] = None):
         self._storage = LocalStorageManager(StorageConfig.default())
+        self._lineage_store = SQLiteLineageStore(db_path=str(self._storage.metadata_db_path))
         self._config_adapter = FileConfigAdapter(self._storage.config.config_file)
         self._s3_storage = S3StorageAdapter()
         self._resolvers: List[ResourceAdapterPort] = [
@@ -123,6 +125,11 @@ class DataMeshRuntime:
         self._ckan_client = CKANClientAdapter()
         self._harvest_ckan_usecase = HarvestCKANUseCase(self._ckan_client)
         self._lineage_usecase = DatasetLineageUseCase(catalog_discovery_fn=self.discover)
+
+    @property
+    def lineage_store(self) -> SQLiteLineageStore:
+        """Embedded SQLite operational execution lineage store (metadata.db)."""
+        return self._lineage_store
 
     @property
     def lineage_usecase(self) -> DatasetLineageUseCase:

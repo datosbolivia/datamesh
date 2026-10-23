@@ -248,6 +248,11 @@ from datamesh.usecases.discover_well_known import DiscoverWellKnownUseCase
 from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
 from datamesh.usecases.dataset_lineage import DatasetLineageUseCase
 from datamesh.server import run_server
+from datamesh.track import track_lineage, track_execution, run_script, get_lineage_store
+from datamesh.ports.lineage_store import LineageStorePort
+from datamesh.adapters.storage.sqlite_lineage import SQLiteLineageStore
+
+run = run_script
 
 __all__ = [
     "__version__",
@@ -276,6 +281,13 @@ __all__ = [
     "organizaciones_a_df",
     "recursos_a_df",
     "run_server",
+    "track_lineage",
+    "track_execution",
+    "run_script",
+    "run",
+    "get_lineage_store",
+    "LineageStorePort",
+    "SQLiteLineageStore",
     "DataMeshRuntime",
     "StorageConfig",
     "ResourceDescriptor",

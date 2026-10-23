@@ -311,3 +311,13 @@
   3. Localiza el nodo soberano emisor y recupera los registros criptográficos tipados (`SOA`, `CAT`, `RES`, `SCH`, `LIN`, `SRV`).
   4. Valida la firma Ed25519 del registro SOA contra la clave pública o lista blanca federada.
   5. Selecciona el transporte óptimo (red de área local mDNS > conexión directa QUIC/TCP > fallback HTTP) y retorna la tabla conectada al runtime.
+
+## CU-30: Ejecución Monitoreada de Scripts y Captura de Linaje en Background con Memoria SQLite (`TrackLineageUseCase` / `RunScriptUseCase`)
+- **Actor:** Científico de datos, pipeline de machine learning, agente de IA o CLI `datamesh run`.
+- **Entrada:** Ruta a script ejecutable (`.py`, `.sh`, `.sql`), argumentos opcionales, o función Python decorada con `@dm.track_lineage(target=...)`.
+- **Comportamiento:**
+  1. Computa la huella criptográfica SHA-256 del código fuente o script antes de ejecutarlo.
+  2. Ejecuta el proceso o función midiendo con precisión de microsegundos la duración, hora de inicio y fin UTC.
+  3. Intercepta los artefactos de salida generados en el sistema de archivos (computando su hash SHA-256, tamaño en bytes y formato).
+  4. Persiste el evento operacional y sus relaciones de procedencia (sources, transformations, artifacts) en la base de datos relacional embebida `.datamesh/lineage.db`.
+  5. Provee métodos de consulta instantánea (`store.get_lineage_for_target(target)`) para que el agente sintetice manifiestos `datapackage.yaml` y asista la publicación formal hacia catálogos federados sin desfase epistemológico.

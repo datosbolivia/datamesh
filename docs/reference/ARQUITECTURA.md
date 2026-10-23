@@ -55,6 +55,22 @@
        +--------------------------------------------------------------------------+
 ```
 
+
+### 1.1 Puerto y Adaptador de Persistencia de Linaje Operacional (SQLite)
+- **Puerto de Salida:** `LineageStorePort` (`datamesh/ports/lineage_store.py`)
+  - `record_execution(record: Dict[str, Any]) -> str`
+  - `get_execution(execution_id: str) -> Optional[Dict[str, Any]]`
+  - `list_executions(target: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]`
+  - `record_artifact(execution_id: str, artifact_path: str, format_name: Optional[str] = None) -> Dict[str, Any]`
+  - `get_lineage_for_target(target: str) -> Dict[str, Any]`
+- **Adaptador Concreto:** `SQLiteLineageStore` (`datamesh/adapters/storage/sqlite_lineage.py`)
+  - Persistencia embebida en `.datamesh/lineage.db` mediante `sqlite3` estándar.
+  - Tablas: `executions`, `lineage_sources`, `lineage_transformations`, `artifacts`.
+- **Componente de Ejecución y Monitoreo:** `datamesh/track.py`
+  - `@track_lineage`: Decorador de funciones analíticas.
+  - `track_execution`: Context manager para bloques de código.
+  - `run_script`: Ejecutor de procesos monitoreados en subproceso con cálculo de huellas SHA-256.
+
 ## 2. Esquema de Configuración
 
 El SDK implementa una cascada de configuración estricta:

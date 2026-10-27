@@ -280,6 +280,11 @@ class DuckDBQueryEngine(QueryEnginePort):
             for ref in tables:
                 if ref in self._view_errors:
                     err_msg += f" (View registration for '{ref}' failed: {self._view_errors[ref]})"
+            if "ssl" in err_msg.lower() or "certificate" in err_msg.lower():
+                err_msg += (
+                    "\nTIP: The remote endpoint's TLS certificate could not be verified. "
+                    "Re-run with '--insecure' / '-k' or set 'DATAMESH_INSECURE_TLS=1' to proceed."
+                )
             raise RuntimeError(f"DuckDB SQL execution error: {err_msg}") from e
 
     def register_table(self, table_ref: str, file_path_or_url: str) -> bool:

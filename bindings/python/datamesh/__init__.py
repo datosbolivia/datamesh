@@ -30,24 +30,36 @@ def query(
     resource_uri: str,
     filters: Optional[Dict[str, str]] = None,
     limit: Optional[int] = None,
+    insecure: bool = False,
 ) -> Dict[str, Any]:
     """Execute simple tabular query with optional filters and limits."""
+    if insecure:
+        import os
+        os.environ["DATAMESH_INSECURE_TLS"] = "1"
     return _runtime.query(resource_uri, filters=filters, limit=limit)
 
 def sql(
     query_str: str,
     table_mapping: Optional[Dict[str, str]] = None,
     engine: Optional[str] = None,
+    insecure: bool = False,
 ) -> Dict[str, Any]:
     """
     Execute full ANSI SQL with canonical triad table names 'catalogo:dataset:resource'.
     Normalizes heterogeneous formats (CSV, TSV, Parquet, JSON) into high-performance execution.
     Optionally select query engine ('duckdb', 'inmem', 'go').
+    Pass insecure=True to bypass TLS certificate verification (e.g. self-signed state endpoints).
     """
+    if insecure:
+        import os
+        os.environ["DATAMESH_INSECURE_TLS"] = "1"
     return _runtime.sql(query_str, table_mapping=table_mapping, engine=engine)
 
-def resolve_resource(resource_uri: str):
+def resolve_resource(resource_uri: str, insecure: bool = False):
     """Resolve a resource reference to its local/cached descriptor (triad, URL or path)."""
+    if insecure:
+        import os
+        os.environ["DATAMESH_INSECURE_TLS"] = "1"
     return _runtime.resolver_usecase.resolve(resource_uri)
 
 def get_engine(name: Optional[str] = None):

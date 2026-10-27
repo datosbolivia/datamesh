@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 from typing import Dict
@@ -8,52 +9,60 @@ from typing import Dict
 import datamesh as dm
 
 def main():
+    common_parser = argparse.ArgumentParser(add_help=False)
+    common_parser.add_argument(
+        "--insecure", "-k",
+        action="store_true",
+        help="Allow insecure TLS/SSL connections (skip certificate verification for self-signed or unverified CAs)",
+    )
+
     parser = argparse.ArgumentParser(
         prog="datamesh",
         description="DataMesh Sovereign SDK CLI (Python)",
+        parents=[common_parser],
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # catalog
-    cat_parser = subparsers.add_parser("catalog", help="Discover sovereign catalogs")
+    cat_parser = subparsers.add_parser("catalog", parents=[common_parser], help="Discover sovereign catalogs")
     cat_parser.add_argument("url", nargs="?", default=None, help="Catalog URL (optional)")
 
     # search
-    search_parser = subparsers.add_parser("search", help="Search catalog entries")
+    search_parser = subparsers.add_parser("search", parents=[common_parser], help="Search catalog entries")
     search_parser.add_argument("keyword", help="Search keyword")
     search_parser.add_argument("url", nargs="?", default=None, help="Catalog URL (optional)")
 
     # get
-    get_parser = subparsers.add_parser("get", help="Get Data Product manifest")
+    get_parser = subparsers.add_parser("get", parents=[common_parser], help="Get Data Product manifest")
     get_parser.add_argument("uri", help="Data Product node URI or URL")
 
     # query
-    query_parser = subparsers.add_parser("query", help="Query tabular resource")
+    query_parser = subparsers.add_parser("query", parents=[common_parser], help="Query tabular resource")
     query_parser.add_argument("uri", help="Resource CSV/TSV URI")
     query_parser.add_argument("--filter", action="append", dest="filters", help="Filter formatted as key=value")
     query_parser.add_argument("--limit", type=int, default=None, help="Max rows to return")
 
     # sql
-    sql_parser = subparsers.add_parser("sql", help="Execute full ANSI/DuckDB SQL with triad URIs ('catalogo:dataset:resource')")
+    sql_parser = subparsers.add_parser("sql", parents=[common_parser], help="Execute full ANSI/DuckDB SQL with triad URIs ('catalogo:dataset:resource')")
     sql_parser.add_argument("query", help="SQL query string")
     sql_parser.add_argument("--engine", choices=["duckdb", "inmem", "go"], default=None, help="Query engine to use (default: duckdb)")
 
     # publish
-    pub_parser = subparsers.add_parser("publish", help="Publish ODKF dataset bundle to target platforms (local, portal, kaggle)")
+    pub_parser = subparsers.add_parser("publish", parents=[common_parser], help="Publish ODKF dataset bundle to target platforms (local, portal, kaggle)")
     pub_parser.add_argument("path", help="Path to dataset directory or datapackage.yaml")
     pub_parser.add_argument("--target", "-t", action="append", dest="targets", help="Target platform (local, portal, kaggle)")
     pub_parser.add_argument("--dest", "-d", help="Destination path or directory (optional)")
 
     # align
-    align_parser = subparsers.add_parser("align", help="Extract semantic field mappings from a DataPackage")
+    align_parser = subparsers.add_parser("align", parents=[common_parser], help="Extract semantic field mappings from a DataPackage")
     align_parser.add_argument("path", help="Path to datapackage.yaml or JSON")
 
     # discover
-    disc_parser = subparsers.add_parser("discover", help="Discover catalog metadata and auth specs via /.well-known/datamesh.json or active probing")
+    disc_parser = subparsers.add_parser("discover", parents=[common_parser], help="Discover catalog metadata and auth specs via /.well-known/datamesh.json or active probing")
     disc_parser.add_argument("url", help="Target catalog URL or domain (e.g. 'datos.gob.bo')")
 
     # harvest-ckan
-    harvest_parser = subparsers.add_parser("harvest-ckan", help="Harvest datasets from a CKAN portal and reconstruct OKF v0.2 knowledge packages")
+    harvest_parser = subparsers.add_parser("harvest-ckan", parents=[common_parser], help="Harvest datasets from a CKAN portal and reconstruct OKF v0.2 knowledge packages")
     harvest_parser.add_argument("url", help="CKAN portal or API URL")
     harvest_parser.add_argument("--query", "-q", default="", help="Search filter query")
     harvest_parser.add_argument("--limit", "-l", type=int, default=100, help="Max packages to harvest")
@@ -65,7 +74,7 @@ def main():
     harvest_parser.add_argument("--scope", help="OAuth2 scope")
 
     # package-create
-    pkg_create_parser = subparsers.add_parser("package-create", help="Create datapackage.yaml manifest from files or schemas")
+    pkg_create_parser = subparsers.add_parser("package-create", parents=[common_parser], help="Create datapackage.yaml manifest from files or schemas")
     pkg_create_parser.add_argument("name", help="Package slug/name")
     pkg_create_parser.add_argument("--file", "-f", action="append", dest="files", help="File or archive to include (CSV, Parquet, ZIP)")
     pkg_create_parser.add_argument("--title", help="Package title")
@@ -75,7 +84,7 @@ def main():
     pkg_create_parser.add_argument("--source", "-s", action="append", dest="sources", help="Upstream source or parent dataset ID")
 
     # package-link
-    pkg_link_parser = subparsers.add_parser("package-link", help="Link column or categories to knowledge concepts in datapackage.yaml")
+    pkg_link_parser = subparsers.add_parser("package-link", parents=[common_parser], help="Link column or categories to knowledge concepts in datapackage.yaml")
     pkg_link_parser.add_argument("path", help="Path to datapackage.yaml")
     pkg_link_parser.add_argument("--resource", "-r", required=True, help="Resource name or index")
     pkg_link_parser.add_argument("--column", "-c", required=True, help="Column name to link")
@@ -83,27 +92,30 @@ def main():
     pkg_link_parser.add_argument("--map", "-m", action="append", dest="mappings", help="Category mapping formatted as 'VAL=Label' or 'VAL=Label:concept_path'")
 
     # package-explain
-    pkg_exp_parser = subparsers.add_parser("package-explain", help="Generate OKF SKOS concept docs for categorical variables")
+    pkg_exp_parser = subparsers.add_parser("package-explain", parents=[common_parser], help="Generate OKF SKOS concept docs for categorical variables")
     pkg_exp_parser.add_argument("path", help="Path to datapackage.yaml")
     pkg_exp_parser.add_argument("--out-dir", "-o", default="concepts", help="Directory to output concept files (default: concepts)")
 
     # lineage
-    lineage_parser = subparsers.add_parser("lineage", help="Inspect provenance and derivation DAG graph of datasets")
+    lineage_parser = subparsers.add_parser("lineage", parents=[common_parser], help="Inspect provenance and derivation DAG graph of datasets")
     lineage_parser.add_argument("target", nargs="?", default=None, help="Dataset ID, triad, or file path (optional)")
     lineage_parser.add_argument("--dir", "-d", dest="dir", default=None, help="Directory to scan for dataset manifests")
     lineage_parser.add_argument("--format", "-f", choices=["ascii", "mermaid", "json"], default="ascii", help="Output format (default: ascii)")
     lineage_parser.add_argument("--catalog", "-c", default=None, help="Catalog URL (optional)")
 
     # mcp-serve
-    subparsers.add_parser("mcp-serve", help="Run Model Context Protocol (MCP) server over stdio")
+    subparsers.add_parser("mcp-serve", parents=[common_parser], help="Run Model Context Protocol (MCP) server over stdio")
 
     # serve
-    serve_parser = subparsers.add_parser("serve", help="Run full HTTP REST, CORS proxy, and MCP server")
+    serve_parser = subparsers.add_parser("serve", parents=[common_parser], help="Run full HTTP REST, CORS proxy, and MCP server")
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     serve_parser.add_argument("--port", "-p", type=int, default=8000, help="Bind port (default: 8000)")
 
 
     args = parser.parse_args()
+
+    if getattr(args, "insecure", False) or "--insecure" in sys.argv or "-k" in sys.argv:
+        os.environ["DATAMESH_INSECURE_TLS"] = "1" 
 
     if args.command == "catalog":
         res = dm.discover(args.url)

@@ -108,3 +108,27 @@ def test_mcp_semantic_tools_presence_and_call():
     data = json.loads(kg_resp["result"]["content"][0]["text"])
     assert "nodes" in data
     assert "edges" in data
+
+def test_mcp_sql_and_query_insecure_flag(monkeypatch):
+    from unittest import mock
+    monkeypatch.delenv("DATAMESH_INSECURE_TLS", raising=False)
+
+    with mock.patch("datamesh.sql") as mock_sql:
+        mock_sql.return_value = {"columns": ["val"], "rows": [[42]], "row_count": 1}
+        req = {
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "datamesh_sql_query",
+                "arguments": {
+                    "sql_query": "SELECT * FROM 'presupuesto:ingreso'",
+                    "insecure": True,
+                }
+            }
+        }
+        resp = handle_jsonrpc(req)
+        assert resp["id"] == 20
+        assert not resp["result"]["isError"]
+        mock_sql.assert_called_once_with("SELECT * FROM 'presupuesto:ingreso'", insecure=True)
+        assert os.environ.get("DATAMESH_INSECURE_TLS") == "1"

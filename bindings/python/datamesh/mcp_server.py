@@ -54,6 +54,10 @@ TOOLS = [
                 "uri": {
                     "type": "string",
                     "description": "Data product node URI or HTTP URL (e.g. https://datosbolivia.github.io/raw/nodes/elecciones-bolivia/index.md)."
+                },
+                "insecure": {
+                    "type": "boolean",
+                    "description": "Optional: set to true to bypass TLS certificate verification."
                 }
             },
             "required": ["uri"]
@@ -77,6 +81,10 @@ TOOLS = [
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of rows to return."
+                },
+                "insecure": {
+                    "type": "boolean",
+                    "description": "Optional: set to true to bypass TLS certificate verification."
                 }
             },
             "required": ["resource_uri"]
@@ -95,6 +103,10 @@ TOOLS = [
                 "sql": {
                     "type": "string",
                     "description": "Alternative alias for sql_query."
+                },
+                "insecure": {
+                    "type": "boolean",
+                    "description": "Optional: set to true to bypass TLS certificate verification (useful for self-signed or unverified government SSL certificates)."
                 }
             },
             "required": ["sql_query"]
@@ -113,6 +125,10 @@ TOOLS = [
                 "sql_query": {
                     "type": "string",
                     "description": "Full ANSI SQL query."
+                },
+                "insecure": {
+                    "type": "boolean",
+                    "description": "Optional: set to true to bypass TLS certificate verification."
                 }
             },
             "required": ["sql"]
@@ -127,6 +143,10 @@ TOOLS = [
                 "uri": {
                     "type": "string",
                     "description": "Resource URI or HTTP URL."
+                },
+                "insecure": {
+                    "type": "boolean",
+                    "description": "Optional: set to true to bypass TLS certificate verification."
                 }
             },
             "required": ["uri"]
@@ -395,6 +415,9 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
 
             elif tool_name == "datamesh_get_dataproduct":
                 uri = args.get("uri", "")
+                insecure = bool(args.get("insecure", False))
+                if insecure:
+                    os.environ["DATAMESH_INSECURE_TLS"] = "1"
                 data = dm.get(uri)
                 return make_tool_result(msg_id, data)
 
@@ -412,13 +435,37 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                         return make_tool_error(msg_id, str(guard_err))
                 filters = args.get("filters")
                 limit = args.get("limit")
-                data = dm.query(resource_uri, filters=filters, limit=limit)
-                return make_tool_result(msg_id, data)
+                insecure = bool(args.get("insecure", False))
+                if insecure:
+                    os.environ["DATAMESH_INSECURE_TLS"] = "1"
+                try:
+                    data = dm.query(resource_uri, filters=filters, limit=limit, insecure=insecure)
+                    return make_tool_result(msg_id, data)
+                except Exception as q_err:
+                    err_msg = str(q_err)
+                    if "ssl" in err_msg.lower() or "certificate" in err_msg.lower():
+                        err_msg += (
+                            "\n[TIP] TLS certificate verification failed. Call this tool with "
+                            "\"insecure\": true to bypass certificate verification for this endpoint."
+                        )
+                    return make_tool_error(msg_id, err_msg)
 
             elif tool_name in ("datamesh_sql_query", "query_sql"):
                 sql_query = args.get("sql_query") or args.get("sql") or ""
-                data = dm.sql(sql_query)
-                return make_tool_result(msg_id, data)
+                insecure = bool(args.get("insecure", False))
+                if insecure:
+                    os.environ["DATAMESH_INSECURE_TLS"] = "1"
+                try:
+                    data = dm.sql(sql_query, insecure=insecure)
+                    return make_tool_result(msg_id, data)
+                except Exception as sql_err:
+                    err_msg = str(sql_err)
+                    if "ssl" in err_msg.lower() or "certificate" in err_msg.lower():
+                        err_msg += (
+                            "\n[TIP] TLS certificate verification failed. Call this tool with "
+                            "\"insecure\": true to bypass certificate verification for this endpoint."
+                        )
+                    return make_tool_error(msg_id, err_msg)
 
             elif tool_name in ("read_resource", "datamesh_read_resource"):
                 resource_uri = args.get("resource_uri") or args.get("uri") or ""
@@ -435,9 +482,10 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Dict[str, Any]:
                     except (ValueError, PermissionError) as guard_err:
                         return make_tool_error(msg_id, str(guard_err))
 
+                insecure = bool(args.get("insecure", False))
                 # 1. First attempt resolver_usecase to locate local or cached file (Parquet/CSV/Zip)
                 try:
-                    resolved = dm.resolve_resource(resource_uri)
+                    resolved = dm.resolve_resource(resource_uri, insecure=insecure)
                     if resolved and resolved.local_path and os.path.exists(resolved.local_path):
                         import duckdb
                         local_p = str(resolved.local_path)

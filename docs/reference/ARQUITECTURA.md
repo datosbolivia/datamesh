@@ -211,6 +211,10 @@ En cumplimiento del patrón Ports & Adapters y las directrices de `hexagonal-arc
    - `sql(sql_query, options?)`
    - `publish(dataset_path, targets?, options?)`
     - `align_semantics(datapackage_or_schema)`
+    - `resolve_concept_correspondences(source_mapping, target_mapping, concept_catalog?)`
+    - `generate_cross_dataset_join_sql(source_mapping, source_alias, target_mapping, target_alias, concept_catalog?)`
+    - `diff_bundles(old_path, new_path)`
+    - `attest_computation(concept_path, actual_sql?, actual_result?)`
     - `harvest_ckan(ckan_url, ...)`
     - `create_datapackage(name, title?, files?, resources?, output_file?, sources?, transformations?, lineage?)`
     - `link_concept(datapackage, resource, column, concept_ref?, value_mappings?)`

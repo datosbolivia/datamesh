@@ -321,3 +321,19 @@
   3. Intercepta los artefactos de salida generados en el sistema de archivos (computando su hash SHA-256, tamaño en bytes y formato).
   4. Persiste el evento operacional y sus relaciones de procedencia (sources, transformations, artifacts) en la base de datos relacional embebida `.datamesh/lineage.db`.
   5. Provee métodos de consulta instantánea (`store.get_lineage_for_target(target)`) para que el agente sintetice manifiestos `datapackage.yaml` y asista la publicación formal hacia catálogos federados sin desfase epistemológico.
+
+## CU-31: Resolución de Correspondencias Semánticas `ValueLabel -> Concept -> SKOS` y Joins Inter-Dataset (`SemanticAlignmentUseCase`)
+- **Actor:** Científico de datos, Agente IA, motor SQL (`DuckDBQueryEngine` / `GoCoreBridge`).
+- **Entrada:** `source_mapping` (`SemanticFieldMapping` con `ValueLabelConceptEntry`), `target_mapping`, y catálogo de conceptos (`ConceptNodeSKOS` con `skos`, `exact_match`, `close_match`, `broader`).
+- **Comportamiento:**
+  1. Mapea cada `ValueLabel` (valor crudo o código categorial en una columna del dataset) hacia su `Concept` local o canónico (`concept_id`).
+  2. Inspecciona los anclajes SKOS de cada `Concept` (`skos`, `exact_match`, `close_match`) que lo relacionan con ontologías externas (Wikidata, Schema.org, QUDT) o directamente con conceptos de otros datasets (`direct_concept_ref`).
+  3. Empareja determinísticamente los valores de dos datasets heterogéneos ($A$ y $B$) cuando sus conceptos asociados comparten un URI ontológico externo o se referencian mutuamente (`resolve_concept_correspondences`).
+  4. Compila un predicado ANSI SQL `CASE ... END = CASE ... END` (`generate_cross_dataset_join_sql`) para ejecutar `JOIN` entre datasets sin diccionarios hardcodeados en el núcleo.
+
+## CU-32: Diferenciación SemVer de Bundles y Atestación Determinista (`DiffBundles` & `AttestComputation`)
+- **Actor:** Pipeline CI/CD, auditor criptográfico, o cliente SDK (`dm.diff_bundles`, `dm.attest_computation`).
+- **Entrada:** Rutas a dos versiones de un bundle (`old_path`, `new_path`) o ruta a un concepto `Attested Computation` junto con SQL/resultados observados.
+- **Comportamiento:**
+  1. `diff_bundles` compara dos bundles OKF/ODKF y clasifica los cambios según SemVer 2.0.0 (`PATCH` para prosa/paradatos, `MINOR` para adición retrocompatible de conceptos/columnas, `MAJOR` para eliminación de conceptos o cambios incompatibles de tipo/política).
+  2. `attest_computation` normaliza la consulta SQL declarada en el bloque `executor`, verifica su hash SHA-256 canónico y contrasta las filas resultantes contra el bloque `receipt`, emitiendo el contrato JSON `AttestationVerdict` (`verified`, `refuted`, `error`).

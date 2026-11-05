@@ -2,6 +2,50 @@ export interface ResourceTriad {
     catalog?: string;
     dataset: string;
     resource: string;
+    fragment?: string;
+}
+export interface ValueLabelConceptEntry {
+    raw_value: string;
+    concept_id: string;
+    pref_label?: string;
+    alt_labels?: string[];
+    notation?: string;
+    exact_match?: string[];
+    close_match?: string[];
+    broader?: string[];
+    related?: string[];
+}
+export interface ConceptNodeSKOS {
+    concept_id: string;
+    pref_label?: string;
+    alt_labels?: string[];
+    notation?: string;
+    skos?: string[];
+    exact_match?: string[];
+    close_match?: string[];
+    broader?: string[];
+}
+export interface ConceptCorrespondence {
+    source_value: string;
+    source_concept_id: string;
+    target_value: string;
+    target_concept_id: string;
+    shared_anchor_uri: string;
+    match_predicate: string;
+}
+export interface PolicySpec {
+    type?: string;
+    profile?: string;
+    path?: string;
+    ref?: string;
+    rules?: Array<Record<string, any>>;
+    inline?: Record<string, any>;
+}
+export interface AttestationVerdict {
+    verdict: "verified" | "refuted" | "error";
+    canonical_query_hash?: string;
+    checked_at: string;
+    reason?: string;
 }
 export interface CatalogEntry {
     title: string;
@@ -252,6 +296,11 @@ export declare function parseSimpleYamlResources(text: string): Array<{
  * - 'datamesh://dataset/resource'
  */
 export declare function parseCanonicalUri(raw: string): ResourceTriad | null;
+/**
+ * Resolves semantic correspondences between Dataset A's ValueLabels and Dataset B's ValueLabels
+ * via their linked Concepts and SKOS anchors (shared external ontology URI or direct cross-dataset concept link).
+ */
+export declare function resolveConceptCorrespondences(sourceLabels: ValueLabelConceptEntry[], targetLabels: ValueLabelConceptEntry[], conceptCatalog?: Record<string, ConceptNodeSKOS>): ConceptCorrespondence[];
 /**
  * Formats a ResourceTriad into canonical 'dataset:resource' or 'catalog:dataset:resource' string.
  */

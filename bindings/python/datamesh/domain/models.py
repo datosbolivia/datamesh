@@ -55,102 +55,113 @@ def normalize_triad_segment(val: Optional[str]) -> Optional[str]:
 
 @dataclass(frozen=True)
 class CanonicalURI:
-    """Represents a standardized sovereign URI '[catalog:]dataset:resource' or 'datamesh://...'."""
+    """Represents a standardized sovereign URI '[catalog:]dataset:resource', 'okf://...', or '<dataset>.<resource>@<catalog>'."""
     dataset: str
     resource: str
     catalog: Optional[str] = None
+    fragment: Optional[str] = None
 
     def __post_init__(self) -> None:
         norm_ds = normalize_triad_segment(self.dataset) or ""
         norm_res = normalize_triad_segment(self.resource) or ""
         norm_cat = normalize_triad_segment(self.catalog) if self.catalog is not None else None
+        norm_frag = str(self.fragment).strip() if self.fragment else None
         object.__setattr__(self, "dataset", norm_ds)
         object.__setattr__(self, "resource", norm_res)
         object.__setattr__(self, "catalog", norm_cat)
+        object.__setattr__(self, "fragment", norm_frag or None)
 
     @classmethod
     def parse(cls, raw: str) -> Optional[CanonicalURI]:
         trimmed = raw.strip().strip("'\"`")
         if not trimmed:
             return None
-        # 1. datamesh:// or odkf:// scheme
-        if trimmed.startswith(("datamesh://", "odkf://")):
+
+        # Extract #fragment if present
+        frag: Optional[str] = None
+        if "#" in trimmed:
+            trimmed, frag_raw = trimmed.split("#", 1)
+            frag = frag_raw.strip() or None
+
+        # 1. datamesh://, odkf://, or okf:// scheme
+        if trimmed.startswith(("datamesh://", "odkf://", "okf://")):
             clean = trimmed.split("://", 1)[1]
-            clean = clean.split("?")[0].split("#")[0]
+            clean = clean.split("?")[0]
             parts = [p.strip() for p in clean.split("/") if p.strip()]
             if len(parts) >= 4:
-                # Format odkf://namespace/catalog/dataset/resource[:version] or odkf://namespace/catalog/dataset:version
                 cat = parts[1]
                 ds = parts[2]
                 res_raw = parts[3].split(":", 1)[0]
-                return cls(catalog=cat, dataset=ds, resource=res_raw)
+                return cls(catalog=cat, dataset=ds, resource=res_raw, fragment=frag)
             elif len(parts) == 3:
-                # If parts[2] contains a version colon (e.g. dataset:v1.0), parts[0] is namespace, parts[1] is catalog
-                if ":" in parts[2] and trimmed.startswith("odkf://"):
+                if ":" in parts[2] and trimmed.startswith(("odkf://", "okf://")):
                     cat = parts[1]
                     ds = parts[2].split(":", 1)[0]
                     res_raw = parts[2].split(":", 1)[1]
-                    return cls(catalog=cat, dataset=ds, resource=res_raw)
-                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2].split(":", 1)[0])
+                    return cls(catalog=cat, dataset=ds, resource=res_raw, fragment=frag)
+                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2].split(":", 1)[0], fragment=frag)
             elif len(parts) == 2:
                 res_raw = parts[1].split(":", 1)[0]
-                return cls(catalog=None, dataset=parts[0], resource=res_raw)
+                return cls(catalog=None, dataset=parts[0], resource=res_raw, fragment=frag)
             return None
 
         # 2. HTTP/HTTPS, file, s3, or aistor URLs
         if trimmed.startswith(("http://", "https://", "file://", "s3://", "aistor://")):
-            # Match e.g. .../datasets/cartera-creditos/creditos.csv or .../nodes/elecciones/votos.parquet
             match = re.search(r'/(?:datasets|nodes)/([^/]+)/([^/?#]+)', trimmed)
             if match:
                 ds = match.group(1).strip()
                 res_raw = match.group(2).strip()
                 res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
-                return cls(catalog=None, dataset=ds, resource=res)
-            # Match generic URL ending with /<dataset>/<resource.ext>
-            parsed_path = trimmed.split("?")[0].split("#")[0].rstrip("/")
+                return cls(catalog=None, dataset=ds, resource=res, fragment=frag)
+            parsed_path = trimmed.split("?")[0].rstrip("/")
             path_parts = [p for p in parsed_path.split("/") if p]
             if len(path_parts) >= 2:
-                # If s3://bucket/ds/res, catalog can be bucket if 3 parts, or dataset if 2 parts
                 if trimmed.startswith(("s3://", "aistor://")) and len(path_parts) >= 3:
                     cat = path_parts[-3]
                     ds = path_parts[-2]
                     res_raw = path_parts[-1]
                     res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
-                    return cls(catalog=cat, dataset=ds, resource=res)
+                    return cls(catalog=cat, dataset=ds, resource=res, fragment=frag)
                 ds = path_parts[-2]
                 res_raw = path_parts[-1]
                 res = res_raw.rsplit(".", 1)[0] if "." in res_raw else res_raw
-                return cls(catalog=None, dataset=ds, resource=res)
+                return cls(catalog=None, dataset=ds, resource=res, fragment=frag)
 
-        # 3. Colon-separated format ('cat:ds:res' or 'ds:res')
+        # 3. Sovereign DNS reverse-lookup notation: <dataset>.<resource>@<catalog>
+        if "@" in trimmed and ":" not in trimmed and "/" not in trimmed:
+            left, cat = trimmed.split("@", 1)
+            if "." in left and cat.strip():
+                ds, res = left.split(".", 1)
+                if ds.strip() and res.strip():
+                    return cls(catalog=cat.strip(), dataset=ds.strip(), resource=res.strip(), fragment=frag)
+
+        # 4. Colon-separated format ('cat:ds:res' or 'ds:res')
         if ":" in trimmed:
             parts = trimmed.split(":")
             if len(parts) == 3:
-                return cls(catalog=parts[0].strip(), dataset=parts[1].strip(), resource=parts[2].strip())
+                return cls(catalog=parts[0].strip(), dataset=parts[1].strip(), resource=parts[2].strip(), fragment=frag)
             elif len(parts) == 2:
-                return cls(catalog=None, dataset=parts[0].strip(), resource=parts[1].strip())
+                return cls(catalog=None, dataset=parts[0].strip(), resource=parts[1].strip(), fragment=frag)
 
-        # 4. Slash-separated format ('cat/ds/res' or 'ds/res')
+        # 5. Slash-separated format ('cat/ds/res' or 'ds/res')
         if "/" in trimmed:
             parts = [p.strip() for p in trimmed.split("/") if p.strip()]
             if len(parts) == 3:
-                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2])
+                return cls(catalog=parts[0], dataset=parts[1], resource=parts[2], fragment=frag)
             elif len(parts) == 2:
-                return cls(catalog=None, dataset=parts[0], resource=parts[1])
+                return cls(catalog=None, dataset=parts[0], resource=parts[1], fragment=frag)
 
         return None
 
     @property
     def triad(self) -> str:
-        if self.catalog:
-            return f"{self.catalog}:{self.dataset}:{self.resource}"
-        return f"{self.dataset}:{self.resource}"
+        base = f"{self.catalog}:{self.dataset}:{self.resource}" if self.catalog else f"{self.dataset}:{self.resource}"
+        return f"{base}#{self.fragment}" if self.fragment else base
 
     @property
     def full_uri(self) -> str:
-        if self.catalog:
-            return f"datamesh://{self.catalog}/{self.dataset}/{self.resource}"
-        return f"datamesh://{self.dataset}/{self.resource}"
+        base = f"datamesh://{self.catalog}/{self.dataset}/{self.resource}" if self.catalog else f"datamesh://{self.dataset}/{self.resource}"
+        return f"{base}#{self.fragment}" if self.fragment else base
 
 @dataclass(frozen=True)
 class ResourceDescriptor:
@@ -287,26 +298,205 @@ class TemporalCoverage:
 
 
 @dataclass(frozen=True)
+class ValueLabelConceptEntry:
+    """Maps a raw cell value or label in a dataset column to a Concept and its SKOS bridges."""
+    raw_value: str
+    concept_id: str
+    pref_label: Optional[str] = None
+    alt_labels: tuple[str, ...] = ()
+    notation: Optional[str] = None
+    exact_match: tuple[str, ...] = ()
+    close_match: tuple[str, ...] = ()
+    broader: tuple[str, ...] = ()
+    related: tuple[str, ...] = ()
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "raw_value": self.raw_value,
+            "concept_id": self.concept_id,
+        }
+        if self.pref_label:
+            out["pref_label"] = self.pref_label
+        if self.alt_labels:
+            out["alt_labels"] = list(self.alt_labels)
+        if self.notation:
+            out["notation"] = self.notation
+        if self.exact_match:
+            out["exact_match"] = list(self.exact_match)
+        if self.close_match:
+            out["close_match"] = list(self.close_match)
+        if self.broader:
+            out["broader"] = list(self.broader)
+        if self.related:
+            out["related"] = list(self.related)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> ValueLabelConceptEntry:
+        return cls(
+            raw_value=str(data.get("raw_value", "")),
+            concept_id=str(data.get("concept_id", "")),
+            pref_label=data.get("pref_label"),
+            alt_labels=tuple(str(x) for x in (data.get("alt_labels") or ())),
+            notation=data.get("notation"),
+            exact_match=tuple(str(x) for x in (data.get("exact_match") or ())),
+            close_match=tuple(str(x) for x in (data.get("close_match") or ())),
+            broader=tuple(str(x) for x in (data.get("broader") or ())),
+            related=tuple(str(x) for x in (data.get("related") or ())),
+        )
+
+
+@dataclass(frozen=True)
+class ConceptNodeSKOS:
+    """Represents a standalone OKF concept's SKOS semantic graph links (external ontologies & cross-dataset concepts)."""
+    concept_id: str
+    pref_label: Optional[str] = None
+    alt_labels: tuple[str, ...] = ()
+    notation: Optional[str] = None
+    skos: tuple[str, ...] = ()
+    exact_match: tuple[str, ...] = ()
+    close_match: tuple[str, ...] = ()
+    broader: tuple[str, ...] = ()
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"concept_id": self.concept_id}
+        if self.pref_label:
+            out["pref_label"] = self.pref_label
+        if self.alt_labels:
+            out["alt_labels"] = list(self.alt_labels)
+        if self.notation:
+            out["notation"] = self.notation
+        if self.skos:
+            out["skos"] = list(self.skos)
+        if self.exact_match:
+            out["exact_match"] = list(self.exact_match)
+        if self.close_match:
+            out["close_match"] = list(self.close_match)
+        if self.broader:
+            out["broader"] = list(self.broader)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> ConceptNodeSKOS:
+        return cls(
+            concept_id=str(data.get("concept_id", "")),
+            pref_label=data.get("pref_label"),
+            alt_labels=tuple(str(x) for x in (data.get("alt_labels") or ())),
+            notation=data.get("notation"),
+            skos=tuple(str(x) for x in (data.get("skos") or ())),
+            exact_match=tuple(str(x) for x in (data.get("exact_match") or ())),
+            close_match=tuple(str(x) for x in (data.get("close_match") or ())),
+            broader=tuple(str(x) for x in (data.get("broader") or ())),
+        )
+
+
+@dataclass(frozen=True)
+class ConceptCorrespondence:
+    """Resolved semantic bridge between a ValueLabel in Dataset A and a matching ValueLabel in Dataset B via SKOS."""
+    source_value: str
+    source_concept_id: str
+    target_value: str
+    target_concept_id: str
+    shared_anchor_uri: str
+    match_predicate: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "source_value": self.source_value,
+            "source_concept_id": self.source_concept_id,
+            "target_value": self.target_value,
+            "target_concept_id": self.target_concept_id,
+            "shared_anchor_uri": self.shared_anchor_uri,
+            "match_predicate": self.match_predicate,
+        }
+
+
+@dataclass(frozen=True)
+class AttestationVerdict:
+    """Standardized JSON wire contract for Attested Computation verification (§10.2, §12.1)."""
+    verdict: str  # "verified" | "refuted" | "error"
+    checked_at: str
+    canonical_query_hash: Optional[str] = None
+    reason: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "verdict": self.verdict,
+            "checked_at": self.checked_at,
+        }
+        if self.canonical_query_hash:
+            out["canonical_query_hash"] = self.canonical_query_hash
+        if self.reason:
+            out["reason"] = self.reason
+        return out
+
+
+@dataclass(frozen=True)
+class PolicySpec:
+    """Meta-specification governance contract (built-in profile or external ODRL/OPA/DPV/XACML policy)."""
+    type: Optional[str] = None
+    profile: Optional[str] = None
+    path: Optional[str] = None
+    ref: Optional[str] = None
+    rules: tuple[Dict[str, Any], ...] = ()
+    inline: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.type:
+            out["type"] = self.type
+        if self.profile:
+            out["profile"] = self.profile
+        if self.path:
+            out["path"] = self.path
+        if self.ref:
+            out["ref"] = self.ref
+        if self.rules:
+            out["rules"] = list(self.rules)
+        if self.inline:
+            out["inline"] = dict(self.inline)
+        return out
+
+
+@dataclass(frozen=True)
 class SemanticFieldMapping:
-    """Maps raw column categories to ODKF Knowledge Base concept IDs without changing raw files."""
+    """Maps raw column categories and ValueLabels to ODKF Knowledge Base concept IDs and SKOS bridges."""
     field_name: str
     concept_ref: Optional[str] = None      # Local relative path or concept identifier, e.g. 'concepts/departamentos.md'
+    unit: Optional[str] = None             # Physical unit code (UCUM/QUDT, e.g. 'ug/m3', 'BOB', 'MWh')
+    aggregation_behavior: Optional[str] = None  # additive | semi_additive | non_additive
     value_mapping: Dict[str, str] = field(default_factory=dict) # e.g. {'LPZ': 'concept:departamentos:la_paz'}
+    value_labels: tuple[ValueLabelConceptEntry, ...] = ()
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"field_name": self.field_name}
         if self.concept_ref:
             out["concept_ref"] = self.concept_ref
+        if self.unit:
+            out["unit"] = self.unit
+        if self.aggregation_behavior:
+            out["aggregation_behavior"] = self.aggregation_behavior
         if self.value_mapping:
             out["value_mapping"] = dict(self.value_mapping)
+        if self.value_labels:
+            out["value_labels"] = [vl.to_dict() for vl in self.value_labels]
         return out
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> SemanticFieldMapping:
+        raw_vls = data.get("value_labels") or ()
+        vls = tuple(
+            ValueLabelConceptEntry.from_dict(vl) if isinstance(vl, dict) else vl
+            for vl in raw_vls
+            if isinstance(vl, (dict, ValueLabelConceptEntry))
+        )
         return cls(
             field_name=data.get("field_name", ""),
             concept_ref=data.get("concept_ref") or data.get("concept"),
+            unit=data.get("unit"),
+            aggregation_behavior=data.get("aggregation_behavior"),
             value_mapping=data.get("value_mapping") or {},
+            value_labels=vls,
         )
 
 

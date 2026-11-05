@@ -34,6 +34,10 @@ class GoCoreBridge:
         "DataMeshComputeEffectivePolicy": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
         "DataMeshParseOpenSSHKey": ([ctypes.c_char_p], ctypes.c_void_p),
         "DataMeshVerifyGitHubIdentity": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshResolveConceptCorrespondences": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshGenerateCrossDatasetJoinSQL": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshDiffBundles": ([ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
+        "DataMeshAttestComputation": ([ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p], ctypes.c_void_p),
     }
 
     def __init__(self, lib_path: Optional[str] = None, lib_handle: Optional[Any] = None):
@@ -46,9 +50,12 @@ class GoCoreBridge:
             else:
                 candidates = []
                 pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                repo_root = os.path.dirname(os.path.dirname(pkg_root))
+                sibling_okf_bin = os.path.join(os.path.dirname(repo_root), "open-knowledge-format", "src", "bin")
                 for name in ("libdatamesh.so", "libdatamesh.dylib", "datamesh.dll"):
                     candidates.append(os.path.join(pkg_root, name))
                     candidates.append(os.path.join(os.path.dirname(pkg_root), name))
+                    candidates.append(os.path.join(sibling_okf_bin, name))
 
                 candidates.extend([
                     "libdatamesh.so",
@@ -174,4 +181,58 @@ class GoCoreBridge:
     ) -> Optional[Dict[str, Any]]:
         """Verifies a did:github:<user> claim against GitHub public keys using authoritative Go Core domain."""
         return self.call("DataMeshVerifyGitHubIdentity", did, claimed_pub_key, github_keys_raw)
+
+    def resolve_concept_correspondences(
+        self,
+        source_mapping: Dict[str, Any],
+        target_mapping: Dict[str, Any],
+        concept_catalog: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Any]:
+        """Resolves ValueLabel -> Concept -> SKOS correspondences using authoritative Go Core domain."""
+        return self.call(
+            "DataMeshResolveConceptCorrespondences",
+            json.dumps(source_mapping),
+            json.dumps(target_mapping),
+            json.dumps(concept_catalog or {}),
+        )
+
+    def generate_cross_dataset_join_sql(
+        self,
+        source_mapping: Dict[str, Any],
+        source_alias: str,
+        target_mapping: Dict[str, Any],
+        target_alias: str,
+        concept_catalog: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Generates deterministic cross-dataset SQL JOIN condition via Go Core domain."""
+        res = self.call(
+            "DataMeshGenerateCrossDatasetJoinSQL",
+            json.dumps(source_mapping),
+            source_alias or "",
+            json.dumps(target_mapping),
+            target_alias or "",
+            json.dumps(concept_catalog or {}),
+        )
+        if isinstance(res, dict):
+            return res.get("join_sql")
+        return None
+
+    def diff_bundles(self, old_path: str, new_path: str) -> Optional[Dict[str, Any]]:
+        """Computes SemVer 2.0.0 structural/semantic bundle diff using Go Core domain."""
+        return self.call("DataMeshDiffBundles", old_path, new_path)
+
+    def attest_computation(
+        self,
+        concept_path: str,
+        actual_sql: str = "",
+        actual_result: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Verifies an Attested Computation receipt and returns AttestationVerdict via Go Core domain."""
+        return self.call(
+            "DataMeshAttestComputation",
+            concept_path,
+            actual_sql or "",
+            json.dumps(actual_result or {}),
+        )
+
 

@@ -323,39 +323,59 @@ export function parseSimpleYamlResources(text) {
  * - 'datamesh://dataset/resource'
  */
 export function parseCanonicalUri(raw) {
-    const trimmed = raw.trim().replace(/^['"`]|['"`]$/g, '');
+    let trimmed = raw.trim().replace(/^['"`]|['"`]$/g, '');
     if (!trimmed)
         return null;
-    // 1. datamesh:// or odkf:// scheme
-    if (trimmed.startsWith("datamesh://") || trimmed.startsWith("odkf://")) {
-        const rawClean = trimmed.split("://")[1].split("?")[0].split("#")[0];
+    let fragment;
+    if (trimmed.includes("#")) {
+        const hashIdx = trimmed.indexOf("#");
+        const fragPart = trimmed.substring(hashIdx + 1).trim();
+        if (fragPart)
+            fragment = fragPart;
+        trimmed = trimmed.substring(0, hashIdx).trim();
+    }
+    // 1. datamesh://, odkf://, or okf:// scheme
+    if (trimmed.startsWith("datamesh://") || trimmed.startsWith("odkf://") || trimmed.startsWith("okf://")) {
+        const rawClean = trimmed.split("://")[1].split("?")[0];
         const parts = rawClean.split("/").map((p) => p.trim()).filter(Boolean);
         if (parts.length >= 3) {
             const cat = parts[parts.length - 3];
             const ds = parts[parts.length - 2];
             const resRaw = parts[parts.length - 1].split(":")[0];
-            return { catalog: cat, dataset: ds, resource: resRaw };
+            return { catalog: cat, dataset: ds, resource: resRaw, ...(fragment ? { fragment } : {}) };
         }
         else if (parts.length === 2) {
             const resRaw = parts[1].split(":")[0];
-            return { dataset: parts[0], resource: resRaw };
+            return { dataset: parts[0], resource: resRaw, ...(fragment ? { fragment } : {}) };
         }
         return null;
     }
     // 2. HTTP/HTTPS or file URLs (e.g. https://.../datasets/cartera-creditos/creditos.csv)
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("file://")) {
-        const cleanUrl = trimmed.split("?")[0].split("#")[0].replace(/\/+$/, '');
+        const cleanUrl = trimmed.split("?")[0].replace(/\/+$/, '');
         const urlParts = cleanUrl.split("/").filter(Boolean);
         if (urlParts.length >= 2) {
             const ds = urlParts[urlParts.length - 2];
             const resRaw = urlParts[urlParts.length - 1];
             const res = resRaw.includes(".") ? resRaw.substring(0, resRaw.lastIndexOf(".")) : resRaw;
             if (ds && res) {
-                return { dataset: ds, resource: res };
+                return { dataset: ds, resource: res, ...(fragment ? { fragment } : {}) };
             }
         }
     }
-    // 3. Colon-separated format ('cat:ds:res' or 'ds:res')
+    // 3. Sovereign DNS reverse-lookup notation: <dataset>.<resource>@<catalog>
+    if (trimmed.includes("@") && !trimmed.includes(":") && !trimmed.includes("/")) {
+        const [left, cat] = trimmed.split("@");
+        if (left && cat && left.includes(".")) {
+            const dotIdx = left.indexOf(".");
+            const ds = left.substring(0, dotIdx).trim();
+            const res = left.substring(dotIdx + 1).trim();
+            if (ds && res && cat.trim()) {
+                return { catalog: cat.trim(), dataset: ds, resource: res, ...(fragment ? { fragment } : {}) };
+            }
+        }
+    }
+    // 4. Colon-separated format ('cat:ds:res' or 'ds:res')
     if (trimmed.includes(":") && !trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("file://")) {
         const parts = trimmed.split(":");
         if (parts.length === 3) {
@@ -363,28 +383,106 @@ export function parseCanonicalUri(raw) {
             const ds = parts[1].trim();
             const res = parts[2].trim();
             if (ds && res) {
-                return { catalog: cat || undefined, dataset: ds, resource: res };
+                return { catalog: cat || undefined, dataset: ds, resource: res, ...(fragment ? { fragment } : {}) };
             }
         }
         else if (parts.length === 2) {
             const ds = parts[0].trim();
             const res = parts[1].trim();
             if (ds && res) {
-                return { dataset: ds, resource: res };
+                return { dataset: ds, resource: res, ...(fragment ? { fragment } : {}) };
             }
         }
     }
-    // 4. Slash-separated format ('cat/ds/res' or 'ds/res')
+    // 5. Slash-separated format ('cat/ds/res' or 'ds/res')
     if (trimmed.includes("/")) {
         const parts = trimmed.split("/").map((p) => p.trim()).filter(Boolean);
         if (parts.length === 3) {
-            return { catalog: parts[0], dataset: parts[1], resource: parts[2] };
+            return { catalog: parts[0], dataset: parts[1], resource: parts[2], ...(fragment ? { fragment } : {}) };
         }
         else if (parts.length === 2) {
-            return { dataset: parts[0], resource: parts[1] };
+            return { dataset: parts[0], resource: parts[1], ...(fragment ? { fragment } : {}) };
         }
     }
     return null;
+}
+/**
+ * Resolves semantic correspondences between Dataset A's ValueLabels and Dataset B's ValueLabels
+ * via their linked Concepts and SKOS anchors (shared external ontology URI or direct cross-dataset concept link).
+ */
+export function resolveConceptCorrespondences(sourceLabels, targetLabels, conceptCatalog = {}) {
+    const nodes = { ...conceptCatalog };
+    const enrich = (vls) => {
+        for (const vl of vls) {
+            const cid = (vl.concept_id || "").trim();
+            if (!cid)
+                continue;
+            const ex = nodes[cid] || { concept_id: cid };
+            nodes[cid] = {
+                concept_id: cid,
+                pref_label: ex.pref_label || vl.pref_label,
+                notation: ex.notation || vl.notation,
+                alt_labels: Array.from(new Set([...(ex.alt_labels || []), ...(vl.alt_labels || [])])),
+                skos: ex.skos || [],
+                exact_match: Array.from(new Set([...(ex.exact_match || []), ...(vl.exact_match || [])])),
+                close_match: Array.from(new Set([...(ex.close_match || []), ...(vl.close_match || [])])),
+                broader: Array.from(new Set([...(ex.broader || []), ...(vl.broader || [])])),
+            };
+        }
+    };
+    enrich(sourceLabels);
+    enrich(targetLabels);
+    const matchNodes = (a, b) => {
+        if (a.concept_id && a.concept_id === b.concept_id) {
+            return { shared: a.concept_id, predicate: "direct_concept_ref" };
+        }
+        if ((a.exact_match || []).includes(b.concept_id) || (a.skos || []).includes(b.concept_id)) {
+            return { shared: b.concept_id, predicate: "direct_concept_ref" };
+        }
+        if ((b.exact_match || []).includes(a.concept_id) || (b.skos || []).includes(a.concept_id)) {
+            return { shared: a.concept_id, predicate: "direct_concept_ref" };
+        }
+        for (const u of [...(a.exact_match || []), ...(a.skos || [])]) {
+            if ((b.exact_match || []).includes(u) || ((a.exact_match || []).includes(u) && (b.skos || []).includes(u))) {
+                return { shared: u, predicate: "skos:exactMatch" };
+            }
+        }
+        for (const u of a.skos || []) {
+            if ((b.skos || []).includes(u)) {
+                return { shared: u, predicate: "skos_anchor" };
+            }
+        }
+        const allB = new Set([...(b.exact_match || []), ...(b.skos || []), ...(b.close_match || [])]);
+        for (const u of [...(a.exact_match || []), ...(a.skos || []), ...(a.close_match || [])]) {
+            if (allB.has(u)) {
+                return { shared: u, predicate: "skos:closeMatch" };
+            }
+        }
+        return null;
+    };
+    const out = [];
+    for (const s of sourceLabels) {
+        const sCid = (s.concept_id || "").trim();
+        if (!sCid || !nodes[sCid])
+            continue;
+        for (const t of targetLabels) {
+            const tCid = (t.concept_id || "").trim();
+            if (!tCid || !nodes[tCid])
+                continue;
+            const m = matchNodes(nodes[sCid], nodes[tCid]);
+            if (m) {
+                out.push({
+                    source_value: s.raw_value,
+                    source_concept_id: sCid,
+                    target_value: t.raw_value,
+                    target_concept_id: tCid,
+                    shared_anchor_uri: m.shared,
+                    match_predicate: m.predicate,
+                });
+            }
+        }
+    }
+    return out.sort((x, y) => x.source_value.localeCompare(y.source_value) || x.target_value.localeCompare(y.target_value));
 }
 /**
  * Formats a ResourceTriad into canonical 'dataset:resource' or 'catalog:dataset:resource' string.

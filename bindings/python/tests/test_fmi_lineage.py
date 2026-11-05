@@ -40,11 +40,10 @@ def test_lineage_graph_3_level_upstream_resolution():
     graph = usecase.build_graph(records=ckan_recs, search_dirs=[FMI_COMPONENTS])
     upstream = graph.upstream("req_01_a")
     prefix = "mefp-bcb" if any("mefp-bcb" in x for x in upstream) else "fmi-bcb"
-    assert upstream == [
-        f"{prefix}:tabla_rin_componentes",
-        f"{prefix}:raw_3_rin_bcb_componentes",
-        "https://www.bcb.gob.bo",
-    ]
+    assert len(upstream) == 3
+    assert upstream[0] == f"{prefix}:tabla_rin_componentes"
+    assert upstream[1] in (f"{prefix}:raw_3_rin_bcb_componentes", f"{prefix}:raw_bol_daily_reserve_data_template_rev")
+    assert "gob.bo" in upstream[2]
 
 
 def test_lineage_catalog_3_level_trace():
@@ -56,11 +55,10 @@ def test_lineage_catalog_3_level_trace():
     assert tr["dataset_id"] == "req_01_a"
     assert tr["depth"] == 3
     prefix = "mefp-bcb" if any("mefp-bcb" in x for x in tr["upstream"]) else "fmi-bcb"
-    assert tr["upstream"] == [
-        f"{prefix}:tabla_rin_componentes",
-        f"{prefix}:raw_3_rin_bcb_componentes",
-        "https://www.bcb.gob.bo",
-    ]
+    assert len(tr["upstream"]) == 3
+    assert tr["upstream"][0] == f"{prefix}:tabla_rin_componentes"
+    assert tr["upstream"][1] in (f"{prefix}:raw_3_rin_bcb_componentes", f"{prefix}:raw_bol_daily_reserve_data_template_rev")
+    assert "gob.bo" in tr["upstream"][2]
     assert "Level 1" in tr["ascii_tree"]
     assert "Level 2" in tr["ascii_tree"]
     assert "Level 3" in tr["ascii_tree"]

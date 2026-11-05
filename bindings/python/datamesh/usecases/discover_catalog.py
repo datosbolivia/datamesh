@@ -24,9 +24,15 @@ class DiscoverCatalogUseCase:
         self._urls_provider = urls_provider
 
     def execute(self, catalog_url: Optional[str] = None) -> Dict[str, Any]:
-        go_result = self._bridge.call("DataMeshDiscoverCatalog", catalog_url or None)
-        if go_result:
-            return go_result
+        import os
+        has_env_override = any(
+            os.environ.get(k)
+            for k in ("DATAMESH_CATALOGS", "DATAMESH_CATALOG_URLS", "DATAMESH_CATALOG_URL", "CKAN_URL", "CKAN_BASE_URL")
+        )
+        if catalog_url or not has_env_override:
+            go_result = self._bridge.call("DataMeshDiscoverCatalog", catalog_url or None)
+            if go_result:
+                return go_result
 
         urls = [catalog_url] if catalog_url else self._urls_provider()
         if len(urls) == 1:

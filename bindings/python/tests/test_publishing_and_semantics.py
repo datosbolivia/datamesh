@@ -140,3 +140,86 @@ def test_publish_usecase_with_lineage_and_dependencies(tmp_path: Path):
     assert "was_derived_from:" in content
     assert "fmi-bcb:tabla_rin_componentes" in content
 
+
+def test_value_label_concept_skos_correspondence_and_go_core_bridge():
+    from datamesh.domain.models import CanonicalURI
+
+    # 1. Sovereign DNS (@), okf://, and #fragment parsing
+    u1 = CanonicalURI.parse("elecciones_2025.votos_municipales@bolivia#scz.parquet")
+    assert u1 is not None
+    assert u1.catalog == "bolivia"
+    assert u1.dataset == "elecciones_2025"
+    assert u1.resource == "votos_municipales"
+    assert u1.fragment == "scz.parquet"
+
+    u2 = CanonicalURI.parse("okf://ine_bolivia/censo_2024/manzanas#lapaz.csv")
+    assert u2 is not None
+    assert u2.catalog == "ine_bolivia"
+    assert u2.dataset == "censo_2024"
+    assert u2.resource == "manzanas"
+    assert u2.fragment == "lapaz.csv"
+
+    # 2. ValueLabel -> Concept -> SKOS correspondence resolution across two datasets
+    src_map = {
+        "field_name": "entidad_municipal",
+        "value_labels": [
+            {
+                "raw_value": "Gobierno Autónomo Municipal De La Paz",
+                "concept_id": "presupuesto_2025:concepts/gam_la_paz.md",
+                "alt_labels": ["GAMLP"],
+            },
+            {
+                "raw_value": "Gobierno Autónomo Municipal de Santa Cruz",
+                "concept_id": "presupuesto_2025:concepts/gam_scz.md",
+            },
+        ],
+    }
+    tgt_map = {
+        "field_name": "cod_ine",
+        "value_labels": [
+            {
+                "raw_value": "020101",
+                "concept_id": "censo_2024:concepts/mun_020101.md",
+            },
+            {
+                "raw_value": "070101",
+                "concept_id": "censo_2024:concepts/mun_070101.md",
+            },
+        ],
+    }
+    catalog = {
+        "presupuesto_2025:concepts/gam_la_paz.md": {
+            "concept_id": "presupuesto_2025:concepts/gam_la_paz.md",
+            "exact_match": ["http://www.wikidata.org/entity/Q1491"],
+        },
+        "censo_2024:concepts/mun_020101.md": {
+            "concept_id": "censo_2024:concepts/mun_020101.md",
+            "exact_match": ["http://www.wikidata.org/entity/Q1491"],
+        },
+        "presupuesto_2025:concepts/gam_scz.md": {
+            "concept_id": "presupuesto_2025:concepts/gam_scz.md",
+            "exact_match": ["censo_2024:concepts/mun_070101.md"],
+        },
+        "censo_2024:concepts/mun_070101.md": {
+            "concept_id": "censo_2024:concepts/mun_070101.md",
+            "skos": ["http://www.wikidata.org/entity/Q170688"],
+        },
+    }
+
+    corrs = dm.resolve_concept_correspondences(src_map, tgt_map, catalog)
+    assert len(corrs) == 2
+    assert corrs[0]["source_value"] == "Gobierno Autónomo Municipal De La Paz"
+    assert corrs[0]["target_value"] == "020101"
+    assert corrs[0]["shared_anchor_uri"] == "http://www.wikidata.org/entity/Q1491"
+    assert corrs[0]["match_predicate"] == "skos:exactMatch"
+
+    assert corrs[1]["source_value"] == "Gobierno Autónomo Municipal de Santa Cruz"
+    assert corrs[1]["target_value"] == "070101"
+    assert corrs[1]["shared_anchor_uri"] == "censo_2024:concepts/mun_070101.md"
+    assert corrs[1]["match_predicate"] == "direct_concept_ref"
+
+    join_sql = dm.generate_cross_dataset_join_sql(src_map, "a", tgt_map, "b", catalog)
+    assert "WHEN a.entidad_municipal = 'Gobierno Autónomo Municipal De La Paz' THEN 'http://www.wikidata.org/entity/Q1491'" in join_sql
+    assert "WHEN b.cod_ine = '020101' THEN 'http://www.wikidata.org/entity/Q1491'" in join_sql
+
+

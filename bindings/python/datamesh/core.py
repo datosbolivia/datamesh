@@ -250,6 +250,58 @@ class DataMeshRuntime:
         mappings = self._semantic_aligner.extract_mappings(datapackage_or_schema)
         return [m.to_dict() for m in mappings]
 
+    def resolve_concept_correspondences(
+        self,
+        source_mapping: Dict[str, Any],
+        target_mapping: Dict[str, Any],
+        concept_catalog: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Resolves ValueLabel -> Concept -> SKOS correspondences between two datasets."""
+        corrs = self._semantic_aligner.resolve_concept_correspondences(
+            source_mapping=source_mapping,
+            target_mapping=target_mapping,
+            concept_catalog=concept_catalog,
+            bridge=self._bridge,
+        )
+        return [c.to_dict() for c in corrs]
+
+    def generate_cross_dataset_join_sql(
+        self,
+        source_mapping: Dict[str, Any],
+        source_alias: str,
+        target_mapping: Dict[str, Any],
+        target_alias: str,
+        concept_catalog: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Generates deterministic ANSI SQL join expression via ValueLabel -> Concept -> SKOS correspondence."""
+        return self._semantic_aligner.generate_cross_dataset_join_sql(
+            source_mapping=source_mapping,
+            source_alias=source_alias,
+            target_mapping=target_mapping,
+            target_alias=target_alias,
+            concept_catalog=concept_catalog,
+            bridge=self._bridge,
+        )
+
+    def diff_bundles(self, old_path: Union[str, Path], new_path: Union[str, Path]) -> Dict[str, Any]:
+        """Computes SemVer 2.0.0 structural/semantic bundle diff (Go Core first)."""
+        go_diff = self._bridge.diff_bundles(str(old_path), str(new_path))
+        if go_diff is not None:
+            return go_diff
+        return {"old_path": str(old_path), "new_path": str(new_path), "recommended_bump": "NONE", "changes": []}
+
+    def attest_computation(
+        self,
+        concept_path: Union[str, Path],
+        actual_sql: str = "",
+        actual_result: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Verifies an Attested Computation receipt and returns AttestationVerdict (Go Core first)."""
+        go_verdict = self._bridge.attest_computation(str(concept_path), actual_sql, actual_result)
+        if go_verdict is not None:
+            return go_verdict
+        return {"verdict": "error", "reason": "Go core library unavailable for attestation"}
+
     def discover_endpoint(self, target_url: str) -> Optional[WellKnownDiscovery]:
         """Discovers catalog metadata and auth specs via /.well-known/datamesh.json."""
         return self._discover_usecase.execute(target_url)

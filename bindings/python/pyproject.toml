@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datamesh-sdk"
-version = "0.2.0"
+version = "0.2.2rc1"
 description = "DataMesh Sovereign SDK (OKF v0.2, DuckDB SQL, Multi-Catalog & MCP)"
 readme = "README.md"
 requires-python = ">=3.9"

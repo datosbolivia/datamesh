@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from datamesh.core import DataMeshRuntime
 
-__version__ = "0.2.1"
+__version__ = "0.2.2-rc.1"
 
 _runtime = DataMeshRuntime()
 
@@ -81,6 +81,38 @@ def publish(
 def align_semantics(datapackage_or_schema: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Extract semantic field mappings from a DataPackage or schema."""
     return _runtime.align_semantics(datapackage_or_schema)
+
+def resolve_concept_correspondences(
+    source_mapping: Dict[str, Any],
+    target_mapping: Dict[str, Any],
+    concept_catalog: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Resolve ValueLabel -> Concept -> SKOS correspondences between two datasets."""
+    return _runtime.resolve_concept_correspondences(source_mapping, target_mapping, concept_catalog)
+
+def generate_cross_dataset_join_sql(
+    source_mapping: Dict[str, Any],
+    source_alias: str,
+    target_mapping: Dict[str, Any],
+    target_alias: str,
+    concept_catalog: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Generate deterministic ANSI SQL join expression via ValueLabel -> Concept -> SKOS correspondence."""
+    return _runtime.generate_cross_dataset_join_sql(
+        source_mapping, source_alias, target_mapping, target_alias, concept_catalog
+    )
+
+def diff_bundles(old_path: Union[str, Path], new_path: Union[str, Path]) -> Dict[str, Any]:
+    """Compute SemVer 2.0.0 structural/semantic bundle diff."""
+    return _runtime.diff_bundles(old_path, new_path)
+
+def attest_computation(
+    concept_path: Union[str, Path],
+    actual_sql: str = "",
+    actual_result: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Verify an Attested Computation receipt and return AttestationVerdict."""
+    return _runtime.attest_computation(concept_path, actual_sql, actual_result)
 
 def discover_endpoint(target_url: str) -> Optional[WellKnownDiscovery]:
     """Discover catalog metadata, capabilities, and auth specifications via /.well-known/datamesh.json or active probing."""
@@ -214,6 +246,11 @@ from datamesh.domain.models import (
     SpatialCoverage,
     TemporalCoverage,
     QualityProfile,
+    ValueLabelConceptEntry,
+    ConceptNodeSKOS,
+    ConceptCorrespondence,
+    AttestationVerdict,
+    PolicySpec,
     SemanticFieldMapping,
     PublicationTargetResult,
     WellKnownDiscovery,
@@ -279,6 +316,10 @@ __all__ = [
     "validate",
     "publish",
     "align_semantics",
+    "resolve_concept_correspondences",
+    "generate_cross_dataset_join_sql",
+    "diff_bundles",
+    "attest_computation",
     "harvest_ckan",
     "lineage",
     "get_lineage",
@@ -308,6 +349,11 @@ __all__ = [
     "SpatialCoverage",
     "TemporalCoverage",
     "QualityProfile",
+    "ValueLabelConceptEntry",
+    "ConceptNodeSKOS",
+    "ConceptCorrespondence",
+    "AttestationVerdict",
+    "PolicySpec",
     "SemanticFieldMapping",
     "PublicationTargetResult",
     "WellKnownDiscovery",

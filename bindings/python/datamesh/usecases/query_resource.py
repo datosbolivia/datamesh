@@ -21,14 +21,16 @@ class QueryResourceUseCase:
         filters: Optional[Dict[str, str]] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        options: Dict[str, Any] = {}
-        if filters:
-            options["filters"] = filters
-        if limit:
-            options["limit"] = limit
-        go_result = self._bridge.call_with_options("DataMeshQueryResource", options, resource_uri)
-        if go_result:
-            return go_result
+        uri_clean = resource_uri.split("?")[0].split("#")[0].lower()
+        if not uri_clean.endswith((".parquet", ".pq", ".zip")):
+            options: Dict[str, Any] = {}
+            if filters:
+                options["filters"] = filters
+            if limit:
+                options["limit"] = limit
+            go_result = self._bridge.call_with_options("DataMeshQueryResource", options, resource_uri)
+            if go_result:
+                return go_result
 
         return self._query_python(resource_uri, filters, limit)
 

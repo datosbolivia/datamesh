@@ -285,4 +285,223 @@ Código único de 6 dígitos asignado por el INE a cada municipio de Bolivia.
     assert resp_ctx is not None
     ctx_payload = json.loads(resp_ctx["result"]["content"][0]["text"])
     assert ctx_payload["total_datasets"] == 1
+    assert len(ctx_payload["services"]) == 1
+    assert ctx_payload["services"][0]["title"] == "Servicio de Riesgo Municipal"
+    assert len(ctx_payload["cli_tools"]) == 1
+    assert ctx_payload["cli_tools"][0]["title"] == "okf-geo enrich-municipio"
+    assert len(ctx_payload["concepts"]) >= 1
     assert "geo-municipio:tabla_municipios" in ctx_payload["context_markdown"]
+
+    # 4. Inspect Knowledge Graph v2 via MCP datamesh_get_knowledge_graph
+    resp_kg = handle_jsonrpc({
+        "jsonrpc": "2.0",
+        "id": 13,
+        "method": "tools/call",
+        "params": {
+            "name": "datamesh_get_knowledge_graph",
+            "arguments": {},
+        },
+    })
+    assert resp_kg is not None
+    kg_payload = json.loads(resp_kg["result"]["content"][0]["text"])
+    geo_dataset_nodes = [n for n in kg_payload["nodes"] if n["type"] == "dataset" and n.get("slug") == "geo-municipio"]
+    assert len(geo_dataset_nodes) == 1
+    service_nodes = [n for n in kg_payload["nodes"] if n["type"] == "service" and "geo-municipio" in n["id"]]
+    assert len(service_nodes) == 1
+    assert service_nodes[0]["title"] == "Servicio de Riesgo Municipal"
+    edge_tuples = {(e["source"], e["target"], e["relation"]) for e in kg_payload["edges"]}
+    assert ("service:geo-municipio:./openapi.yaml", "wd:Q15284", "ACCEPTS_CONCEPT") in edge_tuples
+    assert ("service:geo-municipio:./openapi.yaml", "wd:Q7944", "RETURNS_CONCEPT") in edge_tuples
+    assert ("cli:geo-municipio:okf-geo enrich-municipio", "wd:Q15284", "ACCEPTS_CONCEPT") in edge_tuples
+    assert ("cli:geo-municipio:okf-geo enrich-municipio", "wd:Q186588", "RETURNS_CONCEPT") in edge_tuples
+
+
+def test_external_owl_cli_contract_and_openapi_array_response(tmp_path: Path):
+    bundle_dir = tmp_path / "ext-cli-bundle"
+    bundle_dir.mkdir(parents=True)
+
+    (bundle_dir / "index.md").write_text(
+        """---
+type: dataset
+title: Bundle con CLI Externo
+contracts:
+  - type: owl-cli
+    path: ./owl-cli.yaml
+  - type: datapackage
+    path: ./datapackage.yaml
+  - type: openapi
+    path: ./openapi.yaml
+---
+# Bundle con CLI Externo
+""",
+        encoding="utf-8",
+    )
+
+    (bundle_dir / "owl-cli.yaml").write_text(
+        """binary: okf-spatial
+subcommand: intersect
+arguments:
+  - name: cod_ine
+    flag: --municipio
+    type: string
+    required: true
+    concept: wd:Q15284
+    description: Código INE municipal
+output:
+  format: geojson
+  concept: wd:Q186588
+  description: Geometría resultante
+""",
+        encoding="utf-8",
+    )
+
+    (bundle_dir / "datapackage.yaml").write_text(
+        """name: ext-cli-bundle
+resources:
+  - name: cobertura
+    path: data/cobertura.csv
+    format: csv
+    schema:
+      fields:
+        - name: cod_ine
+          type: string
+          concept: wd:Q15284
+""",
+        encoding="utf-8",
+    )
+
+    (bundle_dir / "openapi.yaml").write_text(
+        """openapi: 3.1.0
+info:
+  title: API de Cobertura
+  version: 1.0.0
+paths:
+  /v1/cobertura:
+    get:
+      summary: Lista cobertura
+      responses:
+        "200":
+          description: OK
+          x-okf-concept: wd:Q15284
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    cod_ine:
+                      type: string
+                      x-okf-concept: wd:Q15284
+                    porcentaje:
+                      type: number
+                      x-okf-concept: wd:Q7944
+""",
+        encoding="utf-8",
+    )
+
+    dp = dm.get(str(bundle_dir))
+    assert dp is not None
+    resources = dp.resources if hasattr(dp, "resources") else dp.get("resources", [])
+    description = dp.description if hasattr(dp, "description") else dp.get("description", "")
+    assert len(resources) == 1
+    res_name = resources[0].name if hasattr(resources[0], "name") else resources[0]["name"]
+    assert res_name == "cobertura"
+    assert "okf-spatial intersect" in description
+    assert "`--municipio`" in description
+    assert "wd:Q186588" in description
+    assert "wd:Q7944" in description
+
+
+def test_explain_categories_curie_filename_and_okf_validation(tmp_path: Path):
+    bundle_dir = tmp_path / "curie-bundle"
+    data_dir = bundle_dir / "data"
+    data_dir.mkdir(parents=True)
+
+    csv_file = data_dir / "ventas.csv"
+    csv_file.write_text("cod_ine,departamento,monto\n020101,La Paz,100.5\n070101,Santa Cruz,250.0\n", encoding="utf-8")
+
+    (bundle_dir / "index.md").write_text(
+        """---
+type: dataset
+title: Ventas por Departamento
+dimensions:
+  - departamento
+contracts:
+  - type: datapackage
+    path: ./datapackage.yaml
+---
+# Ventas por Departamento
+""",
+        encoding="utf-8",
+    )
+
+    pkg_path = bundle_dir / "datapackage.yaml"
+    pkg = dm.create_datapackage(
+        name="curie-bundle",
+        title="Ventas por Departamento",
+        files=[csv_file],
+        output_file=pkg_path,
+    )
+    assert pkg.name == "curie-bundle"
+
+    dm.link_concept(
+        datapackage_path_or_dict=pkg_path,
+        resource_name="ventas",
+        column_name="departamento",
+        concept_ref="wd:Q250050",
+        value_mappings={
+            "La Paz": {"label": "Departamento de La Paz"},
+            "Santa Cruz": {"label": "Departamento de Santa Cruz"},
+        },
+        save_to_path=pkg_path,
+    )
+    docs = dm.explain_categories(pkg_path, output_concepts_dir=bundle_dir / "concepts")
+    assert len(docs) == 1
+
+    concept_path = bundle_dir / "concepts" / "departamento.md"
+    assert concept_path.exists()
+    content = concept_path.read_text(encoding="utf-8")
+    assert "skos:" in content
+    assert "exact_match:" in content
+    assert "wd:Q250050" in content
+
+    val_report = dm.validate(str(bundle_dir / "index.md"))
+    assert val_report["valid"] is True
+    assert val_report["total_errors"] == 0
+
+
+def test_server_well_known_and_mcp_202(monkeypatch):
+    import threading
+    import urllib.request
+    from datamesh.server import DataMeshServerHandler, ReusableHTTPServer
+
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+
+    srv = ReusableHTTPServer(("127.0.0.1", 0), DataMeshServerHandler)
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        base_url = f"http://127.0.0.1:{port}"
+        disc = dm.discover_endpoint(base_url)
+        assert disc is not None
+        schema_ver = disc.schema_version if hasattr(disc, "schema_version") else disc.get("schema_version")
+        caps = disc.capabilities if hasattr(disc, "capabilities") else disc.get("capabilities", {})
+        assert schema_ver.startswith("0.2")
+        assert caps.get("mcp") is True
+
+        req = urllib.request.Request(
+            f"{base_url}/mcp",
+            data=json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            assert resp.status == 202
+            assert resp.read() == b""
+    finally:
+        srv.shutdown()
+        srv.server_close()
+

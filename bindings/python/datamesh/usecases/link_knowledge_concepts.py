@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -196,13 +197,21 @@ class LinkKnowledgeConceptsUseCase:
                                 concept=linked_concept,
                             ))
 
-                        concept_id = f.get("concept") or f"concepts/{field_name.lower()}.md"
-                        clean_id = concept_id.split("/")[-1].replace(".md", "")
+                        raw_concept = str(f.get("concept") or "").strip()
+                        exact_match_uri: Optional[str] = None
+                        if raw_concept and (":" in raw_concept or raw_concept.startswith(("http://", "https://"))):
+                            exact_match_uri = raw_concept
+                            clean_id = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(field_name).lower()).strip("_") or "campo"
+                        else:
+                            concept_id = raw_concept or f"concepts/{field_name.lower()}.md"
+                            clean_id = concept_id.split("/")[-1].replace(".md", "")
+                            clean_id = re.sub(r"[^a-zA-Z0-9_\-]+", "_", clean_id).strip("_") or "campo"
                         doc = cls.create_concept_doc(
                             concept_id=clean_id,
                             title=title,
                             pref_label=title,
                             description=desc,
+                            exact_match=exact_match_uri,
                             categories=cats,
                             output_dir=out_p,
                         )

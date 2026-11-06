@@ -10,7 +10,12 @@ from typing import Any, Dict, List, Optional
 import datamesh as dm
 from datamesh.adapters.engine.sql_utils import read_expression
 from datamesh.net import is_forbidden_local_ref, validate_proxy_url
-from datamesh.usecases.resolve_dataproduct import strip_ojs_blocks
+from datamesh.usecases.resolve_dataproduct import _hydrate_external_cli_contract, strip_ojs_blocks
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 SERVER_NAME = "datamesh-mcp-server"
 SERVER_VERSION = "0.2.2"
@@ -340,8 +345,12 @@ def _extract_slug_from_uri(uri: str, fallback: str = "") -> str:
 
 def build_knowledge_graph_v2(catalog_url: Optional[str] = None) -> Dict[str, Any]:
     """Builds the Unified Semantic Knowledge Graph v2 across catalog entries and local bundles."""
-    catalog = dm.discover(catalog_url)
+    try:
+        catalog = dm.discover(catalog_url)
+    except Exception:
+        catalog = {"entries": []}
     nodes_by_id: Dict[str, Dict[str, Any]] = {}
+    dataset_node_id_by_slug: Dict[str, str] = {}
     edges: List[Dict[str, Any]] = []
     seen_edges: set[tuple[str, str, str]] = set()
     link_pattern = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
@@ -364,10 +373,22 @@ def build_knowledge_graph_v2(catalog_url: Optional[str] = None) -> Dict[str, Any
         key = (source, target, edge_type)
         if key not in seen_edges:
             seen_edges.add(key)
-            edge: Dict[str, Any] = {"source": source, "target": target, "type": edge_type}
+            edge: Dict[str, Any] = {"source": source, "target": target, "type": edge_type, "relation": edge_type}
             if label:
                 edge["label"] = label
             edges.append(edge)
+
+    candidate_bundle_dirs: List[Path] = []
+    seen_bundle_dirs: set[Path] = set()
+
+    def _register_bundle_dir(p: Path) -> None:
+        try:
+            resolved = p.resolve()
+        except Exception:
+            resolved = p
+        if resolved not in seen_bundle_dirs and p.is_dir() and (p / "index.md").exists():
+            seen_bundle_dirs.add(resolved)
+            candidate_bundle_dirs.append(p)
 
     entries = catalog.get("entries", [])
     for entry in entries:
@@ -376,6 +397,9 @@ def build_knowledge_graph_v2(catalog_url: Optional[str] = None) -> Dict[str, Any
         raw_desc = entry.get("description", "")
         domain_name = entry.get("domain", "")
         slug = _extract_slug_from_uri(entry.get("uri") or node_id, title)
+
+        if slug and slug not in dataset_node_id_by_slug:
+            dataset_node_id_by_slug[slug] = node_id
 
         _add_node(
             node_id,
@@ -386,6 +410,18 @@ def build_knowledge_graph_v2(catalog_url: Optional[str] = None) -> Dict[str, Any
             description=raw_desc,
             catalog_source=entry.get("catalog_source", ""),
         )
+
+        # Check if resolved_url points to a local bundle on disk
+        for cand_str in (entry.get("resolved_url"), entry.get("uri")):
+            if not cand_str or str(cand_str).startswith(("http://", "https://")):
+                continue
+            local_s = str(cand_str).removeprefix("file://")
+            p_cand = Path(local_s)
+            if p_cand.exists():
+                if p_cand.is_file() and p_cand.name == "index.md":
+                    _register_bundle_dir(p_cand.parent)
+                elif p_cand.is_dir():
+                    _register_bundle_dir(p_cand)
 
         # Register declared resources in llms.txt entry
         for res_name in entry.get("resources") or []:
@@ -400,78 +436,157 @@ def build_knowledge_graph_v2(catalog_url: Optional[str] = None) -> Dict[str, Any
             _add_node(target, title=anchor_text, node_type=target_type)
             _add_edge(node_id, target, "MEASURES_CONCEPT" if target_type == "concept" else "REFERENCES", label=anchor_text)
 
-    # Also scan local workspace bundles if available to enrich with fields, OpenAPI services, CLI tools, and SKOS concepts
+    # Discover local roots from CWD and from catalog_url / source_url if local
     local_roots = [Path("knowledge/nodes"), Path("bundles"), Path("examples/bundles")]
+    for cat_src in (catalog_url, catalog.get("source_url")):
+        if cat_src and not str(cat_src).startswith(("http://", "https://")):
+            clean_src = Path(str(cat_src).removeprefix("file://"))
+            if clean_src.exists():
+                base_p = clean_src.parent if clean_src.is_file() else clean_src
+                _register_bundle_dir(base_p)
+                local_roots.extend([base_p, base_p / "bundles", base_p / "nodes", base_p / "knowledge" / "nodes"])
+
     for root in local_roots:
         if not root.exists() or not root.is_dir():
             continue
-        for child in sorted(root.iterdir()):
-            if not child.is_dir() or not (child / "index.md").exists():
-                continue
-            try:
-                dp = dm.get(str(child))
-            except Exception:
-                continue
-            if not isinstance(dp, dict):
-                continue
-            manifest = dp.get("manifest") or {}
-            slug = child.name
-            ds_id = dp.get("id") or str(child)
-            ds_type = str(manifest.get("type") or "dataset").lower()
-            _add_node(ds_id, title=manifest.get("title") or slug, node_type=ds_type, slug=slug)
+        _register_bundle_dir(root)
+        try:
+            for child in sorted(root.iterdir()):
+                if child.is_dir():
+                    _register_bundle_dir(child)
+        except Exception:
+            pass
 
-            # Lineage edges
-            lineage_spec = manifest.get("lineage") or {}
-            for src in lineage_spec.get("sources") or []:
-                src_id = src.get("id") if isinstance(src, dict) else str(src)
-                if src_id:
-                    _add_edge(ds_id, src_id, "DERIVED_FROM", label="derived_from")
+    for child in candidate_bundle_dirs:
+        try:
+            dp = dm.get(str(child))
+        except Exception:
+            continue
+        if not isinstance(dp, dict):
+            continue
+        manifest = dp.get("manifest") or {}
+        slug = child.name
+        ds_id = dataset_node_id_by_slug.get(slug) or dp.get("id") or str(child)
+        dataset_node_id_by_slug[slug] = ds_id
+        ds_type = str(manifest.get("type") or "dataset").lower()
+        _add_node(ds_id, title=manifest.get("title") or slug, node_type=ds_type, slug=slug)
 
-            # Resources & semantic columns
-            for res in dp.get("resources") or []:
-                if not isinstance(res, dict):
-                    continue
-                r_name = str(res.get("name") or "resource")
-                triad = f"{slug}:{r_name}"
-                _add_node(triad, title=r_name, node_type="resource", triad=triad, format=res.get("format", ""))
-                _add_edge(ds_id, triad, "HAS_RESOURCE", label="has_resource")
-                for f in res.get("fields") or []:
-                    if isinstance(f, dict):
-                        c_ref = str(f.get("concept") or f.get("rdfType") or "").strip()
-                        if c_ref:
-                            _add_node(c_ref, title=f.get("title") or f.get("name") or c_ref, node_type="concept")
-                            _add_edge(triad, c_ref, "MEASURES_CONCEPT", label=str(f.get("name", "")))
+        # Lineage edges
+        lineage_spec = manifest.get("lineage") or {}
+        for src in lineage_spec.get("sources") or []:
+            src_id = src.get("id") if isinstance(src, dict) else str(src)
+            if src_id:
+                _add_edge(ds_id, src_id, "DERIVED_FROM", label="derived_from")
 
-            # Contracts: OpenAPI services & OWL-CLI tools
-            for c in manifest.get("contracts") or []:
-                if not isinstance(c, dict):
-                    continue
-                c_type = str(c.get("type") or "").lower()
-                if c_type in ("owl-cli", "okf-cli") or c.get("binary"):
-                    cmd = f"{c.get('binary', '')} {c.get('subcommand', '')}".strip() or "cli-tool"
-                    cli_id = f"cli:{slug}:{cmd}"
-                    _add_node(cli_id, title=cmd, node_type="cli_tool", binary=c.get("binary", ""))
-                    _add_edge(ds_id, cli_id, "PROVIDES_TOOL", label=c_type or "owl-cli")
-                    for inp in c.get("inputs") or []:
-                        if isinstance(inp, dict) and inp.get("concept"):
-                            c_ref = str(inp["concept"]).strip()
-                            _add_node(c_ref, title=c_ref, node_type="concept")
-                            _add_edge(cli_id, c_ref, "ACCEPTS_CONCEPT", label=str(inp.get("flag") or inp.get("name", "")))
-                    outputs = c.get("outputs")
-                    if isinstance(outputs, dict) and outputs.get("concept"):
-                        c_ref = str(outputs["concept"]).strip()
+        # Resources & semantic columns
+        for res in dp.get("resources") or []:
+            if not isinstance(res, dict):
+                continue
+            r_name = str(res.get("name") or "resource")
+            triad = f"{slug}:{r_name}"
+            _add_node(triad, title=r_name, node_type="resource", triad=triad, format=res.get("format", ""), dataset=slug)
+            _add_edge(ds_id, triad, "HAS_RESOURCE", label="has_resource")
+            for f in res.get("fields") or []:
+                if isinstance(f, dict):
+                    c_ref = str(f.get("concept") or f.get("rdfType") or "").strip()
+                    if c_ref:
+                        _add_node(c_ref, title=f.get("title") or f.get("name") or c_ref, node_type="concept")
+                        _add_edge(triad, c_ref, "MEASURES_CONCEPT", label=str(f.get("name", "")))
+
+        # Contracts: OpenAPI services & OWL-CLI tools
+        for c in manifest.get("contracts") or []:
+            if not isinstance(c, dict):
+                continue
+            c_copy = dict(c)
+            c_type = str(c_copy.get("type") or "").lower()
+            ref_p = str(c_copy.get("path") or c_copy.get("ref") or "").strip()
+            if (c_type in ("owl-cli", "okf-cli") or "owl-cli" in ref_p.lower() or "okf-cli" in ref_p.lower()) and ref_p and not c_copy.get("binary"):
+                ext_file = child / ref_p.lstrip("./")
+                if ext_file.exists():
+                    try:
+                        _hydrate_external_cli_contract(c_copy, ext_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+
+            if c_type in ("owl-cli", "okf-cli") or c_copy.get("binary"):
+                cmd = f"{c_copy.get('binary', '')} {c_copy.get('subcommand', '')}".strip() or "cli-tool"
+                cli_id = f"cli:{slug}:{cmd}"
+                _add_node(cli_id, title=cmd, node_type="cli_tool", binary=c_copy.get("binary", ""), slug=slug)
+                _add_edge(ds_id, cli_id, "PROVIDES_TOOL", label=c_type or "owl-cli")
+                for inp in c_copy.get("inputs") or c_copy.get("arguments") or []:
+                    if isinstance(inp, dict) and inp.get("concept"):
+                        c_ref = str(inp["concept"]).strip()
                         _add_node(c_ref, title=c_ref, node_type="concept")
-                        _add_edge(cli_id, c_ref, "RETURNS_CONCEPT", label=str(outputs.get("format", "stdout")))
-                elif c_type == "openapi":
-                    svc_id = f"service:{slug}:{c.get('path') or c.get('ref') or 'openapi'}"
-                    _add_node(svc_id, title=f"OpenAPI Service ({slug})", node_type="service")
-                    _add_edge(ds_id, svc_id, "PROVIDES_SERVICE", label="openapi")
+                        _add_edge(cli_id, c_ref, "ACCEPTS_CONCEPT", label=str(inp.get("flag") or inp.get("name", "")))
+                outputs = c_copy.get("outputs") or c_copy.get("output")
+                if isinstance(outputs, dict) and outputs.get("concept"):
+                    c_ref = str(outputs["concept"]).strip()
+                    _add_node(c_ref, title=c_ref, node_type="concept")
+                    _add_edge(cli_id, c_ref, "RETURNS_CONCEPT", label=str(outputs.get("format", "stdout")))
+            elif c_type == "openapi" or "openapi." in ref_p.lower() or "swagger." in ref_p.lower():
+                svc_id = f"service:{slug}:{ref_p or 'openapi'}"
+                svc_title = f"OpenAPI Service ({slug})"
+                oa_doc = None
+                if ref_p and yaml is not None:
+                    oa_file = child / ref_p.lstrip("./")
+                    if oa_file.exists():
+                        try:
+                            oa_doc = yaml.safe_load(oa_file.read_text(encoding="utf-8"))
+                        except Exception:
+                            oa_doc = None
+                if isinstance(oa_doc, dict):
+                    info_title = str((oa_doc.get("info") or {}).get("title") or "").strip()
+                    if info_title:
+                        svc_title = info_title
+                _add_node(svc_id, title=svc_title, node_type="service", slug=slug)
+                _add_edge(ds_id, svc_id, "PROVIDES_SERVICE", label="openapi")
 
-            # SKOS / OWL concept anchors on the node itself
-            for skos_uri in (manifest.get("skos") or []) + (manifest.get("exact_match") or []):
-                if skos_uri:
-                    _add_node(str(skos_uri), title=str(skos_uri), node_type="concept")
-                    _add_edge(ds_id, str(skos_uri), "SKOS_MATCH", label="skos:exactMatch")
+                if isinstance(oa_doc, dict):
+                    for path_str, methods in (oa_doc.get("paths") or {}).items():
+                        if not isinstance(methods, dict):
+                            continue
+                        for method_name, op in methods.items():
+                            if not isinstance(op, dict):
+                                continue
+                            for param in op.get("parameters") or []:
+                                if not isinstance(param, dict):
+                                    continue
+                                p_schema = param.get("schema") or {}
+                                p_concept = str(param.get("x-okf-concept") or p_schema.get("x-okf-concept") or "").strip()
+                                if p_concept:
+                                    _add_node(p_concept, title=p_concept, node_type="concept")
+                                    _add_edge(svc_id, p_concept, "ACCEPTS_CONCEPT", label=str(param.get("name") or path_str))
+                            for status_code, resp in (op.get("responses") or {}).items():
+                                if not isinstance(resp, dict):
+                                    continue
+                                r_concept = str(resp.get("x-okf-concept") or "").strip()
+                                if r_concept:
+                                    _add_node(r_concept, title=r_concept, node_type="concept")
+                                    _add_edge(svc_id, r_concept, "RETURNS_CONCEPT", label=f"HTTP {status_code}")
+                                for media in (resp.get("content") or {}).values():
+                                    if not isinstance(media, dict):
+                                        continue
+                                    m_schema = media.get("schema") or {}
+                                    for sc_cand in (
+                                        m_schema.get("x-okf-concept"),
+                                        (m_schema.get("items") or {}).get("x-okf-concept"),
+                                    ):
+                                        if sc_cand:
+                                            sc_str = str(sc_cand).strip()
+                                            _add_node(sc_str, title=sc_str, node_type="concept")
+                                            _add_edge(svc_id, sc_str, "RETURNS_CONCEPT", label=f"HTTP {status_code}")
+                                    props = m_schema.get("properties") or (m_schema.get("items") or {}).get("properties") or {}
+                                    for prop_name, prop_obj in props.items():
+                                        if isinstance(prop_obj, dict) and prop_obj.get("x-okf-concept"):
+                                            pc_str = str(prop_obj["x-okf-concept"]).strip()
+                                            _add_node(pc_str, title=pc_str, node_type="concept")
+                                            _add_edge(svc_id, pc_str, "RETURNS_CONCEPT", label=str(prop_name))
+
+        # SKOS / OWL concept anchors on the node itself
+        for skos_uri in (manifest.get("skos") or []) + (manifest.get("exact_match") or []):
+            if skos_uri:
+                _add_node(str(skos_uri), title=str(skos_uri), node_type="concept")
+                _add_edge(ds_id, str(skos_uri), "SKOS_MATCH", label="skos:exactMatch")
 
     nodes_list = list(nodes_by_id.values())
     return {
@@ -485,7 +600,7 @@ def build_knowledge_graph_v2(catalog_url: Optional[str] = None) -> Dict[str, Any
 
 def build_semantic_context_map(query: str, catalog_url: Optional[str] = None) -> Dict[str, Any]:
     """Builds a 4-part Semantic Context Map in Markdown for a query across datasets, concepts, services, and CLIs."""
-    matches = dm.search(query, catalog_url=catalog_url)
+    matches = list(dm.search(query, catalog_url=catalog_url))
     kg = build_knowledge_graph_v2(catalog_url=catalog_url)
     q_norm = dm._normalize_search_text(query)
     q_tokens = q_norm.split()
@@ -496,18 +611,91 @@ def build_semantic_context_map(query: str, catalog_url: Optional[str] = None) ->
         norm = dm._normalize_search_text(text)
         return all(t in norm for t in q_tokens)
 
-    concept_nodes = [
-        n for n in kg.get("nodes", [])
+    all_nodes: List[Dict[str, Any]] = kg.get("nodes", [])
+    all_edges: List[Dict[str, Any]] = kg.get("edges", [])
+    node_map: Dict[str, Dict[str, Any]] = {n["id"]: n for n in all_nodes if n.get("id")}
+
+    # 1. Initial lexical matches across graph nodes
+    matched_ds_ids: set[str] = set()
+    matched_slugs: set[str] = set()
+    for m in matches:
+        uri = m.get("resolved_url") or m.get("uri") or ""
+        slug = _extract_slug_from_uri(uri, m.get("title", ""))
+        if uri:
+            matched_ds_ids.add(uri)
+        if slug:
+            matched_slugs.add(slug)
+
+    for n in all_nodes:
+        nid = n.get("id", "")
+        ntype = n.get("type", "")
+        nslug = n.get("slug", "")
+        if ntype == "dataset" and (nid in matched_ds_ids or (nslug and nslug in matched_slugs) or _matches_tokens(f"{nid} {n.get('title', '')} {n.get('description', '')}")):
+            matched_ds_ids.add(nid)
+            if nslug:
+                matched_slugs.add(nslug)
+
+    matched_concept_ids: set[str] = {
+        n["id"] for n in all_nodes
         if n.get("type") == "concept" and _matches_tokens(f"{n.get('id', '')} {n.get('title', '')}")
-    ]
-    service_nodes = [
-        n for n in kg.get("nodes", [])
-        if n.get("type") == "service" and _matches_tokens(f"{n.get('id', '')} {n.get('title', '')}")
-    ]
-    cli_nodes = [
-        n for n in kg.get("nodes", [])
-        if n.get("type") == "cli_tool" and _matches_tokens(f"{n.get('id', '')} {n.get('title', '')}")
-    ]
+    }
+    matched_service_ids: set[str] = {
+        n["id"] for n in all_nodes
+        if n.get("type") == "service" and (_matches_tokens(f"{n.get('id', '')} {n.get('title', '')}") or (n.get("slug") in matched_slugs and bool(n.get("slug"))))
+    }
+    matched_cli_ids: set[str] = {
+        n["id"] for n in all_nodes
+        if n.get("type") == "cli_tool" and (_matches_tokens(f"{n.get('id', '')} {n.get('title', '')}") or (n.get("slug") in matched_slugs and bool(n.get("slug"))))
+    }
+
+    # 2. Graph edge propagation (2 hops: Dataset <-> Resource/Service/CLI <-> Concept)
+    matched_resource_ids: set[str] = set()
+    for e in all_edges:
+        src, tgt, etype = e.get("source", ""), e.get("target", ""), e.get("type", "")
+        if etype == "HAS_RESOURCE" and src in matched_ds_ids:
+            matched_resource_ids.add(tgt)
+        elif etype == "PROVIDES_SERVICE":
+            if src in matched_ds_ids:
+                matched_service_ids.add(tgt)
+            elif tgt in matched_service_ids:
+                matched_ds_ids.add(src)
+        elif etype == "PROVIDES_TOOL":
+            if src in matched_ds_ids:
+                matched_cli_ids.add(tgt)
+            elif tgt in matched_cli_ids:
+                matched_ds_ids.add(src)
+
+    for e in all_edges:
+        src, tgt, etype = e.get("source", ""), e.get("target", ""), e.get("type", "")
+        if etype in ("MEASURES_CONCEPT", "SKOS_MATCH") and (src in matched_ds_ids or src in matched_resource_ids):
+            matched_concept_ids.add(tgt)
+        elif etype in ("ACCEPTS_CONCEPT", "RETURNS_CONCEPT"):
+            if src in matched_service_ids or src in matched_cli_ids:
+                matched_concept_ids.add(tgt)
+            if tgt in matched_concept_ids:
+                src_node = node_map.get(src) or {}
+                if src_node.get("type") == "service":
+                    matched_service_ids.add(src)
+                elif src_node.get("type") == "cli_tool":
+                    matched_cli_ids.add(src)
+
+    # Propagate back from newly discovered services/CLIs/concepts to parent datasets
+    for e in all_edges:
+        src, tgt, etype = e.get("source", ""), e.get("target", ""), e.get("type", "")
+        if etype == "PROVIDES_SERVICE" and tgt in matched_service_ids:
+            matched_ds_ids.add(src)
+        elif etype == "PROVIDES_TOOL" and tgt in matched_cli_ids:
+            matched_ds_ids.add(src)
+        elif etype in ("MEASURES_CONCEPT", "SKOS_MATCH") and tgt in matched_concept_ids:
+            src_node = node_map.get(src) or {}
+            if src_node.get("type") == "dataset":
+                matched_ds_ids.add(src)
+            elif src_node.get("type") == "resource" and src_node.get("dataset"):
+                matched_slugs.add(src_node["dataset"])
+
+    concept_nodes = [node_map[cid] for cid in matched_concept_ids if cid in node_map and node_map[cid].get("type") == "concept"]
+    service_nodes = [node_map[sid] for sid in matched_service_ids if sid in node_map and node_map[sid].get("type") == "service"]
+    cli_nodes = [node_map[tid] for tid in matched_cli_ids if tid in node_map and node_map[tid].get("type") == "cli_tool"]
 
     md_lines = [f"# Mapa de Contexto Semántico: `{query}`", ""]
 

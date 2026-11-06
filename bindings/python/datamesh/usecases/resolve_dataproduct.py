@@ -208,15 +208,19 @@ def _synthesize_openapi_markdown(source_path: str, raw_text: str) -> str:
                     )
 
             responses = op.get("responses") or {}
-            for status, resp in responses.items():
+            for status in sorted(responses.keys()):
+                resp = responses[status]
                 if not isinstance(resp, dict):
                     continue
                 content = resp.get("content") or {}
+                rendered_props = False
                 for media in content.values():
                     if not isinstance(media, dict):
                         continue
-                    props = ((media.get("schema") or {}).get("properties")) or {}
+                    schema = media.get("schema") or {}
+                    props = schema.get("properties") or (schema.get("items") or {}).get("properties") or {}
                     if props:
+                        rendered_props = True
                         lines.append("")
                         lines.append(f"**Campos de Respuesta (`HTTP {status}`):**")
                         lines.append("")
@@ -231,7 +235,68 @@ def _synthesize_openapi_markdown(source_path: str, raw_text: str) -> str:
                                 f"| `{_escape_md_pipe(pn)}` | `{_escape_md_pipe(p_type)}` | "
                                 f"{_escape_md_pipe(concept)} | {_escape_md_pipe(desc)} |"
                             )
+                    else:
+                        schema_concept = str(
+                            schema.get("x-okf-concept")
+                            or (schema.get("items") or {}).get("x-okf-concept")
+                            or resp.get("x-okf-concept")
+                            or ""
+                        ).strip()
+                        if schema_concept:
+                            rendered_props = True
+                            s_type = str(schema.get("type") or "object")
+                            s_desc = str(
+                                schema.get("description")
+                                or (schema.get("items") or {}).get("description")
+                                or resp.get("description")
+                                or "—"
+                            ).strip()
+                            lines.append("")
+                            lines.append(f"**Campos de Respuesta (`HTTP {status}`):**")
+                            lines.append("")
+                            lines.append("| Propiedad (Output) | Tipo | Concepto Semántico (`x-okf-concept`) | Descripción |")
+                            lines.append("| :--- | :--- | :--- | :--- |")
+                            lines.append(
+                                f"| `(body)` | `{_escape_md_pipe(s_type)}` | "
+                                f"{_escape_md_pipe(schema_concept)} | {_escape_md_pipe(s_desc)} |"
+                            )
+                if not rendered_props and resp.get("x-okf-concept"):
+                    r_concept = str(resp["x-okf-concept"]).strip()
+                    r_desc = str(resp.get("description") or "—").strip()
+                    lines.append("")
+                    lines.append(f"**Campos de Respuesta (`HTTP {status}`):**")
+                    lines.append("")
+                    lines.append("| Propiedad (Output) | Tipo | Concepto Semántico (`x-okf-concept`) | Descripción |")
+                    lines.append("| :--- | :--- | :--- | :--- |")
+                    lines.append(
+                        f"| `(response)` | `any` | {_escape_md_pipe(r_concept)} | {_escape_md_pipe(r_desc)} |"
+                    )
     return "\n".join(lines).strip()
+
+
+def _hydrate_external_cli_contract(c: Dict[str, Any], raw_text: str) -> None:
+    if yaml is None or not raw_text:
+        return
+    try:
+        ext = yaml.safe_load(raw_text)
+    except Exception:
+        return
+    if not isinstance(ext, dict):
+        return
+    if not c.get("binary") and ext.get("binary"):
+        c["binary"] = ext["binary"]
+    if not c.get("subcommand") and ext.get("subcommand"):
+        c["subcommand"] = ext["subcommand"]
+    if not c.get("inputs"):
+        if ext.get("inputs"):
+            c["inputs"] = ext["inputs"]
+        elif ext.get("arguments"):
+            c["inputs"] = ext["arguments"]
+    if not c.get("outputs"):
+        if ext.get("outputs"):
+            c["outputs"] = ext["outputs"]
+        elif ext.get("output"):
+            c["outputs"] = ext["output"]
 
 
 def _synthesize_cli_markdown(c: Dict[str, Any]) -> str:
@@ -244,7 +309,7 @@ def _synthesize_cli_markdown(c: Dict[str, Any]) -> str:
     c_type = str(c.get("type") or "owl-cli")
     lines = [f"### Herramienta CLI Local (`{c_type}`): `{cmd_name}`"]
 
-    inputs = c.get("inputs") or []
+    inputs = c.get("inputs") or c.get("arguments") or []
     cmd_parts = [cmd_name]
     for inp in inputs:
         if isinstance(inp, dict):
@@ -271,7 +336,7 @@ def _synthesize_cli_markdown(c: Dict[str, Any]) -> str:
                 f"`{_escape_md_pipe(p_type)}` | {req_str} | {_escape_md_pipe(concept)} | {_escape_md_pipe(desc)} |"
             )
 
-    outputs = c.get("outputs")
+    outputs = c.get("outputs") or c.get("output")
     if isinstance(outputs, dict) and (outputs.get("format") or outputs.get("concept") or outputs.get("description")):
         out_fmt = str(outputs.get("format") or "stdout")
         out_concept = str(outputs.get("concept") or "—")
@@ -430,7 +495,12 @@ class ResolveDataProductUseCase:
                     raw_openapis[full_p] = fetch_text(full_p, timeout=3)
                 except Exception:
                     pass
-            else:
+            elif c_type in ("owl-cli", "okf-cli") or "owl-cli" in full_p.lower() or "okf-cli" in full_p.lower():
+                try:
+                    _hydrate_external_cli_contract(c, fetch_text(full_p, timeout=3))
+                except Exception:
+                    pass
+            elif c_type in ("", "datapackage", "frictionless"):
                 candidate_dp_files.append(full_p)
 
         if not is_specific_md:

@@ -167,27 +167,49 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 "pong": True,
                 "service": "datamesh-server",
                 "runtime": "python",
-                "version": "0.2.0",
+                "version": "0.2.2-rc.2",
                 "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
             self.wfile.write(json.dumps(resp).encode("utf-8"))
             return
 
         # 1.5 Protocol Discovery & Authentication Specs
-        if path == "/.well-known/datamesh.json":
+        if path in ("/.well-known/datamesh.json", "/.well-known/okf.json"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self._send_cors_headers()
             self.end_headers()
+            host_header = self.headers.get("Host") or "127.0.0.1:8000"
+            origin = f"http://{host_header}"
             info = {
+                "schema_version": "0.2.2",
                 "service": "datamesh-server",
-                "version": "0.2.0",
+                "version": "0.2.2-rc.2",
                 "protocol": "OKF/ODKF v0.2",
+                "catalog": {
+                    "name": "datamesh_sovereign_node",
+                    "title": "DataMesh Sovereign Node",
+                    "type": "okf",
+                    "catalog_url": f"{origin}/api/catalog",
+                    "api_endpoint": f"{origin}/api/sql",
+                    "description": "Sovereign DataMesh HTTP, DuckDB SQL & MCP Node",
+                },
                 "auth": {
+                    "type": "none",
+                    "required": False,
                     "schemes": ["did:github", "openssh", "ed25519"],
                     "handshake_endpoint": "/api/v1/handshake",
                 },
-                "capabilities": ["sql", "catalog", "mcp", "proxy", "granular_policy", "openssh_handshake"],
+                "capabilities": {
+                    "search": True,
+                    "sql_query": True,
+                    "knowledge_graph": True,
+                    "catalog": True,
+                    "mcp": True,
+                    "proxy": True,
+                    "granular_policy": True,
+                    "openssh_handshake": True,
+                },
                 "endpoints": {
                     "catalog": "/api/catalog",
                     "sql": "/api/sql",
@@ -373,6 +395,12 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 rpc_req = json.loads(body.decode("utf-8"))
                 from datamesh.mcp_server import handle_jsonrpc
                 rpc_resp = handle_jsonrpc(rpc_req)
+
+                if rpc_resp is None:
+                    self.send_response(202)
+                    self._send_cors_headers()
+                    self.end_headers()
+                    return
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

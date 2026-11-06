@@ -835,19 +835,36 @@ class KnowledgeConceptDoc:
             "---",
             "type: concept",
             f"title: \"{self.title}\"",
-            "skos:",
-            f"  prefLabel: \"{self.pref_label}\"",
+            "status: active",
+            f"pref_label: \"{self.pref_label}\"",
         ]
+        if self.description:
+            safe_desc = self.description.replace('"', '\\"')
+            lines.append(f"description: \"{safe_desc}\"")
+        skos_entries = []
+        if self.exact_match:
+            skos_entries.append(self.exact_match)
+        if self.broader:
+            skos_entries.append(self.broader)
+        for r in self.related:
+            if r not in skos_entries:
+                skos_entries.append(r)
+        if skos_entries:
+            lines.append("skos:")
+            for se in skos_entries:
+                lines.append(f"  - \"{se}\"")
         if self.alt_labels:
             alt_list = ", ".join(f'"{al}"' for al in self.alt_labels)
-            lines.append(f"  altLabel: [{alt_list}]")
+            lines.append(f"alt_labels: [{alt_list}]")
         if self.exact_match:
-            lines.append(f"  exactMatch: \"{self.exact_match}\"")
+            lines.append("exact_match:")
+            lines.append(f"  - \"{self.exact_match}\"")
         if self.broader:
-            lines.append(f"  broader: \"{self.broader}\"")
+            lines.append("broader:")
+            lines.append(f"  - \"{self.broader}\"")
         if self.related:
             rel_list = ", ".join(f'"{r}"' for r in self.related)
-            lines.append(f"  related: [{rel_list}]")
+            lines.append(f"related: [{rel_list}]")
         lines.append("---")
         lines.append("")
         lines.append(f"# {self.title}")

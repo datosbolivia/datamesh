@@ -14,7 +14,7 @@ def parse_llms_txt(content: str, source_url: str) -> Dict[str, Any]:
     ODKF requirement/bullet format (``### [REQ-01] ...`` plus ``* [ID] ... : /raw``).
     """
     entries: List[Dict[str, Any]] = []
-    entry_pattern = re.compile(r"^-\s*\[(.*?)\]\((.*?)\)(?::\s*(.*))?$")
+    entry_pattern = re.compile(r"^-\s*\[([^\]]+)\]\(([^)\s]+)\)(?:\s*(?::|-|—)\s*(.*))?$")
     domain_pattern = re.compile(r"\(Dominio:\s*([^)]*?)(?:\.|\)|Recursos:)")
     rec_pattern = re.compile(r"Recursos:\s*([^)]+)\)")
 

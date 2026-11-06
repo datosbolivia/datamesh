@@ -54,7 +54,76 @@ class WellKnownResolverAdapter(WellKnownResolverPort):
                 logger.debug("Well-known probe failed at %s: %s", url, e)
 
         # 2. Heuristic probe for CKAN API status if no well-known document is published
-        return self._probe_ckan_fallback(origin, base_path, headers)
+        ckan_disc = self._probe_ckan_fallback(origin, base_path, headers)
+        if ckan_disc is not None:
+            return ckan_disc
+
+        # 3. Heuristic probe for OKF / llms.txt sovereign catalog
+        return self._probe_llmstxt_fallback(origin, base_path, headers)
+
+    def _probe_llmstxt_fallback(
+        self,
+        origin: str,
+        base_path: str,
+        headers: dict,
+    ) -> Optional[WellKnownDiscovery]:
+        llms_candidates = []
+        if base_path and base_path != "/":
+            if base_path.endswith("/llms.txt") or base_path.endswith("/llm.txt") or base_path.endswith("/llms-full.txt"):
+                llms_candidates.append(f"{origin}{base_path}")
+            else:
+                llms_candidates.append(f"{origin}{base_path}/llms.txt")
+        llms_candidates.extend([
+            f"{origin}/llms.txt",
+            f"{origin}/llms-full.txt",
+        ])
+
+        text_headers = {
+            "Accept": "text/plain, text/markdown, */*",
+            "User-Agent": headers.get("User-Agent", "datamesh-sdk/0.2.2 (WellKnownDiscovery)"),
+        }
+
+        for probe_url in llms_candidates:
+            req = urllib.request.Request(probe_url, headers=text_headers)
+            try:
+                with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                    if resp.status == 200:
+                        raw_text = resp.read().decode("utf-8", errors="replace")
+                        if "# " in raw_text and ("- [" in raw_text or "* [" in raw_text):
+                            site_title = origin
+                            site_desc = "Discovered via OKF / llms.txt sovereign catalog probe"
+                            for line in raw_text.splitlines():
+                                ls = line.strip()
+                                if ls.startswith("# ") and site_title == origin:
+                                    site_title = ls[2:].strip()
+                                elif ls.startswith("> ") and site_desc.startswith("Discovered via"):
+                                    site_desc = ls[2:].strip()
+                            parsed_origin = urllib.parse.urlparse(origin)
+                            slug_name = (parsed_origin.netloc or site_title).lower().replace(".", "_").replace(" ", "_")
+                            return WellKnownDiscovery(
+                                schema_version="0.2.2",
+                                catalog=CatalogMetadata(
+                                    name=slug_name,
+                                    title=site_title,
+                                    catalog_url=probe_url,
+                                    catalog_type="okf",
+                                    api_endpoint=probe_url,
+                                    description=site_desc,
+                                ),
+                                auth=AuthConfiguration(
+                                    auth_type="none",
+                                    required=False,
+                                ),
+                                capabilities={
+                                    "search": True,
+                                    "sql_query": True,
+                                    "knowledge_graph": True,
+                                    "harvesting": True,
+                                },
+                            )
+            except Exception:
+                pass
+        return None
 
     def _probe_ckan_fallback(
         self,

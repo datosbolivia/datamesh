@@ -18,6 +18,7 @@ def test_storage_config_respects_env_datamesh_config_file(monkeypatch):
     assert cfg.config_file == FMI_DATAMESH_YML
 
 
+@pytest.mark.skipif(not FMI_COMPONENTS.exists(), reason="External FMI repository not present in environment")
 def test_component_lineage_extraction_req_01_a():
     usecase = DatasetLineageUseCase()
     comp_file = FMI_COMPONENTS / "req_01_a" / "datapackage.yml"
@@ -30,6 +31,7 @@ def test_component_lineage_extraction_req_01_a():
     assert len(info.was_derived_from) == 1
 
 
+@pytest.mark.skipif(not FMI_COMPONENTS.exists(), reason="External FMI repository not present in environment")
 def test_lineage_graph_3_level_upstream_resolution():
     if str(FMI_ROOT / "knowledge" / "lib") not in sys.path:
         sys.path.insert(0, str(FMI_ROOT / "knowledge" / "lib"))
@@ -46,6 +48,7 @@ def test_lineage_graph_3_level_upstream_resolution():
     assert "gob.bo" in upstream[2]
 
 
+@pytest.mark.skipif(not FMI_COMPONENTS.exists(), reason="External FMI repository not present in environment")
 def test_lineage_catalog_3_level_trace():
     if str(FMI_ROOT / "knowledge" / "lib") not in sys.path:
         sys.path.insert(0, str(FMI_ROOT / "knowledge" / "lib"))

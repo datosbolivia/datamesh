@@ -1,0 +1,6 @@
+timestamp,nodo,tipo_generacion,potencia_mw,demanda_mw,frecuencia_hz
+2024-06-01T10:00:00Z,Carrasco,Termoeléctrica,142.5,139.8,50.02
+2024-06-01T10:00:00Z,Corani,Hidroeléctrica,85.0,84.1,50.01
+2024-06-01T10:00:00Z,Warnes,Ciclo Combinado,210.3,208.5,50.0
+2024-06-01T10:00:00Z,Uyuni,Solar Fotovoltaica,58.2,57.0,50.03
+2024-06-01T10:00:00Z,Qollpana,Eólica,24.1,23.9,49.99

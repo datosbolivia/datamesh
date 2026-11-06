@@ -109,7 +109,10 @@ class DataMeshRuntime:
 
         self._query_resource = QueryResourceUseCase(bridge=self._bridge, resolver_usecase=self._resolver_usecase)
         self._validate_resource = ValidateResourceUseCase(bridge=self._bridge)
-        self._resolve_dataproduct = ResolveDataProductUseCase(bridge=self._bridge)
+        self._resolve_dataproduct = ResolveDataProductUseCase(
+            bridge=self._bridge,
+            catalog_discovery_fn=self.discover,
+        )
 
         self._publishers = [
             LocalBundlePublisherAdapter(),

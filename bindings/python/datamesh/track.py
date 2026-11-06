@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import os
 import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -184,7 +185,7 @@ def run_script(
     ext = Path(clean_script).suffix.lower()
 
     if ext == ".py":
-        cmd = ["python3", clean_script] + (args or [])
+        cmd = [sys.executable, clean_script] + (args or [])
     elif ext == ".sh":
         cmd = ["bash", clean_script] + (args or [])
     else:

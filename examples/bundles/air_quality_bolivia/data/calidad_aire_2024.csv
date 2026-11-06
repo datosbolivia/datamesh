@@ -1,0 +1,7 @@
+timestamp,estacion,ciudad,departamento,lat,lon,pm25,pm10,no2,aqi
+2024-06-01T08:00:00Z,Plaza Tejada Sorzano,La Paz,BO-L,-16.4988,-68.1226,14.2,28.5,18.1,55
+2024-06-01T08:00:00Z,Semapa Parque Kanata,Cochabamba,BO-C,-17.4042,-66.1558,38.6,65.2,32.4,108
+2024-06-01T08:00:00Z,Parque El Arenal,Santa Cruz de la Sierra,BO-S,-17.7819,-63.1812,22.4,42.1,21.0,72
+2024-06-01T12:00:00Z,Plaza Tejada Sorzano,La Paz,BO-L,-16.4988,-68.1226,18.5,34.0,25.3,64
+2024-06-01T12:00:00Z,Semapa Parque Kanata,Cochabamba,BO-C,-17.4042,-66.1558,45.1,82.0,41.2,124
+2024-06-01T12:00:00Z,Parque El Arenal,Santa Cruz de la Sierra,BO-S,-17.7819,-63.1812,26.8,49.3,24.5,81

@@ -1,26 +1,53 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import unicodedata
+from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
 from datamesh.core import DataMeshRuntime
 
-__version__ = "0.2.2-rc.1"
+__version__ = "0.2.2-rc.2"
 
 _runtime = DataMeshRuntime()
+
+
+def _normalize_search_text(text: str) -> str:
+    if not text:
+        return ""
+    decomposed = unicodedata.normalize("NFD", str(text).lower())
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
 
 def discover(catalog_url: Optional[str] = None) -> Dict[str, Any]:
     """Discover federated sovereign catalogs (default: all configured or llms.txt)."""
     return _runtime.discover(catalog_url)
 
+
 def search(keyword: str, catalog_url: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Search catalog entries across sovereign catalogs by keyword."""
+    """Search catalog entries across sovereign catalogs by keyword (accent-insensitive, multi-token)."""
     cat = discover(catalog_url)
-    kw = keyword.lower()
-    return [
-        e for e in cat.get("entries", [])
-        if kw in e.get("title", "").lower()
-        or kw in e.get("description", "").lower()
-        or kw in e.get("domain", "").lower()
-    ]
+    entries = cat.get("entries", [])
+    tokens = _normalize_search_text(keyword).split()
+    if not tokens:
+        return entries
+
+    matched: List[Dict[str, Any]] = []
+    for e in entries:
+        haystack = _normalize_search_text(
+            " ".join(
+                [
+                    str(e.get("title", "")),
+                    str(e.get("description", "")),
+                    str(e.get("domain", "")),
+                    str(e.get("uri", "")),
+                    str(e.get("resolved_url", "")),
+                    str(e.get("triad", "")),
+                    " ".join(str(r) for r in (e.get("resources") or [])),
+                ]
+            )
+        )
+        if all(tok in haystack for tok in tokens):
+            matched.append(e)
+    return matched
 
 def get(uri_or_url: str) -> Dict[str, Any]:
     """Resolve and validate OKF v0.2 Data Product manifest and description."""

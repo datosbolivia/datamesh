@@ -1,0 +1,5 @@
+semana_epidemiologica,departamento,municipio,casos_sospechosos,casos_confirmados,serotipo,hospitalizados
+18,BO-S,Santa Cruz de la Sierra,420,185,DENV-2,24
+18,BO-B,Trinidad,115,62,DENV-2,8
+18,BO-N,Cobija,45,19,DENV-1,2
+19,BO-S,Santa Cruz de la Sierra,490,210,DENV-2,31

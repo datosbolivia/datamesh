@@ -337,3 +337,23 @@
 - **Comportamiento:**
   1. `diff_bundles` compara dos bundles OKF/ODKF y clasifica los cambios según SemVer 2.0.0 (`PATCH` para prosa/paradatos, `MINOR` para adición retrocompatible de conceptos/columnas, `MAJOR` para eliminación de conceptos o cambios incompatibles de tipo/política).
   2. `attest_computation` normaliza la consulta SQL declarada en el bloque `executor`, verifica su hash SHA-256 canónico y contrasta las filas resultantes contra el bloque `receipt`, emitiendo el contrato JSON `AttestationVerdict` (`verified`, `refuted`, `error`).
+
+---
+
+## CU-33: Síntesis Markdown-First de Contratos (`datapackage`, `openapi`, `owl-cli`)
+
+- **Actor:** Agente IA (MCP `datamesh_get_dataproduct` / `datamesh_read_concept_body`) o Desarrollador (`dm.get()`).
+- **Caso de Uso / Servicio:** `ResolveDataProductUseCase` (`synthesize_contract_markdown`, `strip_ojs_blocks`) y `UnifiedMetadataReader.ReadNode` (Go Core).
+- **Flujo Principal:**
+  1. Al inspeccionar un nodo por URL, ruta local o slug (`dm.get("bcb-semanal")`), el lector resuelve el manifiesto `index.md` y los contratos adjuntos (`datapackage.yaml`/`.json`, `openapi.yaml`, `owl-cli`/`okf-cli`).
+  2. Filtra bloques de visualización interactiva ` ```ojs ... ``` ` y sintetiza automáticamente la sección `## Contrato de Datos y Esquema Semántico (Sintetizado)` con las tríadas SQL (`"<dataset>:<resource>"`), consultas rápidas y tablas Markdown de columnas, parámetros de entrada/salida y conceptos SKOS/OWL.
+
+---
+
+## CU-34: Grafo de Conocimiento Universal v2 y Mapa de Contexto Semántico (`datamesh_resolve_context`)
+
+- **Actor:** Agente IA (MCP `datamesh_get_knowledge_graph`, `datamesh_resolve_context`).
+- **Caso de Uso / Servicio:** `build_knowledge_graph_v2` y `build_semantic_context_map` (`bindings/python/datamesh/mcp_server.py`).
+- **Flujo Principal:**
+  1. `datamesh_get_knowledge_graph` indexa nodos tipados (`dataset`, `resource`, `service`, `cli_tool`, `concept`) y aristas semánticas (`HAS_RESOURCE`, `MEASURES_CONCEPT`, `ACCEPTS_CONCEPT`, `RETURNS_CONCEPT`, `DERIVED_FROM`, `SKOS_MATCH`).
+  2. `datamesh_resolve_context` recibe una consulta de dominio y devuelve un Mapa de Contexto Semántico en Markdown de 4 secciones: (1) significado SKOS/OWL, (2) datasets estáticos y tríadas SQL, (3) servicios OpenAPI y herramientas CLI (`owl-cli`), y (4) sugerencia de `JOIN` semántico entre tablas.

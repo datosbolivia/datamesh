@@ -17,9 +17,9 @@ from datamesh.domain.errors import (
 )
 from datamesh.ports.engine import QueryEnginePort
 
-# Matches table names in FROM and JOIN clauses (quoted or unquoted, including slashes and URLs)
+# Matches table names in FROM and JOIN clauses (quoted or unquoted, including slashes, @, #, and URLs)
 TABLE_REF_PATTERN = re.compile(
-    r'\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\-\.:/]+))',
+    r'\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\-\.:/@#]+))',
     re.IGNORECASE
 )
 
@@ -27,6 +27,8 @@ TABLE_REF_PATTERN = re.compile(
 QUOTED_COLON_PATTERN = re.compile(r'["\']([^"\':\s]+:[^"\']+)["\']')
 # Matches any quoted identifier containing slashes (e.g. "dataset/resource" or "cat/ds/res")
 QUOTED_SLASH_PATTERN = re.compile(r'["\']([^"\'\s]+/[^"\'\s]+)["\']')
+# Matches any quoted Sovereign DNS identifier (e.g. "dataset.resource@catalog[#fragment]")
+QUOTED_AT_PATTERN = re.compile(r'["\']([a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+@[a-zA-Z0-9_\-\.#/]+)["\']')
 
 def slugify(text: str) -> str:
     """Sanitizes text replacing non-alphanumeric chars with underscores."""
@@ -298,7 +300,10 @@ class DuckDBQueryEngine(QueryEnginePort):
         downloads the file to local cache and registers the local copy.
         Returns True if at least one alias was registered successfully.
         """
-        read_expr = self._get_read_expression(file_path_or_url)
+        frag_hint: Optional[str] = None
+        if "#" in table_ref:
+            frag_hint = table_ref.split("#", 1)[1].strip() or None
+        read_expr = self._get_read_expression(file_path_or_url, target_hint=frag_hint)
         aliases = self._generate_aliases(table_ref)
 
         registered_ok = False
@@ -318,7 +323,7 @@ class DuckDBQueryEngine(QueryEnginePort):
                 if resolved and resolved.local_path and os.path.exists(resolved.local_path):
                     actual_path = str(resolved.local_path)
                     is_remote = False
-                    read_expr = self._get_read_expression(actual_path)
+                    read_expr = self._get_read_expression(actual_path, target_hint=frag_hint)
             except (AuthenticationRequiredError, InvalidContentTypeError, CatalogConnectionError) as explicit_err:
                 raise explicit_err
             except Exception as dl_err:
@@ -494,8 +499,12 @@ class DuckDBQueryEngine(QueryEnginePort):
 
         return list(dict.fromkeys(filter(None, aliases)))
 
-    def _get_read_expression(self, path: str) -> str:
+    def _get_read_expression(self, path: str, target_hint: Optional[str] = None) -> str:
         clean_path = path.replace("file://", "")
+        if "#" in clean_path:
+            clean_path, frag = clean_path.split("#", 1)
+            if not target_hint and frag.strip():
+                target_hint = frag.strip()
         if "github.com/" in clean_path and "/raw/" in clean_path:
             clean_path = re.sub(r'https?://github\.com/([^/]+)/([^/]+)/raw/(.+)', r'https://raw.githubusercontent.com/\1/\2/\3', clean_path)
         elif "github.com/" in clean_path and "/blob/" in clean_path:
@@ -504,7 +513,7 @@ class DuckDBQueryEngine(QueryEnginePort):
         lower = clean_path.lower()
         if lower.endswith(".zip"):
             from datamesh.adapters.storage.zip_extractor import extract_zip_tabular_resource
-            extracted_path, _ = extract_zip_tabular_resource(clean_path)
+            extracted_path, _ = extract_zip_tabular_resource(clean_path, target_hint=target_hint)
             if extracted_path:
                 clean_path = extracted_path
                 lower = clean_path.lower()
@@ -531,6 +540,11 @@ class DuckDBQueryEngine(QueryEnginePort):
                 candidates.append(table.strip())
 
         for m in QUOTED_SLASH_PATTERN.finditer(query):
+            table = m.group(1)
+            if table and table not in candidates:
+                candidates.append(table.strip())
+
+        for m in QUOTED_AT_PATTERN.finditer(query):
             table = m.group(1)
             if table and table not in candidates:
                 candidates.append(table.strip())

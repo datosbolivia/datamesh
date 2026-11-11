@@ -27,7 +27,12 @@ def extract_zip_tabular_resource(
     extracts the target resource into temporal cache, and returns
     (path_or_glob, format) suitable for DuckDB execution.
     """
-    zip_p = Path(zip_path).resolve()
+    raw_zip_str = str(zip_path)
+    if "#" in raw_zip_str:
+        raw_zip_str, frag_hint = raw_zip_str.split("#", 1)
+        if not target_hint and frag_hint.strip():
+            target_hint = frag_hint.strip()
+    zip_p = Path(raw_zip_str).resolve()
     if not zip_p.exists() or not zip_p.is_file():
         return None, None
 

@@ -151,6 +151,19 @@ class CanonicalURI:
             elif len(parts) == 2:
                 return cls(catalog=None, dataset=parts[0], resource=parts[1], fragment=frag)
 
+        # 6. Two-part dot-separated format ('<dataset>.<resource>') when '<resource>' is not a recognized file extension (§14.4)
+        if "." in trimmed and ":" not in trimmed and "/" not in trimmed:
+            dot_parts = [p.strip() for p in trimmed.split(".") if p.strip()]
+            if len(dot_parts) == 2:
+                known_exts = {
+                    "csv", "tsv", "parquet", "pq", "json", "jsonl",
+                    "yaml", "yml", "zip", "md", "db", "sqlite",
+                    "sql", "py", "sh", "txt", "html", "xml",
+                    "toml", "ini", "conf", "env", "pem", "key", "log",
+                }
+                if dot_parts[1].lower() not in known_exts:
+                    return cls(catalog=None, dataset=dot_parts[0], resource=dot_parts[1], fragment=frag)
+
         return None
 
     @property

@@ -170,9 +170,13 @@ class SemanticAlignmentUseCase:
             for u in a.skos:
                 if u in b.skos:
                     return u, "skos_anchor"
-            all_b = set([*b.exact_match, *b.skos, *b.close_match])
-            for u in [*a.exact_match, *a.skos, *a.close_match]:
-                if u in all_b:
+            exact_b = set([*b.exact_match, *b.skos])
+            for u in a.close_match:
+                if u in exact_b:
+                    return u, "skos:closeMatch"
+            exact_a = set([*a.exact_match, *a.skos])
+            for u in b.close_match:
+                if u in exact_a:
                     return u, "skos:closeMatch"
             return None
 

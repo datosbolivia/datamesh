@@ -159,6 +159,15 @@ def test_value_label_concept_skos_correspondence_and_go_core_bridge():
     assert u2.resource == "manzanas"
     assert u2.fragment == "lapaz.csv"
 
+    u3 = CanonicalURI.parse("bcb-semanal.bcb_reservas#divisas.csv")
+    assert u3 is not None
+    assert u3.catalog is None
+    assert u3.dataset == "bcb-semanal"
+    assert u3.resource == "bcb_reservas"
+    assert u3.fragment == "divisas.csv"
+    assert CanonicalURI.parse("data.csv") is None
+    assert CanonicalURI.parse("index.md") is None
+
     # 2. ValueLabel -> Concept -> SKOS correspondence resolution across two datasets
     src_map = {
         "field_name": "entidad_municipal",

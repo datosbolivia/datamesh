@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 from datamesh.core import DataMeshRuntime
 
-__version__ = "0.2.2-rc.2"
+__version__ = "0.3.0.dev1"
 
 _runtime = DataMeshRuntime()
 

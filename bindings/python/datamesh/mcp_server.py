@@ -196,28 +196,6 @@ TOOLS = [
         }
     },
     {
-        "name": "datamesh_harvest_ckan",
-        "description": "Harvests open data packages from a CKAN instance and reconstructs OKF v0.2 knowledge bundles.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "CKAN portal or API URL."
-                },
-                "query": {
-                    "type": "string",
-                    "description": "Optional search filter query."
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max packages to harvest (default: 10)."
-                }
-            },
-            "required": ["url"]
-        }
-    },
-    {
         "name": "datamesh_get_lineage",
         "description": "Inspects dataset provenance, upstream dependencies, and downstream derived datasets in the lineage DAG graph.",
         "inputSchema": {
@@ -1042,15 +1020,13 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 })
 
             elif tool_name == "datamesh_harvest_ckan":
-                url = args.get("url", "")
-                query = args.get("query", "")
-                limit = int(args.get("limit", 10))
-                harvest_res = dm.harvest_ckan(url, query=query, limit=limit)
                 return make_tool_result(msg_id, {
-                    "catalog_url": harvest_res.catalog_url,
-                    "total_discovered": harvest_res.total_discovered,
-                    "harvested_count": len(harvest_res.harvested_packages),
-                    "packages": [p["name"] for p in harvest_res.harvested_packages],
+                    "status": "decoupled_service",
+                    "message": (
+                        "CKAN harvesting is decoupled from core standards into an external service connector. "
+                        "Execute 'connectors/ckan/read_ckan.py' via 'okf run connectors/ckan/read_ckan.py' "
+                        "or query the CKAN service catalog node directly."
+                    ),
                 })
 
             elif tool_name == "datamesh_get_lineage":

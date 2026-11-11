@@ -489,7 +489,7 @@ def test_server_well_known_and_mcp_202(monkeypatch):
         assert disc is not None
         schema_ver = disc.schema_version if hasattr(disc, "schema_version") else disc.get("schema_version")
         caps = disc.capabilities if hasattr(disc, "capabilities") else disc.get("capabilities", {})
-        assert schema_ver.startswith("0.2")
+        assert schema_ver.startswith(("0.2", "0.3"))
         assert caps.get("mcp") is True
 
         req = urllib.request.Request(

@@ -323,7 +323,11 @@ class DataMeshRuntime:
         probe_datastore_schema: bool = True,
         package_id: Optional[str] = None,
     ) -> CKANHarvestResult:
-        """Harvests datasets from a CKAN catalog and reconstructs OKF v0.2 packages."""
+        """Harvests datasets from a CKAN catalog and reconstructs OKF v0.2 packages (External Service Connector)."""
+        logger.warning(
+            "dm.harvest_ckan is deprecated: CKAN harvesting is decoupled as an external service connector "
+            "(connectors/ckan/read_ckan.py). Core supports universal open standards only."
+        )
         discovery = self.discover_endpoint(ckan_url)
         api_endpoint = discovery.catalog.api_endpoint if (discovery and discovery.catalog.api_endpoint) else ckan_url
         auth_provider = self._discover_usecase.create_auth_provider(

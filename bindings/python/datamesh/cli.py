@@ -111,6 +111,16 @@ def main():
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     serve_parser.add_argument("--port", "-p", type=int, default=8000, help="Bind port (default: 8000)")
 
+    # run
+    run_parser = subparsers.add_parser("run", parents=[common_parser], help="Execute an ETL script or Jupyter notebook (.ipynb) with OKF provenance tracking")
+    run_parser.add_argument("script", help="Path to Python script or .ipynb notebook")
+    run_parser.add_argument("--target", help="Target OKF dataset URI or bundle path")
+    run_parser.add_argument("--param", "-p", action="append", default=[], help="Parameter key=value (repeatable, passed to papermill and OKF_PARAM_*)")
+    run_parser.add_argument("--out-notebook", help="Output path for executed .ipynb notebook")
+    run_parser.add_argument("--report", help="Optional Markdown run report output path (.md)")
+    run_parser.add_argument("--no-sync", action="store_true", help="Skip datapackage.yaml distribution sync metadata")
+    run_parser.add_argument("--json", action="store_true", help="Print execution result as JSON")
+
 
     args = parser.parse_args()
 
@@ -299,6 +309,37 @@ def main():
     elif args.command == "serve":
         from datamesh.server import run_server
         run_server(host=args.host, port=args.port)
+
+    elif args.command == "run":
+        params = {}
+        for item in getattr(args, "param", []) or []:
+            if "=" in item:
+                k, v = item.split("=", 1)
+                params[k] = v
+            else:
+                params[item] = ""
+
+        if args.script.lower().endswith(".ipynb"):
+            res = dm.run_notebook(
+                args.script,
+                parameters=params,
+                output_notebook=args.out_notebook,
+                target=args.target,
+                no_sync=args.no_sync,
+                report_path=args.report,
+            )
+        else:
+            env = {f"OKF_PARAM_{k}": v for k, v in params.items()} if params else None
+            res = dm.run_script(
+                args.script,
+                target=args.target,
+                env=env,
+            )
+
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+        else:
+            print(f"Executed {args.script} -> target={res.get('target')} ({res.get('duration_seconds', 0):.2f}s)")
 
 if __name__ == "__main__":
     main()

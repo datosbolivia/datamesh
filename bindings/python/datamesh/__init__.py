@@ -324,7 +324,19 @@ from datamesh.usecases.discover_well_known import DiscoverWellKnownUseCase
 from datamesh.usecases.harvest_ckan import HarvestCKANUseCase
 from datamesh.usecases.dataset_lineage import DatasetLineageUseCase
 from datamesh.server import run_server
-from datamesh.track import track_lineage, track_execution, run_script, get_lineage_store
+from datamesh.track import (
+    track_lineage,
+    track_execution,
+    run_script,
+    get_lineage_store,
+    step,
+    log_input,
+    log_output,
+    log_quality,
+    log_metric,
+    log_note,
+)
+from datamesh.usecases.run_notebook import run_notebook
 from datamesh.ports.lineage_store import LineageStorePort
 from datamesh.adapters.storage.sqlite_lineage import SQLiteLineageStore
 
@@ -364,7 +376,14 @@ __all__ = [
     "track_lineage",
     "track_execution",
     "run_script",
+    "run_notebook",
     "run",
+    "step",
+    "log_input",
+    "log_output",
+    "log_quality",
+    "log_metric",
+    "log_note",
     "get_lineage_store",
     "LineageStorePort",
     "SQLiteLineageStore",

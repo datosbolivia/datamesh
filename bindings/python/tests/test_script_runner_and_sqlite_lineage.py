@@ -259,3 +259,88 @@ def test_local_storage_manager_sqlite_and_json_migration():
             row = conn.execute("SELECT * FROM cache_entries WHERE key = ?", (k,)).fetchone()
             assert row is not None
 
+
+class TestProvenanceAPIAndNotebookRunner:
+    def test_step_and_log_helpers_emit_provenance_jsonl(self, tmp_path, monkeypatch):
+        import json
+
+        prov_file = tmp_path / "provenance.jsonl"
+        out_csv = tmp_path / "cleaned.csv"
+        out_csv.write_text("id,amount\n1,10.5\n2,\n", encoding="utf-8")
+
+        monkeypatch.setenv("OKF_PROVENANCE_OUT", str(prov_file))
+
+        dm.log_input("raw_source.csv", resource="raw", fmt="csv")
+        with dm.step("clean_data", tool="python", params={"drop_na": False}):
+            dm.log_metric("rows_processed", 2, step_name="clean_data")
+            dm.log_note("kept null amount row for downstream check")
+
+        qc = dm.log_quality(str(out_csv), resource="cleaned", min_rows=2, min_completeness=0.5)
+        assert qc.get("row_count") == 2
+
+        out_ev = dm.log_output(out_csv, resource="cleaned", fmt="csv")
+        assert out_ev["format"] == "csv"
+        assert len(out_ev["hash_sha256"]) == 64
+
+        events = [
+            json.loads(line)
+            for line in prov_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        types = [e["type"] for e in events]
+        assert "input" in types
+        assert "step" in types
+        assert "metric" in types
+        assert "note" in types
+        assert "quality" in types
+        assert "output" in types
+
+    def test_run_notebook_executes_papermill_and_writes_report(self, tmp_path, monkeypatch):
+        import sys
+
+        nb_file = tmp_path / "etl.ipynb"
+        nb_file.write_text('{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}', encoding="utf-8")
+        out_nb = tmp_path / "etl.out.ipynb"
+        report_md = tmp_path / "run-report.md"
+        db_file = tmp_path / "lineage.db"
+        store = dm.SQLiteLineageStore(db_path=str(db_file))
+
+        captured_calls = []
+
+        class FakePapermill:
+            @staticmethod
+            def execute_notebook(input_path, output_path, parameters=None):
+                captured_calls.append((input_path, output_path, parameters))
+                Path(output_path).write_text("executed", encoding="utf-8")
+                dm.log_input("s3://bucket/raw.parquet", resource="raw", fmt="parquet")
+                with dm.step("notebook_transform", tool="papermill", params=parameters):
+                    dm.log_metric("accuracy", 0.99)
+                dm.log_note("notebook run complete")
+
+        monkeypatch.setitem(sys.modules, "papermill", FakePapermill())
+
+        result = dm.run_notebook(
+            str(nb_file),
+            parameters={"year": "2026"},
+            output_notebook=str(out_nb),
+            target="dataset://sales",
+            report_path=str(report_md),
+            store=store,
+        )
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0][2] == {"year": "2026"}
+        assert out_nb.exists()
+        assert result["target"] == "dataset://sales"
+        assert "s3://bucket/raw.parquet" in result["sources"]
+        assert report_md.exists()
+        report_text = report_md.read_text(encoding="utf-8")
+        assert "type: run_report" in report_text
+        assert "notebook_transform" in report_text
+        assert "accuracy" in report_text
+
+        records = store.list_executions(target="dataset://sales")
+        assert len(records) == 1
+        assert records[0]["status"] == "SUCCESS"
+
+

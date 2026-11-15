@@ -92,3 +92,27 @@ def test_duckdb_sql_query_from_zip_table():
         assert res["columns"] == ["category", "total"]
         assert res["rows"][0] == ["Tech", 200]
         assert res["rows"][1] == ["Food", 80]
+
+
+def test_duckdb_sql_query_zip_with_fragment():
+    from datamesh.adapters.engine.duckdb_engine import DuckDBQueryEngine
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_p = Path(tmpdir)
+        zip_path = tmp_p / "multi_test.zip"
+
+        with zipfile.ZipFile(zip_path, "w") as z:
+            z.writestr("first.csv", "col,val\nX,10\n")
+            z.writestr("second.csv", "col,val\nY,42\n")
+
+        engine = DuckDBQueryEngine()
+        res = engine.execute_sql(
+            'SELECT col, val FROM "ds.res#second.csv"',
+            table_mapping={"ds.res#second.csv": str(zip_path)},
+        )
+        assert res["row_count"] == 1
+        assert res["rows"][0] == ["Y", 42]
+
+        res_direct = dm.sql(f"SELECT col, val FROM '{zip_path}#second.csv'")
+        assert res_direct["row_count"] == 1
+        assert res_direct["rows"][0] == ["Y", 42]

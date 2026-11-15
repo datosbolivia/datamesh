@@ -232,3 +232,45 @@ def test_value_label_concept_skos_correspondence_and_go_core_bridge():
     assert "WHEN b.cod_ine = '020101' THEN 'http://www.wikidata.org/entity/Q1491'" in join_sql
 
 
+def test_skos_close_match_non_transitivity():
+    src_map = {
+        "field_name": "tipo",
+        "value_labels": [
+            {"raw_value": "A", "concept_id": "ds1:concepts/a.md"},
+            {"raw_value": "C", "concept_id": "ds1:concepts/c.md"},
+        ],
+    }
+    tgt_map = {
+        "field_name": "tipo",
+        "value_labels": [
+            {"raw_value": "B", "concept_id": "ds2:concepts/b.md"},
+            {"raw_value": "D", "concept_id": "ds2:concepts/d.md"},
+        ],
+    }
+    shared_anchor = "http://www.wikidata.org/entity/Q999999"
+    catalog = {
+        "ds1:concepts/a.md": {
+            "concept_id": "ds1:concepts/a.md",
+            "close_match": [shared_anchor],
+        },
+        "ds2:concepts/b.md": {
+            "concept_id": "ds2:concepts/b.md",
+            "close_match": [shared_anchor],
+        },
+        "ds1:concepts/c.md": {
+            "concept_id": "ds1:concepts/c.md",
+            "close_match": [shared_anchor],
+        },
+        "ds2:concepts/d.md": {
+            "concept_id": "ds2:concepts/d.md",
+            "exact_match": [shared_anchor],
+        },
+    }
+
+    corrs = dm.resolve_concept_correspondences(src_map, tgt_map, catalog)
+    pairs = {(c["source_value"], c["target_value"], c["match_predicate"]) for c in corrs}
+    assert ("A", "B", "skos:closeMatch") not in pairs
+    assert ("C", "D", "skos:closeMatch") in pairs
+    assert ("A", "D", "skos:closeMatch") in pairs
+
+

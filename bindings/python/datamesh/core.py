@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 from datamesh.adapters.catalog.llmstxt_catalog import LLMSTxtCatalogFetcher
 from datamesh.adapters.go_bridge import GoCoreBridge
@@ -326,7 +329,7 @@ class DataMeshRuntime:
         """Harvests datasets from a CKAN catalog and reconstructs OKF v0.2 packages (External Service Connector)."""
         logger.warning(
             "dm.harvest_ckan is deprecated: CKAN harvesting is decoupled as an external service connector "
-            "(connectors/ckan/read_ckan.py). Core supports universal open standards only."
+            "(open-knowledge-format: connectors/ckan/read_ckan.py). Core supports universal open standards only."
         )
         discovery = self.discover_endpoint(ckan_url)
         api_endpoint = discovery.catalog.api_endpoint if (discovery and discovery.catalog.api_endpoint) else ckan_url

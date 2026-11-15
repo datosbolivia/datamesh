@@ -54,17 +54,15 @@ datamesh mcp-serve
 
 ```text
 datamesh/
-├── core-go/                  # Núcleo Go (Dominio puro, Puertos, Casos de Uso, WASM y C-Shared)
-│   ├── domain/               # DataProduct, ResourceTriad, Catalog, Config
-│   ├── ports/                # Puertos Inbound y Outbound
-│   ├── usecases/             # Casos de uso de descubrimiento, resolución y consultas
-│   └── adapters/             # CLI nativa, resolutores HTTP llms.txt, motor CSV
+├── bin/                      # CLI Node.js (`datamesh`)
 ├── bindings/
 │   ├── python/               # Librería Python, CLI (`datamesh`), DuckDB y servidor MCP
-│   └── typescript/           # Cliente browser/WASM ligero en TypeScript
+│   ├── typescript/           # Cliente browser/WASM ligero en TypeScript
+│   └── r/                    # Cliente SDK en R
 ├── docs/
 │   ├── decisions/            # ADRs formales (0001, 0002, 0003)
 │   └── reference/            # Arquitectura, Casos de Uso, CLI, MCP Server
+├── examples/                 # Bundles canónicos FAIR Bolivia y ejemplos
 ├── QUICKSTART.md             # Guía práctica paso a paso
 └── specificacion_knowledge.md # Especificación normativa OKF v0.2
 ```
@@ -80,7 +78,7 @@ datamesh/
 - [Arquitectura Hexagonal (ARQUITECTURA.md)](docs/reference/ARQUITECTURA.md)
 - [Modelo de Dominio y DDD (MODELO_DE_DOMINIO.md)](docs/reference/MODELO_DE_DOMINIO.md)
 - [Bundles Canónicos FAIR Bolivia (examples/bundles/)](examples/bundles/)
-- [Estándar Normativo Upstream (open-knowledge-format)](/home/andreschirinos/Proyectos/open-knowledge-format)
+- [Estándar Normativo Upstream (open-knowledge-format)](https://github.com/datosbolivia/open-knowledge-format)
 - [Casos de Uso del SDK (CASOS_DE_USO.md)](docs/reference/CASOS_DE_USO.md)
 - [Referencia de Comandos CLI (CLI.md)](docs/reference/CLI.md)
 - [Servidor Model Context Protocol (MCP_SERVER.md)](docs/reference/MCP_SERVER.md)

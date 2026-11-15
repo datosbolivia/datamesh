@@ -18,7 +18,7 @@ except ImportError:
     yaml = None
 
 SERVER_NAME = "datamesh-mcp-server"
-SERVER_VERSION = "0.2.2"
+SERVER_VERSION = "0.3.0.dev1"
 
 TOOLS = [
     {
@@ -1024,8 +1024,8 @@ def handle_jsonrpc(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     "status": "decoupled_service",
                     "message": (
                         "CKAN harvesting is decoupled from core standards into an external service connector. "
-                        "Execute 'connectors/ckan/read_ckan.py' via 'okf run connectors/ckan/read_ckan.py' "
-                        "or query the CKAN service catalog node directly."
+                        "Execute 'connectors/ckan/read_ckan.py' from the open-knowledge-format repository "
+                        "via 'okf run connectors/ckan/read_ckan.py' or query the CKAN service catalog node directly."
                     ),
                 })
 

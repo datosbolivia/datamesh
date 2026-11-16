@@ -78,13 +78,8 @@ class SQLiteLineageStore(LineageStorePort):
 
     def __init__(self, db_path: Optional[str] = None):
         if not db_path:
-            env_db = os.environ.get("DATAMESH_METADATA_DB")
-            if env_db:
-                db_path = env_db
-            else:
-                from datamesh.constants import get_datamesh_home
-                base_dir = get_datamesh_home()
-                db_path = str(base_dir / "metadata.db")
+            from datamesh.constants import get_metadata_db_path
+            db_path = str(get_metadata_db_path())
 
         self.db_path = str(Path(db_path).resolve())
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -94,10 +89,12 @@ class SQLiteLineageStore(LineageStorePort):
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
         return conn
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
+            conn.execute("PRAGMA journal_mode = WAL;")
             conn.executescript(self.SCHEMA)
             # Safe schema upgrade for cache_key columns
             try:
@@ -108,6 +105,10 @@ class SQLiteLineageStore(LineageStorePort):
                 conn.execute("ALTER TABLE artifacts ADD COLUMN cache_key TEXT;")
             except Exception:
                 pass
+            ver_row = conn.execute("PRAGMA user_version;").fetchone()
+            ver = int(ver_row[0]) if ver_row else 0
+            if ver < 1:
+                conn.execute("PRAGMA user_version = 1;")
 
     @staticmethod
     def compute_sha256(file_path: str) -> str:

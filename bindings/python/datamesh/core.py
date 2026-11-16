@@ -278,6 +278,7 @@ class DataMeshRuntime:
         target_mapping: Dict[str, Any],
         target_alias: str,
         concept_catalog: Optional[Dict[str, Any]] = None,
+        allow_close_match: bool = False,
     ) -> str:
         """Generates deterministic ANSI SQL join expression via ValueLabel -> Concept -> SKOS correspondence."""
         return self._semantic_aligner.generate_cross_dataset_join_sql(
@@ -287,6 +288,7 @@ class DataMeshRuntime:
             target_alias=target_alias,
             concept_catalog=concept_catalog,
             bridge=self._bridge,
+            allow_close_match=allow_close_match,
         )
 
     def diff_bundles(self, old_path: Union[str, Path], new_path: Union[str, Path]) -> Dict[str, Any]:

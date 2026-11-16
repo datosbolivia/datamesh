@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 from datamesh.core import DataMeshRuntime
 
-__version__ = "0.3.0.dev1"
+__version__ = "0.3.0.dev2"
 
 _runtime = DataMeshRuntime()
 
@@ -123,10 +123,11 @@ def generate_cross_dataset_join_sql(
     target_mapping: Dict[str, Any],
     target_alias: str,
     concept_catalog: Optional[Dict[str, Any]] = None,
+    allow_close_match: bool = False,
 ) -> str:
     """Generate deterministic ANSI SQL join expression via ValueLabel -> Concept -> SKOS correspondence."""
     return _runtime.generate_cross_dataset_join_sql(
-        source_mapping, source_alias, target_mapping, target_alias, concept_catalog
+        source_mapping, source_alias, target_mapping, target_alias, concept_catalog, allow_close_match=allow_close_match
     )
 
 def diff_bundles(old_path: Union[str, Path], new_path: Union[str, Path]) -> Dict[str, Any]:

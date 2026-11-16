@@ -213,22 +213,20 @@ class SemanticAlignmentUseCase:
         target_alias: str,
         concept_catalog: Optional[Dict[str, ConceptNodeSKOS | Dict[str, Any]]] = None,
         bridge: Optional[Any] = None,
+        allow_close_match: bool = False,
     ) -> str:
         """Generates a deterministic ANSI SQL join predicate bridging two datasets via SKOS correspondences."""
         src_obj = SemanticFieldMapping.from_dict(source_mapping) if isinstance(source_mapping, dict) else source_mapping
         tgt_obj = SemanticFieldMapping.from_dict(target_mapping) if isinstance(target_mapping, dict) else target_mapping
-        cat_dict: Dict[str, Dict[str, Any]] = {}
-        for k, v in (concept_catalog or {}).items():
-            cat_dict[k] = v.to_dict() if isinstance(v, ConceptNodeSKOS) else dict(v)
-
-        if bridge is not None and getattr(bridge, "available", False):
-            go_sql = bridge.generate_cross_dataset_join_sql(
-                src_obj.to_dict(), source_alias, tgt_obj.to_dict(), target_alias, cat_dict
-            )
-            if go_sql:
-                return go_sql
 
         corrs = cls.resolve_concept_correspondences(src_obj, tgt_obj, concept_catalog, bridge=None)
+        if not allow_close_match:
+            corrs = [c for c in corrs if c.match_predicate != "skos:closeMatch"]
+        if not corrs:
+            raise ValueError(
+                f"No exact or verified semantic correspondences found between '{src_obj.field_name}' and "
+                f"'{tgt_obj.field_name}' (skos:closeMatch excluded per SPEC §14.3.1)"
+            )
         src_proj = SemanticFieldMapping(
             field_name=src_obj.field_name,
             value_mapping={c.source_value: c.shared_anchor_uri for c in corrs},

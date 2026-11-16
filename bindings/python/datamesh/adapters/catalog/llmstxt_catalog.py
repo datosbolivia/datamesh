@@ -15,8 +15,8 @@ def parse_llms_txt(content: str, source_url: str) -> Dict[str, Any]:
     """
     entries: List[Dict[str, Any]] = []
     entry_pattern = re.compile(r"^-\s*\[([^\]]+)\]\(([^)\s]+)\)(?:\s*(?::|-|—)\s*(.*))?$")
-    domain_pattern = re.compile(r"\(Dominio:\s*([^)]*?)(?:\.|\)|Recursos:)")
-    rec_pattern = re.compile(r"Recursos:\s*([^)]+)\)")
+    domain_pattern = re.compile(r"\((?:Dominio|Domain):\s*([^)]*?)(?:\.|\)|(?:Recursos|Resources):)")
+    rec_pattern = re.compile(r"(?:Recursos|Resources):\s*([^)]+)\)")
 
     req_header_pattern = re.compile(r"^###\s*\[(.*?)\]\s*(.*?)(?:\s*\((?:Institución|Agencia):\s*([^)]+)\))?$")
     triad_pattern = re.compile(r"Tríada:\s*`([^`]+)`")
@@ -76,10 +76,11 @@ def parse_llms_txt(content: str, source_url: str) -> Dict[str, Any]:
                             title_clean, meta_clean = rest.split("(Tríada:", 1)
                             title_clean = title_clean.strip()
                             meta_clean = "Tríada:" + meta_clean.rstrip(")")
-                        elif "(Dominio:" in rest:
-                            title_clean, meta_clean = rest.split("(Dominio:", 1)
+                        elif "(Dominio:" in rest or "(Domain:" in rest:
+                            sep = "(Dominio:" if "(Dominio:" in rest else "(Domain:"
+                            title_clean, meta_clean = rest.split(sep, 1)
                             title_clean = title_clean.strip()
-                            meta_clean = "Dominio:" + meta_clean.rstrip(")")
+                            meta_clean = f"{sep[1:]} {meta_clean.rstrip(')').strip()}".strip()
                         else:
                             title_clean = rest
                             meta_clean = ""
@@ -111,7 +112,7 @@ def parse_llms_txt(content: str, source_url: str) -> Dict[str, Any]:
 
             rm_match = rec_pattern.search(desc)
             recs = [r.strip() for r in rm_match.group(1).split(",")] if rm_match else []
-            clean_desc = desc.split("(Dominio:")[0].strip()
+            clean_desc = re.split(r"\((?:Dominio|Domain):", desc, maxsplit=1)[0].strip()
 
             entries.append({
                 "title": item_title,

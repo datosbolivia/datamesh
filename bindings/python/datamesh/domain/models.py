@@ -48,7 +48,7 @@ def normalize_triad_segment(val: Optional[str]) -> Optional[str]:
     """Standardizes a triad component to lowercase with hyphens replacing whitespace."""
     if val is None:
         return None
-    s = str(val).strip()
+    s = str(val).strip().strip("\"'")
     if not s:
         return ""
     return re.sub(r'\s+', '-', s).lower()
@@ -73,7 +73,10 @@ class CanonicalURI:
 
     @classmethod
     def parse(cls, raw: str) -> Optional[CanonicalURI]:
-        trimmed = raw.strip().strip("'\"`")
+        trimmed = raw.strip()
+        if len(trimmed) >= 2 and trimmed[0] == trimmed[-1] and trimmed[0] in "'\"`":
+            if not (trimmed[0] == '"' and '".' in trimmed and "@" in trimmed):
+                trimmed = trimmed[1:-1].strip()
         if not trimmed:
             return None
 
@@ -130,7 +133,11 @@ class CanonicalURI:
         # 3. Sovereign DNS reverse-lookup notation: <dataset>.<resource>@<catalog>
         if "@" in trimmed and ":" not in trimmed and "/" not in trimmed:
             left, cat = trimmed.split("@", 1)
-            if "." in left and cat.strip():
+            if left.startswith('"') and '".' in left and cat.strip():
+                ds, res = left[1:].split('".', 1)
+                if ds.strip() and res.strip():
+                    return cls(catalog=cat.strip(), dataset=ds.strip(), resource=res.strip(), fragment=frag)
+            elif "." in left and cat.strip():
                 ds, res = left.split(".", 1)
                 if ds.strip() and res.strip():
                     return cls(catalog=cat.strip(), dataset=ds.strip(), resource=res.strip(), fragment=frag)

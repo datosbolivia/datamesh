@@ -273,4 +273,56 @@ def test_skos_close_match_non_transitivity():
     assert ("C", "D", "skos:closeMatch") in pairs
     assert ("A", "D", "skos:closeMatch") in pairs
 
+    # Default join generation must exclude skos:closeMatch and fail fast when no exact correspondences exist
+    import pytest
+    with pytest.raises(ValueError, match="skos:closeMatch"):
+        dm.generate_cross_dataset_join_sql(src_map, "a", tgt_map, "b", catalog)
+
+    # Explicit opt-in allows exploratory fuzzy joins
+    exploratory_sql = dm.generate_cross_dataset_join_sql(
+        src_map, "a", tgt_map, "b", catalog, allow_close_match=True
+    )
+    assert "WHEN a.tipo = 'C'" in exploratory_sql
+
+
+def test_quoted_reverse_dns_and_english_llms_txt():
+    from datamesh.domain.models import CanonicalURI
+    from datamesh.adapters.catalog.llmstxt_catalog import parse_llms_txt
+
+    u = CanonicalURI.parse('"censo.2024".votos@bolivia#divisas.csv')
+    assert u is not None
+    assert u.catalog == "bolivia"
+    assert u.dataset == "censo.2024"
+    assert u.resource == "votos"
+    assert u.fragment == "divisas.csv"
+
+    llms_en = """# Sovereign Catalog
+> Open datasets
+
+- [National Census](/raw/nodes/censo/index.md): Official census results. (Domain: Demography. Resources: pop_2024, housing_2024)
+"""
+    parsed = parse_llms_txt(llms_en, "https://example.org/llms.txt")
+    assert len(parsed["entries"]) == 1
+    entry = parsed["entries"][0]
+    assert entry["domain"] == "Demography"
+    assert entry["resources"] == ["pop_2024", "housing_2024"]
+    assert entry["description"] == "Official census results."
+
+
+def test_okf_metadata_db_precedence_and_pragmas(tmp_path, monkeypatch):
+    from datamesh.constants import get_metadata_db_path
+    from datamesh.adapters.storage.sqlite_lineage import SQLiteLineageStore
+
+    okf_db = tmp_path / "custom_okf.db"
+    monkeypatch.setenv("OKF_METADATA_DB", str(okf_db))
+    monkeypatch.setenv("DATAMESH_METADATA_DB", str(tmp_path / "legacy.db"))
+    assert get_metadata_db_path() == okf_db.resolve()
+
+    store = SQLiteLineageStore()
+    with store._get_connection() as conn:
+        assert conn.execute("PRAGMA foreign_keys;").fetchone()[0] == 1
+        assert conn.execute("PRAGMA busy_timeout;").fetchone()[0] == 5000
+        assert str(conn.execute("PRAGMA journal_mode;").fetchone()[0]).lower() == "wal"
+        assert conn.execute("PRAGMA user_version;").fetchone()[0] == 1
+
 

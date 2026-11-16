@@ -13,6 +13,9 @@ DEFAULT_TIMEOUT_SECONDS: int = 30
 DEFAULT_MAX_CACHE_SIZE_BYTES: int = 10 * 1024 * 1024 * 1024  # 10 GB
 
 # Environment variable keys
+ENV_OKF_HOME = "OKF_HOME"
+ENV_OKF_METADATA_DB = "OKF_METADATA_DB"
+ENV_DATAMESH_METADATA_DB = "DATAMESH_METADATA_DB"
 ENV_DATAMESH_HOME = "DATAMESH_HOME"
 ENV_DATAMESH_STORAGE_PATH = "DATAMESH_STORAGE_PATH"
 ENV_DATAMESH_CACHE_DIR = "DATAMESH_CACHE_DIR"
@@ -26,17 +29,38 @@ ENV_DATAMESH_KNOWLEDGE_DIR = "DATAMESH_KNOWLEDGE_DIR"
 ENV_DATAMESH_NODES_DIR = "DATAMESH_NODES_DIR"
 
 def get_datamesh_home() -> Path:
-    """Returns active datamesh home directory, respecting DATAMESH_HOME or defaulting to ~/datamesh."""
-    env_val = os.environ.get(ENV_DATAMESH_HOME)
+    """Returns active home directory, checking OKF_HOME then DATAMESH_HOME before home defaults."""
+    env_val = os.environ.get(ENV_OKF_HOME) or os.environ.get(ENV_DATAMESH_HOME)
     if env_val:
         return Path(env_val).expanduser().resolve()
+    okf_home = Path.home() / ".okf"
     primary = Path.home() / "datamesh"
     legacy = Path.home() / ".datamesh"
+    if okf_home.exists():
+        return okf_home
     if primary.exists():
         return primary
     if legacy.exists():
         return legacy
     return primary
+
+def get_metadata_db_path() -> Path:
+    """Resolves operational metadata.db path per SPEC §17.2 / §18.1 precedence."""
+    for env_key in (ENV_OKF_METADATA_DB, ENV_DATAMESH_METADATA_DB):
+        env_db = os.environ.get(env_key)
+        if env_db:
+            return Path(env_db).expanduser().resolve()
+    for env_home in (ENV_OKF_HOME, ENV_DATAMESH_HOME):
+        home_val = os.environ.get(env_home)
+        if home_val:
+            return Path(home_val).expanduser().resolve() / "metadata.db"
+    for local_dir in (Path.cwd() / ".okf", Path.cwd() / ".datamesh"):
+        if local_dir.exists():
+            return local_dir.resolve() / "metadata.db"
+    home_okf = Path.home() / ".okf"
+    if home_okf.exists():
+        return home_okf.resolve() / "metadata.db"
+    return get_datamesh_home() / "metadata.db"
 
 def get_cache_dir() -> Path:
     """Returns active cache directory, respecting DATAMESH_STORAGE_PATH / DATAMESH_CACHE_DIR."""

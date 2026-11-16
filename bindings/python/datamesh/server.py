@@ -167,7 +167,7 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
                 "pong": True,
                 "service": "datamesh-server",
                 "runtime": "python",
-                "version": "0.3.0.dev1",
+                "version": "0.3.0.dev2",
                 "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
             self.wfile.write(json.dumps(resp).encode("utf-8"))
@@ -184,7 +184,7 @@ class DataMeshServerHandler(BaseHTTPRequestHandler):
             info = {
                 "schema_version": "0.3.0",
                 "service": "datamesh-server",
-                "version": "0.3.0.dev1",
+                "version": "0.3.0.dev2",
                 "protocol": "OKF/ODKF v0.2",
                 "catalog": {
                     "name": "datamesh_sovereign_node",

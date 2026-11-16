@@ -18,7 +18,7 @@ except ImportError:
     yaml = None
 
 SERVER_NAME = "datamesh-mcp-server"
-SERVER_VERSION = "0.3.0.dev1"
+SERVER_VERSION = "0.3.0.dev2"
 
 TOOLS = [
     {

@@ -1,6 +1,6 @@
 {
   "name": "@datosbolivia/datamesh-client",
-  "version": "0.3.0-dev.1",
+  "version": "0.3.0-dev.2",
   "description": "DataMesh Sovereign Client SDK in TypeScript / WASM",
   "type": "module",
   "main": "dist/index.js",
